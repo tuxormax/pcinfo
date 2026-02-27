@@ -12,16 +12,17 @@
 
 </div>
 VISTA DE SISTEMA
-![hdd](https://github.com/tuxormax/LinuxHWMonitor/raw/main/docs/sistema-cpu-gpu.png)
 
-![hdd](https://github.com/tuxormax/LinuxHWMonitor/raw/main/docs/sistema-tarjetamadre.png)
+![sistema1](https://github.com/tuxormax/LinuxHWMonitor/raw/main/docs/sistema-cpu-gpu.png)
 
-![hdd](https://github.com/tuxormax/LinuxHWMonitor/raw/main/docs/sistema-ram-so.png)
+![sistema2](https://github.com/tuxormax/LinuxHWMonitor/raw/main/docs/sistema-tarjetamadre.png)
+
+![sistema3](https://github.com/tuxormax/LinuxHWMonitor/raw/main/docs/sistema-ram-so.png)
 
 VISTA DE DISCOS
 ![hdd](https://github.com/tuxormax/LinuxHWMonitor/raw/main/docs/discos-hdd.png)
 
-![hdd](https://github.com/tuxormax/LinuxHWMonitor/raw/main/docs/discos-ssd.png)
+![ssd](https://github.com/tuxormax/LinuxHWMonitor/raw/main/docs/discos-ssd.png)
 
 ---
 
