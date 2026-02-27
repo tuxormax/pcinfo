@@ -1,0 +1,30 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Flatpak build artifacts
+.flatpak-build/
+.flatpak-repo/
+.flatpak-state/
+*.flatpak
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

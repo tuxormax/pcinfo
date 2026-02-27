@@ -602,11 +602,12 @@ def get_disk_usage(dev_path):
     return partitions_info if partitions_info else None
 
 
-
+def _read_file(path, default=""):
     try:
         return Path(path).read_text().strip()
     except Exception:
         return default
+
 
 def get_cpu_info():
     """Detección completa de CPU desde /proc/cpuinfo y dmidecode"""
@@ -687,7 +688,7 @@ def get_cpu_info():
     elif "svm" in info["flags"]: info["virtualization"] = "AMD-V"
 
     # dmidecode para TDP / codename (requiere sudo)
-    dmi = run_cmd(["sudo", "dmidecode", "-t", "processor"])
+    dmi = run_cmd(["sudo", "-n", "dmidecode", "-t", "processor"])
     if dmi:
         for line in dmi.split("\n"):
             l = line.strip()
@@ -836,7 +837,7 @@ def get_motherboard_info():
     info["bios_type"] = "UEFI" if uefi_check else "Legacy BIOS"
 
     # dmidecode para más detalles (con sudo)
-    dmi_board = run_cmd(["sudo", "dmidecode", "-t", "2"])
+    dmi_board = run_cmd(["sudo", "-n", "dmidecode", "-t", "2"])
     if dmi_board:
         for line in dmi_board.split("\n"):
             l = line.strip()
@@ -858,7 +859,7 @@ def get_motherboard_info():
     info["chipset"] = chipsets[0] if chipsets else ""
 
     # PCIe slots
-    dmi_slots = run_cmd(["sudo", "dmidecode", "-t", "9"])
+    dmi_slots = run_cmd(["sudo", "-n", "dmidecode", "-t", "9"])
     current_slot = {}
     for line in (dmi_slots or "").split("\n"):
         l = line.strip()
@@ -883,7 +884,7 @@ def get_ram_info():
     modules = []
     total_bytes = psutil.virtual_memory().total
 
-    dmi = run_cmd(["sudo", "dmidecode", "-t", "17"])
+    dmi = run_cmd(["sudo", "-n", "dmidecode", "-t", "17"])
     if dmi:
         current = {}
         for line in dmi.split("\n"):
@@ -1409,6 +1410,25 @@ class DiskInfoPanel(QWidget):
         self._part_legend_layout.addStretch()
 
 
+def _collect_os_info():
+    """Recolecta info del sistema operativo — llamado desde el worker thread"""
+    os_name   = _read_file("/etc/os-release").split("\n")
+    pretty    = next((l.split("=")[1].strip('"') for l in os_name if l.startswith("PRETTY_NAME")), "Linux")
+    kernel    = run_cmd(["uname", "-r"])
+    hostname  = run_cmd(["hostname"])
+    arch      = run_cmd(["uname", "-m"])
+    uptime_s  = 0
+    raw = _read_file("/proc/uptime")
+    if raw:
+        try:
+            uptime_s = int(float(raw.split()[0]))
+        except Exception:
+            pass
+    uptime_h  = f"{uptime_s//3600}h {(uptime_s%3600)//60}m"
+    return {"pretty": pretty, "kernel": kernel, "hostname": hostname,
+            "arch": arch, "uptime": uptime_h}
+
+
 # ─────────────────────────────────────────────
 #  SYSTEM INFO PANEL
 # ─────────────────────────────────────────────
@@ -1454,6 +1474,10 @@ class InfoBox(QGroupBox):
 
 
 class SystemInfoPanel(QWidget):
+
+    # ── señal interna ──────────────────────────
+    _scan_done = pyqtSignal(dict)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
@@ -1491,8 +1515,9 @@ class SystemInfoPanel(QWidget):
         self._loading.setStyleSheet("color: #8b949e; font-size: 13px; padding: 20px;")
         self._cl.addWidget(self._loading)
 
-        # Don't auto-scan on startup - user clicks button
-        # But do a lightweight scan
+        self._scan_done.connect(self._populate)
+        self._worker_thread = None
+
         QTimer.singleShot(200, self.refresh)
 
     def _clear(self):
@@ -1502,13 +1527,51 @@ class SystemInfoPanel(QWidget):
                 item.widget().deleteLater()
 
     def refresh(self):
+        """Inicia el escaneo en un hilo separado para no bloquear la UI"""
+        if self._worker_thread and self._worker_thread.is_alive():
+            return  # ya está corriendo
+
         self._scan_btn.setEnabled(False)
         self._scan_btn.setText("  ⏳  Escaneando...  ")
-        QApplication.processEvents()
         self._clear()
 
+        # Spinner animado
+        self._spinner = QLabel("  ⏳  Leyendo CPU, GPU, Tarjeta Madre y RAM...\n"
+                                "  (puede tardar unos segundos con dmidecode)")
+        self._spinner.setStyleSheet("color: #8b949e; font-size: 14px; padding: 24px;")
+        self._cl.addWidget(self._spinner)
+
+        import threading
+        def _worker():
+            try:
+                data = {
+                    "cpu": get_cpu_info(),
+                    "gpus": get_gpu_info(),
+                    "mb":  get_motherboard_info(),
+                    "ram": get_ram_info(),
+                    "os":  _collect_os_info(),
+                }
+            except Exception as e:
+                data = {"error": str(e)}
+            self._scan_done.emit(data)
+
+        self._worker_thread = threading.Thread(target=_worker, daemon=True)
+        self._worker_thread.start()
+
+    def _populate(self, data):
+        """Llamado desde el hilo principal cuando el worker termina"""
+        self._clear()
+
+        if "error" in data:
+            err = QLabel(f"  ⚠  Error durante el escaneo: {data['error']}")
+            err.setStyleSheet("color: #f85149; font-size: 14px; padding: 20px;")
+            self._cl.addWidget(err)
+            self._scan_btn.setEnabled(True)
+            self._scan_btn.setText("  🔍  Escanear hardware  ")
+            return
+
         # ─── CPU ───────────────────────────────────
-        cpu = get_cpu_info()
+        cpu = data["cpu"]
         cpu_rows = [
             ("Modelo",          cpu["model"],         "#e6edf3"),
             ("Vendor",          cpu["vendor"],         "#8b949e"),
@@ -1527,124 +1590,100 @@ class SystemInfoPanel(QWidget):
             ("Virtualización",  cpu["virtualization"] or "—", "#d29922"),
             ("Instrucciones",   " ".join(cpu["flags"][:12]) + ("…" if len(cpu["flags"])>12 else ""), "#8b949e"),
         ]
-        cpu_box = InfoBox(f"🖥  CPU  —  {cpu['model']}", cpu_rows)
-        self._cl.addWidget(cpu_box)
+        self._cl.addWidget(InfoBox(f"🖥  CPU  —  {cpu['model']}", cpu_rows))
 
         # ─── GPU(s) ────────────────────────────────
-        gpus = get_gpu_info()
-        for gi, gpu in enumerate(gpus):
-            vram = gpu.get("vram_str") or "—"
-            api_gl = gpu.get("api_gl") or "—"
-            api_vk = gpu.get("api_vk") or "—"
+        for gi, gpu in enumerate(data["gpus"]):
+            vram   = gpu.get("vram_str") or "—"
             temp_s = f"{gpu['temp']} °C" if gpu.get("temp") is not None else "—"
             gpu_rows = [
-                ("Nombre",       gpu["name"],              "#e6edf3"),
-                ("Vendor",       gpu["vendor"],             "#8b949e"),
-                ("Slot PCI",     gpu["slot"],               "#8b949e"),
-                ("Driver",       gpu["driver"] or "—",      "#58a6ff"),
-                ("VRAM",         vram,                      "#3fb950"),
-                ("Temperatura",  temp_s,                    temp_color(gpu.get("temp")) if gpu.get("temp") else "#8b949e"),
-                ("OpenGL",       api_gl,                    "#8b949e"),
-                ("Vulkan",       api_vk,                    "#8b949e"),
-                ("Resolución",   gpu.get("resolution") or "—", "#8b949e"),
+                ("Nombre",       gpu["name"],                "#e6edf3"),
+                ("Vendor",       gpu["vendor"],               "#8b949e"),
+                ("Slot PCI",     gpu["slot"],                 "#8b949e"),
+                ("Driver",       gpu["driver"] or "—",        "#58a6ff"),
+                ("VRAM",         vram,                        "#3fb950"),
+                ("Temperatura",  temp_s,                      temp_color(gpu.get("temp")) if gpu.get("temp") else "#8b949e"),
+                ("OpenGL",       gpu.get("api_gl") or "—",    "#8b949e"),
+                ("Vulkan",       gpu.get("api_vk") or "—",    "#8b949e"),
+                ("Resolución",   gpu.get("resolution") or "—","#8b949e"),
             ]
-            label = f"GPU {gi}" if len(gpus) > 1 else "GPU"
-            gpu_box = InfoBox(f"🎮  {label}  —  {gpu['name']}", gpu_rows)
-            self._cl.addWidget(gpu_box)
+            label = f"GPU {gi}" if len(data["gpus"]) > 1 else "GPU"
+            self._cl.addWidget(InfoBox(f"🎮  {label}  —  {gpu['name']}", gpu_rows))
 
         # ─── Tarjeta Madre ─────────────────────────
-        mb = get_motherboard_info()
+        mb = data["mb"]
         slots_str = (f"{mb['slots_used']} / {len(mb['slots_pcie'])} en uso"
                      if mb["slots_pcie"] else "—")
         mb_rows = [
-            ("Fabricante",       mb["manufacturer"],    "#e6edf3"),
-            ("Modelo",           mb["model"],           "#e6edf3"),
-            ("Versión",          mb["version"],         "#8b949e"),
-            ("Chipset",          mb["chipset"] or "—",  "#58a6ff"),
-            ("BIOS Vendor",      mb["bios_vendor"],     "#8b949e"),
-            ("BIOS Versión",     mb["bios_version"],    "#58a6ff"),
-            ("BIOS Fecha",       mb["bios_date"],       "#8b949e"),
-            ("BIOS Tipo",        mb["bios_type"],       "#3fb950"),
-            ("Puertos SATA",     str(mb["sata_ports"]) if mb["sata_ports"] else "—", "#8b949e"),
-            ("Slots PCIe",       slots_str,             "#8b949e"),
+            ("Fabricante",   mb["manufacturer"],  "#e6edf3"),
+            ("Modelo",       mb["model"],         "#e6edf3"),
+            ("Versión",      mb["version"],       "#8b949e"),
+            ("Chipset",      mb["chipset"] or "—","#58a6ff"),
+            ("BIOS Vendor",  mb["bios_vendor"],   "#8b949e"),
+            ("BIOS Versión", mb["bios_version"],  "#58a6ff"),
+            ("BIOS Fecha",   mb["bios_date"],     "#8b949e"),
+            ("BIOS Tipo",    mb["bios_type"],     "#3fb950"),
+            ("Puertos SATA", str(mb["sata_ports"]) if mb["sata_ports"] else "—", "#8b949e"),
+            ("Slots PCIe",   slots_str,           "#8b949e"),
         ]
-        mb_box = InfoBox(
-            f"🔧  Tarjeta Madre  —  {mb['manufacturer']} {mb['model']}",
-            mb_rows
-        )
-        self._cl.addWidget(mb_box)
+        self._cl.addWidget(InfoBox(
+            f"🔧  Tarjeta Madre  —  {mb['manufacturer']} {mb['model']}", mb_rows))
 
         # ─── RAM ───────────────────────────────────
-        ram = get_ram_info()
+        ram = data["ram"]
         total_gb = ram["total_gb"]
         ram_header_rows = [
-            ("Total instalada",   f"{total_gb:.1f} GB",            "#3fb950"),
-            ("Slots usados",      f"{ram['populated_slots']} / {ram['total_slots']}", "#58a6ff"),
-            ("Tipo",              ram["type"],                      "#58a6ff"),
-            ("Velocidad",         ram["speed_mhz"],                 "#58a6ff"),
-            ("Modo de canal",     ram["channel"],                   "#d29922"),
+            ("Total instalada", f"{total_gb:.1f} GB",                         "#3fb950"),
+            ("Slots usados",    f"{ram['populated_slots']} / {ram['total_slots']}", "#58a6ff"),
+            ("Tipo",            ram["type"],                                   "#58a6ff"),
+            ("Velocidad",       ram["speed_mhz"],                              "#58a6ff"),
+            ("Modo de canal",   ram["channel"],                                "#d29922"),
         ]
-        ram_box = InfoBox(f"💾  Memoria RAM  —  {total_gb:.1f} GB  {ram['type']}", ram_header_rows)
-        self._cl.addWidget(ram_box)
+        self._cl.addWidget(InfoBox(
+            f"💾  Memoria RAM  —  {total_gb:.1f} GB  {ram['type']}", ram_header_rows))
 
-        # Individual RAM modules
         for i, mod in enumerate(ram["modules"]):
             slot_name = mod.get("Locator","") or mod.get("Bank Locator","") or f"DIMM {i}"
-            bank = mod.get("Bank Locator","")
-            size  = mod.get("Size","—")
-            mtype = mod.get("Type","—")
-            speed = mod.get("Speed","—")
-            mfr   = mod.get("Manufacturer","—").strip()
-            part  = mod.get("Part Number","—").strip()
-            form  = mod.get("Form Factor","—")
-            width = mod.get("Data Width","—")
+            size    = mod.get("Size","—");    mtype   = mod.get("Type","—")
+            speed   = mod.get("Speed","—");   mfr     = mod.get("Manufacturer","—").strip()
+            part    = mod.get("Part Number","—").strip()
+            form    = mod.get("Form Factor","—")
+            width   = mod.get("Data Width","—")
             voltage = mod.get("Configured Voltage","—")
+            bank    = mod.get("Bank Locator","")
             mod_rows = [
-                ("Tamaño",        size,        "#3fb950"),
-                ("Tipo",          mtype,       "#58a6ff"),
-                ("Velocidad",     speed,       "#58a6ff"),
-                ("Fabricante",    mfr,         "#8b949e"),
-                ("Part Number",   part,        "#8b949e"),
-                ("Form Factor",   form,        "#8b949e"),
-                ("Ancho de datos",width,       "#8b949e"),
-                ("Voltaje",       voltage,     "#d29922"),
-                ("Banco",         bank,        "#8b949e"),
+                ("Tamaño",         size,    "#3fb950"),
+                ("Tipo",           mtype,   "#58a6ff"),
+                ("Velocidad",      speed,   "#58a6ff"),
+                ("Fabricante",     mfr,     "#8b949e"),
+                ("Part Number",    part,    "#8b949e"),
+                ("Form Factor",    form,    "#8b949e"),
+                ("Ancho de datos", width,   "#8b949e"),
+                ("Voltaje",        voltage, "#d29922"),
+                ("Banco",          bank,    "#8b949e"),
             ]
-            mod_box = InfoBox(
-                f"  ┗  Slot: {slot_name}  ({size} {mtype} {speed})",
-                mod_rows
-            )
+            mod_box = InfoBox(f"  ┗  Slot: {slot_name}  ({size} {mtype} {speed})", mod_rows)
             mod_box.setStyleSheet("""
                 QGroupBox {
-                    border: 1px solid #21262d;
-                    margin-top: 10px;
-                    color: #8b949e;
-                    font-size: 11px;
+                    border: 1px solid #21262d; margin-top: 10px;
+                    color: #8b949e; font-size: 11px;
                 }
                 QGroupBox::title { color: #8b949e; }
             """)
             self._cl.addWidget(mod_box)
 
         # ─── Sistema Operativo ─────────────────────
-        os_name     = _read_file("/etc/os-release").split("\n")
-        os_pretty   = next((l.split("=")[1].strip('"') for l in os_name if l.startswith("PRETTY_NAME")), "Linux")
-        kernel      = run_cmd(["uname", "-r"])
-        hostname    = run_cmd(["hostname"])
-        uptime_s    = int(_read_file("/proc/uptime").split()[0].split(".")[0]) if _read_file("/proc/uptime") else 0
-        uptime_h    = f"{uptime_s//3600}h {(uptime_s%3600)//60}m"
-
+        os_data = data["os"]
         os_rows = [
-            ("Sistema Operativo", os_pretty,              "#e6edf3"),
-            ("Kernel",            kernel,                  "#58a6ff"),
-            ("Hostname",          hostname,                "#8b949e"),
-            ("Arquitectura",      run_cmd(["uname","-m"]),  "#8b949e"),
-            ("Uptime",            uptime_h,                "#3fb950"),
+            ("Sistema Operativo", os_data["pretty"],   "#e6edf3"),
+            ("Kernel",            os_data["kernel"],   "#58a6ff"),
+            ("Hostname",          os_data["hostname"], "#8b949e"),
+            ("Arquitectura",      os_data["arch"],     "#8b949e"),
+            ("Uptime",            os_data["uptime"],   "#3fb950"),
         ]
-        os_box = InfoBox("🐧  Sistema Operativo", os_rows)
-        self._cl.addWidget(os_box)
+        self._cl.addWidget(InfoBox("🐧  Sistema Operativo", os_rows))
 
         self._cl.addStretch()
-
         self._scan_btn.setEnabled(True)
         self._scan_btn.setText("  🔍  Escanear hardware  ")
 
