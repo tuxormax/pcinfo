@@ -11,10 +11,17 @@
 [![Autor](https://img.shields.io/badge/autor-tuxor-orange.svg)](mailto:tuxor.max@gmail.com)
 
 </div>
+VISTA DE SISTEMA
+![hdd](https://github.com/tuxormax/LinuxHWMonitor/raw/main/docs/sistema-cpu-gpu.png)
 
-![ssd](docs/screenshots/ssd.png)
+![hdd](https://github.com/tuxormax/LinuxHWMonitor/raw/main/docs/sistema-tarjetamadre.png)
 
-![hdd](docs/screenshots/hddd.png)
+![hdd](https://github.com/tuxormax/LinuxHWMonitor/raw/main/docs/sistema-ram-so.png)
+
+VISTA DE DISCOS
+![hdd](https://github.com/tuxormax/LinuxHWMonitor/raw/main/docs/discos-hdd.png)
+
+![hdd](https://github.com/tuxormax/LinuxHWMonitor/raw/main/docs/discos-ssd.png)
 
 ---
 
