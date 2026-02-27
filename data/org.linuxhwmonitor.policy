@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+
+  <vendor>tuxor — LinuxHWMonitor</vendor>
+  <vendor_url>https://github.com/tuxor/linuxhwmonitor</vendor_url>
+
+  <action id="org.linuxhwmonitor.run">
+
+    <description xml:lang="es">Ejecutar LinuxHWMonitor con acceso completo al hardware</description>
+    <description xml:lang="en">Run LinuxHWMonitor with full hardware access</description>
+
+    <message xml:lang="es">LinuxHWMonitor necesita contraseña de administrador para acceder a:
+
+  • Datos S.M.A.R.T. de discos (temperatura, vida útil, salud)
+  • Información completa de tarjeta madre y módulos de RAM
+  • Sensores de temperatura del sistema (CPU, GPU, chipset)
+
+  Si cancelas, la aplicación abrirá con información básica.</message>
+
+    <message xml:lang="en">LinuxHWMonitor needs administrator access to read
+S.M.A.R.T. disk data, motherboard info, RAM modules
+and system temperature sensors.
+You can cancel to open with basic information only.</message>
+
+    <icon_name>drive-harddisk</icon_name>
+
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+
+    <annotate key="org.freedesktop.policykit.exec.path">WRAPPER_PATH_PLACEHOLDER</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+
+  </action>
+
+</policyconfig>

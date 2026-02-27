@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=LinuxHWMonitor
+GenericName=Hardware Monitor
+Comment=S.M.A.R.T. disk health and hardware information tool for Linux
+Exec=linux_hwmonitor
+Icon=org.linuxhwmonitor.App
+Terminal=false
+Type=Application
+Categories=System;Monitor;HardwareSettings;
+Keywords=hardware;monitor;smart;disk;cpu;gpu;ram;temperature;hwinfo;
+StartupWMClass=LinuxHWMonitor
+StartupNotify=true

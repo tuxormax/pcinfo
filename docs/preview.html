@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LinuxHWMonitor — Preview</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#070a0f;font-family:'Consolas','Liberation Mono',monospace;color:#e6edf3;min-height:100vh;padding:28px 20px;display:flex;flex-direction:column;align-items:center;gap:28px}
+h2.title{color:#58a6ff;font-size:12px;letter-spacing:3px;text-transform:uppercase;text-align:center}
+.preview-tabs{display:flex;gap:8px;justify-content:center}
+.ptab{background:#21262d;border:1px solid #30363d;border-radius:6px;color:#8b949e;padding:7px 18px;font-family:monospace;font-size:12px;cursor:pointer;transition:all .15s}
+.ptab.active,.ptab:hover{background:#1a2f47;border-color:#58a6ff;color:#58a6ff}
+.win{width:1060px;max-width:100%;background:#0d1117;border:1px solid #30363d;border-radius:10px;overflow:hidden;box-shadow:0 28px 80px rgba(0,0,0,.75)}
+.titlebar{background:#161b22;border-bottom:1px solid #30363d;height:30px;display:flex;align-items:center;padding:0 12px;gap:7px}
+.wbtn{width:12px;height:12px;border-radius:50%}
+.wclose{background:#f85149}.wmin{background:#d29922}.wmax{background:#3fb950}
+.wtitle{flex:1;text-align:center;font-size:11px;color:#8b949e}
+.tabbar{display:flex;background:#0d1117;border-bottom:1px solid #30363d}
+.tab{padding:9px 22px;font-size:12px;font-weight:bold;color:#8b949e;border:1px solid #30363d;border-bottom:none;background:#21262d;cursor:pointer;user-select:none;transition:all .1s}
+.tab.active{background:#161b22;color:#58a6ff;border-bottom:2px solid #58a6ff}
+.tab:hover:not(.active){background:#2d333b;color:#e6edf3}
+
+/* ── SMART ── */
+.smart-panel{background:#161b22}
+.smart-panel.hidden{display:none}
+.disk-selector{background:#161b22;border-bottom:2px solid #30363d;height:76px;display:flex;align-items:center;padding:0 12px;gap:8px;overflow-x:auto}
+.disk-btn{background:#0d1117;border:2px solid;border-radius:8px;padding:9px 16px;font-family:monospace;font-size:11px;font-weight:bold;cursor:pointer;line-height:1.5;text-align:center;transition:all .15s;white-space:nowrap;flex-shrink:0}
+.disk-btn.good{color:#3fb950;border-color:#3fb95055}
+.disk-btn.caution{color:#d29922;border-color:#d2992255}
+.disk-btn.active{background:#101e2e!important;border-color:#58a6ff!important;color:#58a6ff!important}
+.disk-btn:hover:not(.active){background:#161b22;border-color:currentColor}
+.scan-btn{margin-left:auto;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:8px 16px;font-family:monospace;font-size:12px;cursor:pointer;white-space:nowrap;height:52px;flex-shrink:0}
+.scan-btn:hover{border-color:#58a6ff;color:#58a6ff}
+.info-strip{background:#161b22;border-bottom:1px solid #30363d;height:118px;display:flex;align-items:center;padding:0 14px;gap:14px}
+.health-badge{border-radius:8px;padding:10px 16px;font-weight:bold;font-size:14px;text-align:center;min-width:96px;line-height:1.5}
+.hgood{background:#1a4327;color:#3fb950;border:2px solid #3fb950}
+.hcaution{background:#3d2e00;color:#d29922;border:2px solid #d29922}
+.vsep{width:1px;background:#30363d;align-self:stretch;margin:0 2px}
+.info-grid{display:grid;grid-template-columns:auto auto auto auto;gap:3px 14px;font-size:11px;align-content:center}
+.il{color:#8b949e;font-size:10px;white-space:nowrap}
+.iv{color:#e6edf3;font-weight:bold;white-space:nowrap}
+.right-stats{display:grid;grid-template-columns:auto auto;gap:4px 16px;font-size:11px;text-align:right;align-content:center}
+.right-stats .il{text-align:left;white-space:nowrap}
+.right-stats .iv{color:#e6edf3;font-weight:bold;text-align:right}
+.temp-block{display:flex;flex-direction:column;align-items:center;gap:3px}
+.temp-label-sm{font-size:10px;color:#8b949e}
+.temp-box{border:2px solid #3fb950;border-radius:8px;padding:7px 14px;background:#0d1117;font-size:16px;font-weight:bold;color:#3fb950;min-width:76px;text-align:center}
+.temp-box.warn{border-color:#d29922;color:#d29922}
+.model-bar{background:#161b22;border-bottom:1px solid #30363d;padding:9px 16px;font-size:15px;font-weight:bold;color:#58a6ff}
+.tscroll{max-height:360px;overflow-y:auto}
+.smart-table{width:100%;border-collapse:collapse;font-size:12px;background:#0d1117}
+.smart-table th{background:#1c2128;color:#8b949e;padding:7px 10px;text-align:left;font-size:10px;letter-spacing:1px;text-transform:uppercase;border-bottom:2px solid #30363d}
+.smart-table td{padding:4px 10px;border-bottom:1px solid #131920}
+.smart-table tr:nth-child(even) td{background:#111820}
+.smart-table tr:hover td{background:#1a2233}
+.cid{color:#8b949e;width:50px}.cname{color:#e6edf3}.cgood{color:#3fb950;font-weight:bold}.ccaution{color:#d29922;font-weight:bold}
+.cval{color:#e6edf3;text-align:center;width:60px}.cdim{color:#8b949e;text-align:center;width:60px}.craw{color:#3fb950;text-align:right;padding-right:16px}
+
+/* ── HW ── */
+.hw-panel{display:none;background:#161b22}
+.hw-panel.active{display:block}
+.hw-scroll{max-height:640px;overflow-y:auto;padding:14px}
+.hw-inner{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.hw-box{background:#0d1117;border:1px solid #30363d;border-radius:6px;overflow:hidden}
+.hw-box.full{grid-column:1/-1}
+.hw-box-title{background:#161b22;padding:8px 14px;font-size:12px;font-weight:bold;color:#58a6ff;border-bottom:1px solid #30363d}
+.hw-rows{padding:2px 0}
+.hw-row{display:flex;padding:4px 14px;font-size:11px;border-bottom:1px solid #0a0e14}
+.hw-row:last-child{border-bottom:none}
+.hl{color:#8b949e;width:180px;flex-shrink:0;font-size:10px}
+.hv{color:#e6edf3;font-weight:bold;flex:1;font-size:11px}
+.hv.blue{color:#58a6ff}.hv.green{color:#3fb950}.hv.yell{color:#d29922}.hv.dim{color:#8b949e;font-weight:normal}
+.statusbar{background:#161b22;border-top:1px solid #30363d;padding:4px 14px;display:flex;justify-content:space-between;font-size:11px;color:#8b949e}
+</style>
+</head>
+<body>
+<h2 class="title">LinuxHWMonitor — Vista previa interactiva</h2>
+<div class="preview-tabs">
+  <button class="ptab active" onclick="showPreview('smart')">💾 Disco S.M.A.R.T.</button>
+  <button class="ptab"        onclick="showPreview('hw')">🖥 Sistema &amp; Hardware</button>
+</div>
+
+<div class="win">
+  <div class="titlebar">
+    <div class="wbtn wclose"></div><div class="wbtn wmin"></div><div class="wbtn wmax"></div>
+    <div class="wtitle">LinuxHWMonitor  v1.0</div>
+  </div>
+  <div class="tabbar">
+    <div class="tab" id="tab-hw"    onclick="switchTab('hw')">  🖥  Sistema &amp; Hardware  </div>
+    <div class="tab active" id="tab-smart" onclick="switchTab('smart')">  💾  Disco (S.M.A.R.T.)  </div>
+  </div>
+
+  <!-- S.M.A.R.T. -->
+  <div id="panel-smart" class="smart-panel">
+    <div class="disk-selector">
+      <div class="disk-btn good active" id="btn-sda"   onclick="selectDisk('sda',this)">💾  sda<br>Good  35°C</div>
+      <div class="disk-btn good"        id="btn-sdb"   onclick="selectDisk('sdb',this)">💾  sdb<br>Good  38°C</div>
+      <div class="disk-btn caution"     id="btn-nvme0" onclick="selectDisk('nvme0',this)">⚡  nvme0n1<br>Caution  50°C</div>
+      <div class="disk-btn good"        id="btn-sdc"   onclick="selectDisk('sdc',this)">💾  sdc<br>Good  32°C</div>
+      <div class="disk-btn good"        id="btn-sdd"   onclick="selectDisk('sdd',this)">💾  sdd (USB)<br>Good  --°C</div>
+      <button class="scan-btn">⟳  Escanear discos</button>
+    </div>
+    <div class="info-strip">
+      <div class="health-badge hgood" id="hbadge">Good<br><small>100%</small></div>
+      <div class="vsep"></div>
+      <div class="info-grid">
+        <span class="il">Firmware</span>      <span class="iv" id="fw">RVT04B6Q</span>
+        <span class="il">Interface</span>     <span class="iv" id="iface">Serial ATA</span>
+        <span class="il">Transfer Mode</span> <span class="iv" id="tmode">SATA/600 | SATA/600</span>
+        <span class="il">Standard</span>      <span class="iv" id="std">ACS-4 | ACS-4 Revision 5</span>
+        <span class="il">Drive</span>         <span class="iv" id="drv">/dev/sda</span>
+        <span class="il">Capacidad</span>     <span class="iv" id="cap">500.1 GB</span>
+        <span class="il">Features</span>      <span class="iv" id="feat">S.M.A.R.T., NCQ, TRIM, DevSleep</span>
+      </div>
+      <div style="flex:1"></div>
+      <div class="vsep"></div>
+      <div class="right-stats">
+        <span class="il">Total Host Writes</span><span class="iv" id="tw">846,987 GB</span>
+        <span class="il">Rotation Rate</span>    <span class="iv" id="rr">---- (SSD)</span>
+        <span class="il">Power On Count</span>   <span class="iv" id="poc">269 count</span>
+        <span class="il">Power On Hours</span>   <span class="iv" id="poh">2,544 hours</span>
+      </div>
+      <div class="vsep"></div>
+      <div class="temp-block">
+        <span class="temp-label-sm">Temperature</span>
+        <div class="temp-box" id="tbox">35°C</div>
+      </div>
+    </div>
+    <div class="model-bar" id="mbar">💾  Samsung SSD 860 EVO 500GB  —  500.1 GB</div>
+    <div class="tscroll">
+      <table class="smart-table">
+        <thead><tr>
+          <th>ID</th><th>Attribute Name</th><th>Status</th>
+          <th style="text-align:center">Value</th><th style="text-align:center">Worst</th>
+          <th style="text-align:center">Threshold</th><th style="text-align:right;padding-right:16px">Raw Value</th>
+        </tr></thead>
+        <tbody id="smart-tbody"></tbody>
+      </table>
+    </div>
+    <div class="statusbar"><span>✓  5 disco(s) detectado(s)</span><span>🕐  2026-02-27  15:42:09</span></div>
+  </div>
+
+  <!-- SYSTEM & HARDWARE -->
+  <div id="panel-hw" class="hw-panel">
+    <div class="hw-scroll">
+      <div class="hw-inner">
+        <div class="hw-box full">
+          <div class="hw-box-title">🖥  CPU  —  Intel Core i7-6700K @ 4.00GHz</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr">
+            <div class="hw-rows">
+              <div class="hw-row"><span class="hl">Modelo</span><span class="hv">Intel Core i7-6700K CPU @ 4.00GHz</span></div>
+              <div class="hw-row"><span class="hl">Vendor</span><span class="hv dim">GenuineIntel</span></div>
+              <div class="hw-row"><span class="hl">Familia / Stepping</span><span class="hv dim">6 / 3</span></div>
+              <div class="hw-row"><span class="hl">Núcleos físicos</span><span class="hv green">4</span></div>
+              <div class="hw-row"><span class="hl">Hilos (threads)</span><span class="hv green">8</span></div>
+              <div class="hw-row"><span class="hl">Microcode</span><span class="hv dim">0xd6</span></div>
+            </div>
+            <div class="hw-rows">
+              <div class="hw-row"><span class="hl">Frecuencia base</span><span class="hv blue">4000 MHz</span></div>
+              <div class="hw-row"><span class="hl">Frecuencia máx.</span><span class="hv blue">4200 MHz</span></div>
+              <div class="hw-row"><span class="hl">Caché L1d / L1i</span><span class="hv dim">32K / 32K</span></div>
+              <div class="hw-row"><span class="hl">Caché L2 / L3</span><span class="hv dim">256K / 8192K</span></div>
+              <div class="hw-row"><span class="hl">Virtualización</span><span class="hv yell">VT-x (Intel)</span></div>
+              <div class="hw-row"><span class="hl">Instrucciones</span><span class="hv dim" style="font-size:10px">SSE4.1 SSE4.2 AVX AVX2 AES-NI …</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="hw-box">
+          <div class="hw-box-title">🎮  GPU  —  Intel HD Graphics 530</div>
+          <div class="hw-rows">
+            <div class="hw-row"><span class="hl">Nombre</span><span class="hv">Intel HD Graphics 530 (Skylake GT2)</span></div>
+            <div class="hw-row"><span class="hl">Driver</span><span class="hv blue">i915</span></div>
+            <div class="hw-row"><span class="hl">VRAM</span><span class="hv green">1 GB (shared)</span></div>
+            <div class="hw-row"><span class="hl">Slot PCI</span><span class="hv dim">00:02.0</span></div>
+            <div class="hw-row"><span class="hl">OpenGL</span><span class="hv dim">4.6 Mesa 23.1.4</span></div>
+            <div class="hw-row"><span class="hl">Vulkan</span><span class="hv dim">1.3.260</span></div>
+          </div>
+        </div>
+        <div class="hw-box">
+          <div class="hw-box-title">🔧  Tarjeta Madre  —  MSI Z170A GAMING PRO CARBON</div>
+          <div class="hw-rows">
+            <div class="hw-row"><span class="hl">Fabricante</span><span class="hv">Micro-Star International</span></div>
+            <div class="hw-row"><span class="hl">Modelo</span><span class="hv">Z170A GAMING PRO CARBON (MS-7A12)</span></div>
+            <div class="hw-row"><span class="hl">Chipset</span><span class="hv blue">Intel Z170 (Skylake PCH-H)</span></div>
+            <div class="hw-row"><span class="hl">BIOS Versión</span><span class="hv blue">1.40  (07/24/2016)</span></div>
+            <div class="hw-row"><span class="hl">BIOS Tipo</span><span class="hv green">UEFI</span></div>
+            <div class="hw-row"><span class="hl">Puertos SATA</span><span class="hv dim">6 (SATA 6 Gb/s)</span></div>
+            <div class="hw-row"><span class="hl">Slots PCIe</span><span class="hv dim">2 / 4 en uso</span></div>
+          </div>
+        </div>
+        <div class="hw-box full">
+          <div class="hw-box-title">💾  Memoria RAM  —  32 GB DDR4  Dual-Channel</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr">
+            <div class="hw-rows">
+              <div class="hw-row"><span class="hl">Total instalada</span><span class="hv green">32.0 GB</span></div>
+              <div class="hw-row"><span class="hl">Slots usados</span><span class="hv blue">4 / 4</span></div>
+              <div class="hw-row"><span class="hl">Tipo / Velocidad</span><span class="hv blue">DDR4  2400 MT/s</span></div>
+              <div class="hw-row"><span class="hl">Modo de canal</span><span class="hv yell">Dual-Channel</span></div>
+            </div>
+            <div class="hw-rows">
+              <div class="hw-row"><span class="hl" style="font-style:italic">┗ DIMM_A1 (8 GB)</span><span class="hv dim">G.Skill F4-2400C15-8GRR  1.20V</span></div>
+              <div class="hw-row"><span class="hl" style="font-style:italic">┗ DIMM_A2 (8 GB)</span><span class="hv dim">G.Skill F4-2400C15-8GRR  1.20V</span></div>
+              <div class="hw-row"><span class="hl" style="font-style:italic">┗ DIMM_B1 (8 GB)</span><span class="hv dim">G.Skill F4-2400C15-8GRR  1.20V</span></div>
+              <div class="hw-row"><span class="hl" style="font-style:italic">┗ DIMM_B2 (8 GB)</span><span class="hv dim">G.Skill F4-2400C15-8GRR  1.20V</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="hw-box full">
+          <div class="hw-box-title">🐧  Sistema Operativo</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr">
+            <div class="hw-rows">
+              <div class="hw-row"><span class="hl">Sistema</span><span class="hv">Ubuntu 24.04.1 LTS (Noble Numbat)</span></div>
+              <div class="hw-row"><span class="hl">Kernel</span><span class="hv blue">6.8.0-51-generic</span></div>
+            </div>
+            <div class="hw-rows">
+              <div class="hw-row"><span class="hl">Arquitectura</span><span class="hv dim">x86_64</span></div>
+              <div class="hw-row"><span class="hl">Uptime</span><span class="hv green">3h 27m</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="statusbar"><span>✓  Hardware detectado correctamente</span><span>🕐  2026-02-27  15:42:09</span></div>
+  </div>
+</div>
+
+<script>
+const disks={
+  sda:{model:"💾  Samsung SSD 860 EVO 500GB  —  500.1 GB",hcls:"hgood",htxt:"Good<br><small>100%</small>",fw:"RVT04B6Q",iface:"Serial ATA",tmode:"SATA/600 | SATA/600",std:"ACS-4 | ACS-4 Revision 5",drv:"/dev/sda",cap:"500.1 GB",feat:"S.M.A.R.T., NCQ, TRIM, DevSleep",tw:"846,987 GB",rr:"---- (SSD)",poc:"269 count",poh:"2,544 hours",temp:"35°C",twrn:"",attrs:[["005","Reallocated Sectors Count","cgood","200","200","140","0"],["009","Power-On Hours","cgood","092","092","000","2,544"],["012","Power Cycle Count","cgood","100","100","000","269"],["170","Available Reserved Space","cgood","100","100","010","0"],["174","Unexpected Power Loss","cgood","100","100","000","15"],["177","Wear Leveling Count","cgood","098","098","000","57"],["187","Reported Uncorrectable","cgood","100","100","000","0"],["190","Airflow Temperature","cgood","068","063","045","32"],["195","Hardware ECC Recovered","cgood","200","200","000","0"],["199","UDMA CRC Error Count","cgood","100","100","000","0"],["241","Total LBAs Written","cgood","099","099","000","846,987,123"]]},
+  sdb:{model:"💾  WDC WD60EZRX-00MVLB1  —  6001.2 GB",hcls:"hgood",htxt:"Good<br><small>100%</small>",fw:"80.00A80",iface:"Serial ATA",tmode:"SATA/600 | SATA/600",std:"ACS-3",drv:"/dev/sdb",cap:"6001.2 GB",feat:"S.M.A.R.T., NCQ",tw:"24,881 GB",rr:"5400 RPM",poc:"312 count",poh:"8,732 hours",temp:"38°C",twrn:"",attrs:[["001","Raw Read Error Rate","cgood","200","200","051","0"],["003","Spin Up Time","cgood","253","253","021","450"],["004","Start/Stop Count","cgood","099","099","000","1,024"],["005","Reallocated Sectors Count","cgood","200","200","140","0"],["009","Power-On Hours","cgood","076","076","000","8,732"],["190","Temperature Difference","cgood","055","042","045","38"],["193","Load Cycle Count","cgood","196","196","000","12,842"],["194","Temperature Celsius","cgood","109","096","000","38"],["197","Current Pending Sector","cgood","200","200","000","0"],["199","UDMA CRC Error Count","cgood","200","200","000","0"]]},
+  nvme0:{model:"⚡  CT480BX200SSD1 NVMe  —  480.1 GB",hcls:"hcaution",htxt:"Caution<br><small>73%</small>",fw:"MU02",iface:"NVM Express",tmode:"PCIe 3.0 x4",std:"NVMe 1.3",drv:"/dev/nvme0n1",cap:"480.1 GB",feat:"S.M.A.R.T., NVMe, TRIM",tw:"42,891 GB",rr:"---- (NVMe)",poc:"891 count",poh:"4,107 hours",temp:"50°C",twrn:"warn",attrs:[["---","Critical Warning","cgood","—","—","—","0"],["---","Temperature","cgood","—","—","—","50 °C"],["---","Available Spare","cgood","—","—","—","100 %"],["---","Percentage Used","ccaution","—","—","—","27 %"],["---","Data Units Written","cgood","—","—","—","8,385,921"],["---","Power Cycles","cgood","—","—","—","891"],["---","Power On Hours","cgood","—","—","—","4,107"],["---","Unsafe Shutdowns","cgood","—","—","—","23"],["---","Media Errors","cgood","—","—","—","0"]]},
+  sdc:{model:"💾  ST4000DM000-1F2168  —  4000.8 GB",hcls:"hgood",htxt:"Good<br><small>100%</small>",fw:"CC52",iface:"Serial ATA",tmode:"SATA/600 | SATA/600",std:"ACS-3",drv:"/dev/sdc",cap:"4000.8 GB",feat:"S.M.A.R.T., NCQ",tw:"12,441 GB",rr:"7200 RPM",poc:"188 count",poh:"5,291 hours",temp:"32°C",twrn:"",attrs:[["001","Raw Read Error Rate","cgood","119","099","006","182,236,928"],["004","Start/Stop Count","cgood","100","100","020","188"],["005","Reallocated Sectors","cgood","100","100","010","0"],["009","Power-On Hours","cgood","093","093","000","5,291"],["190","Airflow Temperature","cgood","068","059","045","32"],["197","Current Pending Sector","cgood","100","100","000","0"],["198","Uncorrectable Sector","cgood","100","100","000","0"]]},
+  sdd:{model:"💾  SanDisk Ultra 64GB (USB)  —  63.9 GB",hcls:"hgood",htxt:"Good<br><small>100%</small>",fw:"1.00",iface:"USB / UAS",tmode:"USB 3.2",std:"ACS-2",drv:"/dev/sdd",cap:"63.9 GB",feat:"S.M.A.R.T.",tw:"1,204 GB",rr:"---- (SSD)",poc:"88 count",poh:"312 hours",temp:"--°C",twrn:"",attrs:[["005","Reallocated Sectors Count","cgood","100","100","000","0"],["009","Power-On Hours","cgood","100","100","000","312"],["012","Power Cycle Count","cgood","100","100","000","88"],["241","Total LBAs Written","cgood","100","100","000","1,204,000"]]}
+};
+
+function selectDisk(id,el){
+  document.querySelectorAll('.disk-btn').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  const d=disks[id]; if(!d)return;
+  document.getElementById('mbar').textContent=d.model;
+  document.getElementById('hbadge').className='health-badge '+d.hcls;
+  document.getElementById('hbadge').innerHTML=d.htxt;
+  ['fw','iface','tmode','std','drv','cap','feat','tw','rr','poc','poh'].forEach(k=>document.getElementById(k).textContent=d[k]);
+  const tb=document.getElementById('tbox');
+  tb.textContent=d.temp; tb.className='temp-box'+(d.twrn?' '+d.twrn:'');
+  const tbody=document.getElementById('smart-tbody');
+  tbody.innerHTML='';
+  d.attrs.forEach(a=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td class="cid">${a[0]}</td><td class="cname">${a[1]}</td><td class="${a[2]}">${a[2]==='cgood'?'Good':'Caution'}</td><td class="cval">${a[3]}</td><td class="cdim">${a[4]}</td><td class="cdim">${a[5]}</td><td class="craw">${a[6]}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+function switchTab(t){
+  document.getElementById('panel-smart').className='smart-panel'+(t==='smart'?'':' hidden');
+  document.getElementById('panel-hw').className='hw-panel'+(t==='hw'?' active':'');
+  document.getElementById('tab-smart').className='tab'+(t==='smart'?' active':'');
+  document.getElementById('tab-hw').className='tab'+(t==='hw'?' active':'');
+}
+function showPreview(t){switchTab(t);document.querySelectorAll('.ptab').forEach(b=>b.classList.remove('active'));event.target.classList.add('active')}
+selectDisk('sda',document.getElementById('btn-sda'));
+</script>
+</body>
+</html>

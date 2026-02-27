@@ -1,0 +1,65 @@
+{
+  "app-id": "org.linuxhwmonitor.App",
+  "runtime": "org.freedesktop.Platform",
+  "runtime-version": "23.08",
+  "sdk": "org.freedesktop.Sdk",
+  "command": "linux_hwmonitor",
+  "finish-args": [
+    "--share=ipc",
+    "--socket=x11",
+    "--socket=wayland",
+    "--device=all",
+    "--filesystem=/sys:ro",
+    "--filesystem=/proc:ro",
+    "--filesystem=/dev:ro",
+    "--system-talk-name=org.freedesktop.UDisks2"
+  ],
+  "modules": [
+    {
+      "name": "python3-psutil",
+      "buildsystem": "simple",
+      "build-commands": ["pip3 install --prefix=/app --no-deps ."],
+      "sources": [{
+        "type": "archive",
+        "url": "https://files.pythonhosted.org/packages/source/p/psutil/psutil-5.9.8.tar.gz",
+        "sha256": "6be126e3225486dff286a8fb9a06246a5253f4c7c53b475ea5f5ac934e64194c"
+      }]
+    },
+    {
+      "name": "python3-pyqt5-sip",
+      "buildsystem": "simple",
+      "build-commands": ["pip3 install --prefix=/app --no-deps ."],
+      "sources": [{
+        "type": "archive",
+        "url": "https://files.pythonhosted.org/packages/source/P/PyQt5-sip/PyQt5_sip-12.13.0.tar.gz",
+        "sha256": "7f321daf84b9c9dbca61b80e1ef37bdaffc0e93312edae2cd7da25b953971d91"
+      }]
+    },
+    {
+      "name": "python3-pyqt5",
+      "buildsystem": "simple",
+      "build-commands": ["pip3 install --prefix=/app --no-deps ."],
+      "sources": [{
+        "type": "archive",
+        "url": "https://files.pythonhosted.org/packages/source/P/PyQt5/PyQt5-5.15.10.tar.gz",
+        "sha256": "d46b7804b1b10a4ff91753f8113e5b5580d2b4462f3226288e2d84497334898a"
+      }]
+    },
+    {
+      "name": "linux-hwmonitor",
+      "buildsystem": "simple",
+      "build-commands": [
+        "install -Dm755 linux_hwmonitor.py /app/bin/linux_hwmonitor",
+        "install -Dm644 org.linuxhwmonitor.App.metainfo.xml /app/share/metainfo/org.linuxhwmonitor.App.metainfo.xml",
+        "install -Dm644 org.linuxhwmonitor.App.desktop /app/share/applications/org.linuxhwmonitor.App.desktop",
+        "install -Dm644 org.linuxhwmonitor.App.svg /app/share/icons/hicolor/scalable/apps/org.linuxhwmonitor.App.svg"
+      ],
+      "sources": [
+        {"type": "file", "path": "linux_hwmonitor.py"},
+        {"type": "file", "path": "org.linuxhwmonitor.App.metainfo.xml"},
+        {"type": "file", "path": "org.linuxhwmonitor.App.desktop"},
+        {"type": "file", "path": "org.linuxhwmonitor.App.svg"}
+      ]
+    }
+  ]
+}

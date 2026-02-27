@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.linuxhwmonitor.App</id>
+
+  <name>LinuxHWMonitor</name>
+  <summary>Hardware monitor and S.M.A.R.T. disk health checker for Linux</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <description>
+    <p>
+      LinuxHWMonitor is a native Linux hardware monitoring application inspired by
+      CrystalDiskInfo and HWiNFO64. It provides detailed S.M.A.R.T. disk health
+      information and comprehensive hardware detection for CPU, GPU, motherboard and RAM.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>S.M.A.R.T. health status and full attribute table for SATA and NVMe drives</li>
+      <li>Disk temperature, power-on hours, power cycles, and total host writes</li>
+      <li>CPU detection: model, cores, threads, cache hierarchy, microcode, instruction sets</li>
+      <li>GPU detection: name, driver, VRAM, OpenGL and Vulkan versions (NVIDIA/AMD/Intel)</li>
+      <li>Motherboard: manufacturer, model, chipset, BIOS type (UEFI/Legacy), PCIe slots, SATA ports</li>
+      <li>RAM: per-module details including speed, manufacturer, part number, channel mode</li>
+      <li>Clean dark-themed interface similar to CrystalDiskInfo</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">org.linuxhwmonitor.App.desktop</launchable>
+
+  <url type="homepage">https://github.com/YOUR_USERNAME/linuxhwmonitor</url>
+  <url type="bugtracker">https://github.com/YOUR_USERNAME/linuxhwmonitor/issues</url>
+  <url type="vcs-browser">https://github.com/YOUR_USERNAME/linuxhwmonitor</url>
+
+  <developer id="org.linuxhwmonitor">
+    <name>LinuxHWMonitor Contributors</name>
+  </developer>
+
+  <provides>
+    <binary>linux_hwmonitor</binary>
+  </provides>
+
+  <requires>
+    <display_length compare="ge">900</display_length>
+    <internet>offline-only</internet>
+  </requires>
+
+  <recommends>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </recommends>
+
+  <categories>
+    <category>System</category>
+    <category>Monitor</category>
+    <category>HardwareSettings</category>
+  </categories>
+
+  <keywords>
+    <keyword>hardware</keyword>
+    <keyword>monitor</keyword>
+    <keyword>smart</keyword>
+    <keyword>disk</keyword>
+    <keyword>cpu</keyword>
+    <keyword>gpu</keyword>
+    <keyword>ram</keyword>
+    <keyword>temperature</keyword>
+    <keyword>hwinfo</keyword>
+    <keyword>crystaldiskinfo</keyword>
+  </keywords>
+
+  <content_rating type="oars-1.1" />
+
+  <releases>
+    <release version="1.0.0" date="2026-02-27">
+      <description>
+        <p>Initial release with S.M.A.R.T. disk monitoring and full hardware detection.</p>
+      </description>
+    </release>
+  </releases>
+</component>
