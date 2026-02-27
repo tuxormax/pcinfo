@@ -12,6 +12,10 @@
 
 </div>
 
+
+![Descripción](docs/screenshots/ssd.png)
+
+![Descripción](docs/screenshots/hddd.png)
 ---
 
 ## Autor
