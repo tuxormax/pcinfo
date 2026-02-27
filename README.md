@@ -13,9 +13,9 @@
 </div>
 
 
-![Descripción](docs/screenshots/ssd.png)
+(docs/screenshots/ssd.png)
 
-![Descripción](docs/screenshots/hddd.png)
+(docs/screenshots/hddd.png)
 ---
 
 ## Autor
