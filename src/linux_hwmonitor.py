@@ -954,6 +954,42 @@ def _detect_ram_channel(modules):
 
 
 # ─────────────────────────────────────────────
+#  CLIPBOARD HELPER
+# ─────────────────────────────────────────────
+def copy_to_clipboard(text):
+    """Copia texto al portapapeles de forma robusta (funciona con pkexec/root)"""
+    # Intentar con xclip primero (funciona siempre con X11, incluso como root)
+    try:
+        proc = subprocess.Popen(
+            ["xclip", "-selection", "clipboard"],
+            stdin=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        proc.communicate(input=text.encode("utf-8"), timeout=3)
+        if proc.returncode == 0:
+            return True
+    except Exception:
+        pass
+
+    # Intentar con xsel
+    try:
+        proc = subprocess.Popen(
+            ["xsel", "--clipboard", "--input"],
+            stdin=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        proc.communicate(input=text.encode("utf-8"), timeout=3)
+        if proc.returncode == 0:
+            return True
+    except Exception:
+        pass
+
+    # Fallback: Qt clipboard + processEvents para forzar sincronización
+    cb = QApplication.clipboard()
+    cb.setText(text)
+    QApplication.processEvents()
+    return True
+
+
+# ─────────────────────────────────────────────
 #  CUSTOM WIDGETS
 # ─────────────────────────────────────────────
 class HealthBadge(QWidget):
@@ -1440,7 +1476,7 @@ class DiskInfoPanel(QWidget):
         lines.append("=" * 50)
 
         text = "\n".join(lines)
-        QApplication.clipboard().setText(text)
+        copy_to_clipboard(text)
         self._copy_disk_btn.setText("  ✓  Copiado  ")
         QTimer.singleShot(2000, lambda: self._copy_disk_btn.setText("  📋  Copiar resumen  "))
 
@@ -1866,7 +1902,7 @@ class SystemInfoPanel(QWidget):
         lines.append("=" * 50)
 
         text = "\n".join(lines)
-        QApplication.clipboard().setText(text)
+        copy_to_clipboard(text)
         self._copy_btn.setText("  ✓  Copiado  ")
         QTimer.singleShot(2000, lambda: self._copy_btn.setText("  📋  Copiar info  "))
 
