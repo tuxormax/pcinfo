@@ -30,7 +30,7 @@ VISTA DE DISCOS
 
 **Creado por:** tuxor  
 **Contacto:** tuxor.max@gmail.com  
-**Versión:** 1.0  
+**Versión:** 1.1  
 **Fecha de creación:** 27 de febrero de 2026  
 
 > ⚠️ **Aviso importante para modificaciones y distribuciones:**  

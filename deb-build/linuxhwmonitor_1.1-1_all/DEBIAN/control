@@ -1,0 +1,12 @@
+Package: linuxhwmonitor
+Version: 1.1-1
+Section: utils
+Priority: optional
+Architecture: all
+Depends: python3 (>= 3.8), python3-pyqt5, python3-psutil, smartmontools, lm-sensors, pciutils, dmidecode
+Maintainer: tuxor <tuxor.max@gmail.com>
+Description: Monitor de hardware para Linux
+ LinuxHWMonitor es un monitor de hardware inspirado en CrystalDiskInfo
+ y HWiNFO64. Muestra informacion S.M.A.R.T. de discos, CPU, GPU,
+ tarjeta madre, RAM y sistema operativo con una interfaz moderna.
+Homepage: https://github.com/tuxormax/LinuxHWMonitor
