@@ -21,7 +21,7 @@ from PyQt5.QtWidgets import (
     QTabWidget, QLabel, QPushButton, QTableWidget, QTableWidgetItem,
     QHeaderView, QFrame, QScrollArea, QGridLayout, QSizePolicy,
     QGroupBox, QStatusBar, QToolBar, QAction, QSplitter, QComboBox,
-    QProgressBar, QMessageBox
+    QProgressBar, QMessageBox, QFileDialog
 )
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, QSize
 from PyQt5.QtGui import (
@@ -1126,6 +1126,11 @@ class DiskInfoPanel(QWidget):
         )
         model_l.addWidget(self.model_label, 1)
 
+        self._save_disk_btn = QPushButton("  💾  Guardar resumen  ")
+        self._save_disk_btn.clicked.connect(self._save_disk_to_file)
+        self._save_disk_btn.setEnabled(False)
+        model_l.addWidget(self._save_disk_btn)
+
         layout.addWidget(model_frame)
 
         # ── Row 3: info strip (health + campos + temp) ─
@@ -1385,7 +1390,67 @@ class DiskInfoPanel(QWidget):
         # Partition bar + legend
         self._update_partition_view(partitions or [])
 
+        self._last_disk_info = disk
+        self._last_disk_data = data
+        self._last_partitions = partitions
+        self._save_disk_btn.setEnabled(True)
+
         return data["health"], data["temp"]
+
+    def _save_disk_to_file(self):
+        if not self._last_disk_data:
+            return
+        disk = self._last_disk_info
+        data = self._last_disk_data
+        parts = self._last_partitions
+
+        lines = []
+        lines.append("=" * 50)
+        lines.append("  LINUXHWMONITOR — RESUMEN DEL DISCO")
+        lines.append("=" * 50)
+        lines.append("")
+        lines.append(f"  Nombre:              {disk.get('name', '—')}")
+        lines.append(f"  Modelo:              {data.get('model') or disk.get('model', '—')}")
+        lines.append(f"  Capacidad:           {data.get('capacity') or disk.get('size', '—')}")
+        lines.append(f"  Estado de salud:     {data.get('health', '—')}")
+        poh = data.get("power_on_hours")
+        poc = data.get("power_on_count")
+        lines.append(f"  Encendidos:          {f'{poc:,}' if poc else '—'}")
+        lines.append(f"  Horas encendido:     {f'{poh:,} h' if poh else '—'}")
+
+        if parts:
+            lines.append("")
+            lines.append("  ── PARTICIONES ─────────────────────")
+            for pt in parts:
+                name = pt.get("name", "—")
+                fstype = pt.get("fstype") or "—"
+                total = f"{pt['total_gb']:.1f} GB" if pt.get("total_gb") else pt.get("size", "—")
+                mounts = pt.get("mounts", [])
+                montaje = mounts[0] if mounts else "sin montar"
+                used = f"{pt['used_gb']:.1f} GB" if pt.get("used_gb") is not None else "sin montar"
+                free = f"{pt['free_gb']:.1f} GB" if pt.get("free_gb") is not None else "sin montar"
+                lines.append(f"    {name}:")
+                lines.append(f"      Tipo:      {fstype}")
+                lines.append(f"      Tamaño:    {total}")
+                lines.append(f"      Montaje:   {montaje}")
+                lines.append(f"      Usado:     {used}")
+                lines.append(f"      Libre:     {free}")
+
+        lines.append("")
+        lines.append("=" * 50)
+
+        text = "\n".join(lines)
+        model_name = (data.get("model") or disk.get("name", "disco")).replace(" ", "_").replace("/", "_")
+        default_name = f"LinuxHWMonitor_Disco_{model_name}.txt"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Guardar resumen del disco", default_name,
+            "Texto (*.txt);;Markdown (*.md);;Todos (*)"
+        )
+        if path:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+            self._save_disk_btn.setText("  ✓  Guardado  ")
+            QTimer.singleShot(2000, lambda: self._save_disk_btn.setText("  💾  Guardar resumen  "))
 
     def _update_partition_view(self, partitions):
         """Refresh the macOS-style partition bar and legend labels"""
@@ -1522,6 +1587,11 @@ class SystemInfoPanel(QWidget):
         title.setStyleSheet("color: #58a6ff; font-size: 15px; font-weight: bold;")
         hdr_l.addWidget(title)
         hdr_l.addStretch()
+
+        self._save_btn = QPushButton("  💾  Guardar info  ")
+        self._save_btn.clicked.connect(self._save_to_file)
+        self._save_btn.setEnabled(False)
+        hdr_l.addWidget(self._save_btn)
 
         self._scan_btn = QPushButton("  🔍  Escanear hardware  ")
         self._scan_btn.clicked.connect(self.refresh)
@@ -1715,8 +1785,106 @@ class SystemInfoPanel(QWidget):
 
         self._cl.addStretch()
         self._hw_data = data
+        self._save_btn.setEnabled(True)
         self._scan_btn.setEnabled(True)
         self._scan_btn.setText("  🔍  Escanear hardware  ")
+
+    def _save_to_file(self):
+        if not self._hw_data:
+            return
+        data = self._hw_data
+        lines = []
+        lines.append("=" * 50)
+        lines.append("  LINUXHWMONITOR — RESUMEN DEL SISTEMA")
+        lines.append("=" * 50)
+
+        # CPU
+        cpu = data["cpu"]
+        lines.append("")
+        lines.append("── CPU ──────────────────────────────")
+        lines.append(f"  Modelo:           {cpu['model']}")
+        lines.append(f"  Vendor:           {cpu['vendor']}")
+        lines.append(f"  Núcleos físicos:  {cpu['cores']}")
+        lines.append(f"  Hilos (threads):  {cpu['threads']}")
+        lines.append(f"  Sockets:          {cpu['sockets']}")
+        lines.append(f"  Frecuencia base:  {cpu['freq_base']} MHz")
+        lines.append(f"  Frecuencia máx.:  {cpu['freq_max']} MHz")
+        lines.append(f"  Caché L1d/L1i:    {cpu['cache_l1d']} / {cpu['cache_l1i']}")
+        lines.append(f"  Caché L2:         {cpu['cache_l2']}")
+        lines.append(f"  Caché L3:         {cpu['cache_l3']}")
+        lines.append(f"  Microcode:        {cpu['microcode']}")
+        lines.append(f"  Arquitectura:     {cpu['architecture']}")
+        lines.append(f"  Virtualización:   {cpu['virtualization'] or '—'}")
+
+        # GPU
+        for gi, gpu in enumerate(data["gpus"]):
+            label = f"GPU {gi}" if len(data["gpus"]) > 1 else "GPU"
+            lines.append("")
+            lines.append(f"── {label} ─────────────────────────────")
+            lines.append(f"  Nombre:       {gpu['name']}")
+            lines.append(f"  Vendor:       {gpu['vendor']}")
+            lines.append(f"  Driver:       {gpu['driver'] or '—'}")
+            lines.append(f"  VRAM:         {gpu.get('vram_str') or '—'}")
+            temp_s = f"{gpu['temp']} °C" if gpu.get("temp") is not None else "—"
+            lines.append(f"  Temperatura:  {temp_s}")
+            lines.append(f"  OpenGL:       {gpu.get('api_gl') or '—'}")
+            lines.append(f"  Vulkan:       {gpu.get('api_vk') or '—'}")
+
+        # Tarjeta Madre
+        mb = data["mb"]
+        lines.append("")
+        lines.append("── TARJETA MADRE ────────────────────")
+        lines.append(f"  Fabricante:    {mb['manufacturer']}")
+        lines.append(f"  Modelo:        {mb['model']}")
+        lines.append(f"  Versión:       {mb['version']}")
+        lines.append(f"  Chipset:       {mb['chipset'] or '—'}")
+        lines.append(f"  BIOS Vendor:   {mb['bios_vendor']}")
+        lines.append(f"  BIOS Versión:  {mb['bios_version']}")
+        lines.append(f"  BIOS Fecha:    {mb['bios_date']}")
+        lines.append(f"  BIOS Tipo:     {mb['bios_type']}")
+        lines.append(f"  Puertos SATA:  {mb['sata_ports']}")
+        slots_str = (f"{mb['slots_used']} / {len(mb['slots_pcie'])} en uso"
+                     if mb["slots_pcie"] else "—")
+        lines.append(f"  Slots PCIe:    {slots_str}")
+
+        # RAM
+        ram = data["ram"]
+        lines.append("")
+        lines.append("── MEMORIA RAM ──────────────────────")
+        lines.append(f"  Total:         {ram['total_gb']:.1f} GB")
+        lines.append(f"  Slots usados:  {ram['populated_slots']} / {ram['total_slots']}")
+        lines.append(f"  Tipo:          {ram['type']}")
+        lines.append(f"  Velocidad:     {ram['speed_mhz']}")
+        lines.append(f"  Canal:         {ram['channel']}")
+        for i, mod in enumerate(ram["modules"]):
+            slot_name = mod.get("Locator", "") or f"DIMM {i}"
+            lines.append(f"    Slot {slot_name}: {mod.get('Size','—')} {mod.get('Type','—')} {mod.get('Speed','—')} — {mod.get('Manufacturer','—').strip()}")
+
+        # Sistema Operativo
+        os_data = data["os"]
+        lines.append("")
+        lines.append("── SISTEMA OPERATIVO ────────────────")
+        lines.append(f"  SO:            {os_data['pretty']}")
+        lines.append(f"  Kernel:        {os_data['kernel']}")
+        lines.append(f"  Hostname:      {os_data['hostname']}")
+        lines.append(f"  Arquitectura:  {os_data['arch']}")
+        lines.append(f"  Uptime:        {os_data['uptime']}")
+
+        lines.append("")
+        lines.append("=" * 50)
+
+        text = "\n".join(lines)
+        hostname = data["os"].get("hostname", "equipo").replace(" ", "_")
+        default_name = f"LinuxHWMonitor_Sistema_{hostname}.txt"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Guardar resumen del sistema", default_name,
+            "Texto (*.txt);;Markdown (*.md);;Todos (*)"
+        )
+        if path:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+            self._save_btn.setText("  ✓  Guardado  ")
+            QTimer.singleShot(2000, lambda: self._save_btn.setText("  💾  Guardar info  "))
 
 
 # ─────────────────────────────────────────────
@@ -1725,7 +1893,7 @@ class SystemInfoPanel(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("LinuxHWMonitor  v1.1.2")
+        self.setWindowTitle("LinuxHWMonitor  v1.2")
         self.resize(1100, 780)
         self.setMinimumSize(860, 600)
         self._disks          = []
@@ -1765,7 +1933,7 @@ class MainWindow(QMainWindow):
 
         # Créditos — permanente a la izquierda
         author_lbl = QLabel(
-            "  Creado por: tuxor  ·  tuxor.max@gmail.com  ·  v1.1.2  ·  2026"
+            "  Creado por: tuxor  ·  tuxor.max@gmail.com  ·  v1.2  ·  2026"
         )
         author_lbl.setStyleSheet("color: #ffffff; font-size: 13px; padding: 0 6px;")
         self.status.addWidget(author_lbl, 0)
