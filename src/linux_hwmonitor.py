@@ -958,35 +958,32 @@ def _detect_ram_channel(modules):
 # ─────────────────────────────────────────────
 def copy_to_clipboard(text):
     """Copia texto al portapapeles de forma robusta (funciona con pkexec/root)"""
-    # Intentar con xclip primero (funciona siempre con X11, incluso como root)
+    # Intentar primero con Qt clipboard (ya tiene acceso al display)
     try:
-        proc = subprocess.Popen(
-            ["xclip", "-selection", "clipboard"],
-            stdin=subprocess.PIPE, stderr=subprocess.PIPE
-        )
-        proc.communicate(input=text.encode("utf-8"), timeout=3)
-        if proc.returncode == 0:
-            return True
+        cb = QApplication.clipboard()
+        cb.setText(text)
+        QApplication.processEvents()
+        return True
     except Exception:
         pass
 
-    # Intentar con xsel
-    try:
-        proc = subprocess.Popen(
-            ["xsel", "--clipboard", "--input"],
-            stdin=subprocess.PIPE, stderr=subprocess.PIPE
-        )
-        proc.communicate(input=text.encode("utf-8"), timeout=3)
-        if proc.returncode == 0:
-            return True
-    except Exception:
-        pass
+    # Fallback: xclip
+    for cmd in [["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"]]:
+        try:
+            proc = subprocess.Popen(
+                cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, start_new_session=True
+            )
+            proc.communicate(input=text.encode("utf-8"), timeout=2)
+            if proc.returncode == 0:
+                return True
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+        except Exception:
+            pass
 
-    # Fallback: Qt clipboard + processEvents para forzar sincronización
-    cb = QApplication.clipboard()
-    cb.setText(text)
-    QApplication.processEvents()
-    return True
+    return False
 
 
 # ─────────────────────────────────────────────
@@ -1913,7 +1910,7 @@ class SystemInfoPanel(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("LinuxHWMonitor  v1.1")
+        self.setWindowTitle("LinuxHWMonitor  v1.1.1")
         self.resize(1100, 780)
         self.setMinimumSize(860, 600)
         self._disks          = []
@@ -1953,7 +1950,7 @@ class MainWindow(QMainWindow):
 
         # Créditos — permanente a la izquierda
         author_lbl = QLabel(
-            "  Creado por: tuxor  ·  tuxor.max@gmail.com  ·  v1.1  ·  2026"
+            "  Creado por: tuxor  ·  tuxor.max@gmail.com  ·  v1.1.1  ·  2026"
         )
         author_lbl.setStyleSheet("color: #ffffff; font-size: 13px; padding: 0 6px;")
         self.status.addWidget(author_lbl, 0)
