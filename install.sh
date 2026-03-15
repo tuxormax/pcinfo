@@ -1,9 +1,9 @@
 #!/bin/bash
 # ╔══════════════════════════════════════════════════════════╗
-# ║   LinuxHWMonitor — Instalador                           ║
-# ║   Doble clic en este archivo desde el gestor de archivos║
+# ║   LinuxHWMonitor v1.2 Rev 1 — Instalador universal      ║
+# ║   Compatible con: Debian/Ubuntu, Fedora/RHEL, Arch,     ║
+# ║   openSUSE y cualquier distro Linux                      ║
 # ╚══════════════════════════════════════════════════════════╝
-# Compatible con: Ubuntu, Debian, Fedora, Arch, openSUSE
 
 set -e
 
@@ -17,11 +17,7 @@ warn() { echo -e "${YELLOW}  ⚠${NC}  $1"; }
 err()  { echo -e "${RED}  ✗${NC}  $1"; exit 1; }
 
 # ── Detectar si se ejecuta desde gestor de archivos ──────
-if [ -t 0 ]; then
-    TERMINAL=true
-else
-    # Abrir una terminal si se hizo doble clic
-    TERMINAL=false
+if [ ! -t 0 ]; then
     for term in gnome-terminal konsole xfce4-terminal xterm; do
         if command -v "$term" &>/dev/null; then
             "$term" -- bash "$0"; exit 0
@@ -38,18 +34,18 @@ echo "  ██║     ██║██║╚██╗██║██║   ██�
 echo "  ███████╗██║██║ ╚████║╚██████╔╝██╔╝ ██╗██║  ██║╚███╔███╔╝"
 echo "  ╚══════╝╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚══╝╚══╝ "
 echo -e "${NC}"
-echo -e "${BOLD}  Hardware Monitor para Linux  —  Instalador v1.0${NC}"
+echo -e "${BOLD}  Hardware Monitor para Linux  —  v1.2 Rev 1${NC}"
 echo -e "  ${BLUE}─────────────────────────────────────────────────${NC}"
 echo ""
 
-# ── Verificar que somos root o tenemos sudo ───────────────
+# ── Verificar root / sudo ────────────────────────────────
 SUDO=""
 if [ "$EUID" -ne 0 ]; then
     if command -v sudo &>/dev/null; then
         SUDO="sudo"
-        info "Se usará sudo para instalar dependencias del sistema."
+        info "Se usará sudo para instalar."
     else
-        warn "Sin sudo. Solo se instalará para el usuario actual (sin acceso SMART completo)."
+        warn "Sin sudo. Solo se instalará para el usuario actual."
     fi
 fi
 
@@ -100,21 +96,20 @@ install_system_deps() {
 }
 
 install_system_deps && ok "Dependencias del sistema instaladas" || \
-    warn "Algunas dependencias del sistema no se pudieron instalar (continúa de todos modos)"
+    warn "Algunas dependencias no se pudieron instalar (continúa de todos modos)"
 
 # ── Instalar psutil via pip ────────────────────────────────
 info "Instalando psutil..."
 pip3 install --user --quiet psutil 2>/dev/null || \
 pip3 install --user psutil 2>/dev/null || \
 python3 -m pip install --user psutil 2>/dev/null || \
-warn "psutil no se pudo instalar via pip — puede faltar funcionalidad"
+warn "psutil no se pudo instalar via pip"
 ok "psutil listo"
 
 # ── Detectar directorio del script ────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_SRC="$SCRIPT_DIR/src/linux_hwmonitor.py"
 
-# Soporte para ejecutar desde el zip extraído o directamente
 if [ ! -f "$APP_SRC" ]; then
     APP_SRC="$SCRIPT_DIR/linux_hwmonitor.py"
 fi
@@ -138,53 +133,43 @@ cp "$APP_SRC" "$INSTALL_DIR/linux_hwmonitor.py"
 chmod 644 "$INSTALL_DIR/linux_hwmonitor.py"
 ok "Aplicación copiada"
 
-# ── Instalar wrapper del sistema (necesario para mensaje Polkit) ──
+# ── Instalar wrapper del sistema (para Polkit) ────────────
 WRAPPER_DST="/usr/local/bin/linuxhwmonitor-helper"
 POLICY_DST="/usr/share/polkit-1/actions/org.linuxhwmonitor.policy"
 
 if [ -n "$SUDO" ]; then
-    # Crear el wrapper que pkexec invocará (path fijo = polkit puede mostrar mensaje)
     $SUDO bash -c "cat > '$WRAPPER_DST'" << WRAPPER_EOF
 #!/bin/bash
-# LinuxHWMonitor - ejecutado por pkexec como root
 exec python3 "$INSTALL_DIR/linux_hwmonitor.py" "\$@"
 WRAPPER_EOF
     $SUDO chmod 755 "$WRAPPER_DST"
     ok "Helper del sistema instalado en $WRAPPER_DST"
 
-    # Instalar política Polkit con path correcto al wrapper
     POLICY_SRC="$SCRIPT_DIR/data/org.linuxhwmonitor.policy"
     if [ -f "$POLICY_SRC" ]; then
-        # Reemplazar el placeholder del path con el path real
         $SUDO sed "s|WRAPPER_PATH_PLACEHOLDER|$WRAPPER_DST|g" \
             "$POLICY_SRC" > /tmp/linuxhwmonitor.policy.tmp
         $SUDO mv /tmp/linuxhwmonitor.policy.tmp "$POLICY_DST"
-        ok "Política Polkit instalada — el diálogo de contraseña mostrará la razón correcta"
+        ok "Política Polkit instalada"
     fi
 else
     warn "Sin sudo: el mensaje del diálogo de contraseña será genérico"
 fi
 
-# ── Crear lanzador (script ejecutable) ────────────────────
+# ── Crear lanzador ─────────────────────────────────────────
 cat > "$BIN_DIR/linuxhwmonitor" << LAUNCHER
 #!/bin/bash
-# ─────────────────────────────────────────────────────────
-#  LinuxHWMonitor — Lanzador
-# ─────────────────────────────────────────────────────────
 APP="$INSTALL_DIR/linux_hwmonitor.py"
 HELPER="$WRAPPER_DST"
 
 if [ "\$EUID" -eq 0 ]; then
-    # Ya es root, ejecutar directo
     python3 "\$APP"
 elif [ -x "\$HELPER" ] && command -v pkexec &>/dev/null; then
-    # pkexec con wrapper fijo → muestra mensaje personalizado
-    pkexec env \
-        DISPLAY="\$DISPLAY" \
-        XAUTHORITY="\$XAUTHORITY" \
-        HOME="\$HOME" \
+    pkexec env \\
+        DISPLAY="\$DISPLAY" \\
+        XAUTHORITY="\$XAUTHORITY" \\
+        HOME="\$HOME" \\
         "\$HELPER"
-    # Si el usuario canceló (código 126/127), lanzar sin privilegios
     EC=\$?
     [ \$EC -eq 126 ] || [ \$EC -eq 127 ] && python3 "\$APP"
 elif command -v sudo &>/dev/null; then
@@ -206,24 +191,11 @@ if [ -f "$SVG_SRC" ]; then
     cp "$SVG_SRC" "$ICONS_DIR/org.linuxhwmonitor.App.svg"
     ok "Ícono instalado"
 else
-    # Crear ícono SVG mínimo si no existe
     cat > "$ICONS_DIR/org.linuxhwmonitor.App.svg" << 'SVGEOF'
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
   <rect width="128" height="128" rx="22" fill="#0d1117"/>
   <rect width="128" height="128" rx="22" fill="none" stroke="#30363d" stroke-width="2"/>
   <rect x="40" y="40" width="48" height="48" rx="6" fill="#21262d" stroke="#30363d" stroke-width="1.5"/>
-  <line x1="24" y1="55" x2="40" y2="55" stroke="#58a6ff" stroke-width="2" stroke-linecap="round"/>
-  <line x1="24" y1="64" x2="40" y2="64" stroke="#58a6ff" stroke-width="2" stroke-linecap="round"/>
-  <line x1="24" y1="73" x2="40" y2="73" stroke="#58a6ff" stroke-width="2" stroke-linecap="round"/>
-  <line x1="88" y1="55" x2="104" y2="55" stroke="#58a6ff" stroke-width="2" stroke-linecap="round"/>
-  <line x1="88" y1="64" x2="104" y2="64" stroke="#58a6ff" stroke-width="2" stroke-linecap="round"/>
-  <line x1="88" y1="73" x2="104" y2="73" stroke="#58a6ff" stroke-width="2" stroke-linecap="round"/>
-  <line x1="55" y1="24" x2="55" y2="40" stroke="#58a6ff" stroke-width="2" stroke-linecap="round"/>
-  <line x1="64" y1="24" x2="64" y2="40" stroke="#58a6ff" stroke-width="2" stroke-linecap="round"/>
-  <line x1="73" y1="24" x2="73" y2="40" stroke="#58a6ff" stroke-width="2" stroke-linecap="round"/>
-  <line x1="55" y1="88" x2="55" y2="104" stroke="#58a6ff" stroke-width="2" stroke-linecap="round"/>
-  <line x1="64" y1="88" x2="64" y2="104" stroke="#58a6ff" stroke-width="2" stroke-linecap="round"/>
-  <line x1="73" y1="88" x2="73" y2="104" stroke="#58a6ff" stroke-width="2" stroke-linecap="round"/>
   <circle cx="64" cy="64" r="10" fill="#238636"/>
   <circle cx="64" cy="64" r="5" fill="#fff" opacity=".9"/>
 </svg>
@@ -231,7 +203,6 @@ SVGEOF
     ok "Ícono generado"
 fi
 
-# Actualizar caché de íconos
 gtk-update-icon-cache "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
 
 # ── Crear entrada en el menú de aplicaciones ─────────────
@@ -250,8 +221,6 @@ StartupWMClass=LinuxHWMonitor
 StartupNotify=true
 DESKTOP
 chmod 644 "$APPS_DIR/linuxhwmonitor.desktop"
-
-# Actualizar base de datos de aplicaciones
 update-desktop-database "$APPS_DIR" 2>/dev/null || true
 ok "Acceso directo creado en el menú de aplicaciones"
 
@@ -268,7 +237,7 @@ fi
 
 export PATH="$HOME/.local/bin:$PATH"
 
-# ── Verificar instalación ─────────────────────────────────
+# ── Resultado ─────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}${GREEN}═══════════════════════════════════════════════════${NC}"
 echo -e "${BOLD}${GREEN}  ✓  Instalación completada exitosamente${NC}"
@@ -277,14 +246,11 @@ echo ""
 echo -e "  ${BOLD}¿Cómo abrir LinuxHWMonitor?${NC}"
 echo ""
 echo -e "  ${CYAN}►${NC}  Menú de aplicaciones → busca ${BOLD}LinuxHWMonitor${NC}"
-echo -e "     ${CYAN}(Categoría: Sistema / Herramientas del sistema)${NC}"
-echo ""
 echo -e "  ${CYAN}►${NC}  O desde terminal: ${BOLD}linuxhwmonitor${NC}"
 echo ""
 echo -e "  ${YELLOW}  Al abrirla te pedirá contraseña de administrador.${NC}"
 echo -e "  ${YELLOW}  Esto es normal — necesita acceso para leer datos${NC}"
 echo -e "  ${YELLOW}  S.M.A.R.T., temperatura y hardware del sistema.${NC}"
-echo -e "  ${YELLOW}  Si cancelas, la app abre con información básica.${NC}"
 echo ""
 echo -e "  ${BLUE}Para desinstalar: ejecuta ${BOLD}./uninstall.sh${NC}"
 echo ""
