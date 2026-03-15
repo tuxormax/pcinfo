@@ -1080,6 +1080,7 @@ class DiskInfoPanel(QWidget):
         self._last_disk_data = None
         self._last_disk_info = None
         self._last_partitions = None
+        self._all_disks_data = []
         self._build_ui()
 
     def _build_ui(self):
@@ -1273,21 +1274,35 @@ class DiskInfoPanel(QWidget):
             self._sel_layout.removeWidget(btn)
             btn.deleteLater()
         self._disk_buttons = []
+        self._all_disks_data = []
 
         self._no_disk_lbl.setVisible(not disks)
 
         for disk in disks:
             btn = DiskButton(disk)
             btn.clicked.connect(lambda checked, d=disk, b=btn: self._btn_clicked(d, b, on_select_cb))
-            # Insert before the stretch + scan button (last 2 items)
-            pos = self._sel_layout.count() - 2   # before stretch
+            pos = self._sel_layout.count() - 2
             self._sel_layout.insertWidget(pos, btn)
             self._disk_buttons.append(btn)
 
-        # Select first automatically
+        # Cargar SMART de todos los discos al inicio
+        for i, disk in enumerate(disks):
+            health, temp = self.load_disk(disk)
+            self._disk_buttons[i].health = health
+            self._disk_buttons[i].temp = temp
+            self._disk_buttons[i]._build()
+            # Guardar datos de cada disco
+            self._all_disks_data.append({
+                "disk": disk,
+                "data": self._last_disk_data,
+                "partitions": self._last_partitions,
+            })
+            QApplication.processEvents()
+
+        # Seleccionar el primero visualmente
         if self._disk_buttons:
             self._disk_buttons[0].setChecked(True)
-            self._btn_clicked(disks[0], self._disk_buttons[0], on_select_cb)
+            self.load_disk(disks[0])
 
     def _btn_clicked(self, disk, active_btn, callback):
         for btn in self._disk_buttons:
@@ -1398,52 +1413,61 @@ class DiskInfoPanel(QWidget):
         return data["health"], data["temp"]
 
     def _save_disk_to_file(self):
-        if not self._last_disk_data:
+        if not self._all_disks_data:
             return
-        disk = self._last_disk_info
-        data = self._last_disk_data
-        parts = self._last_partitions
 
         lines = []
-        lines.append("=" * 50)
-        lines.append("  LINUXHWMONITOR — RESUMEN DEL DISCO")
-        lines.append("=" * 50)
-        lines.append("")
-        lines.append(f"  Nombre:              {disk.get('name', '—')}")
-        lines.append(f"  Modelo:              {data.get('model') or disk.get('model', '—')}")
-        lines.append(f"  Capacidad:           {data.get('capacity') or disk.get('size', '—')}")
-        lines.append(f"  Estado de salud:     {data.get('health', '—')}")
-        poh = data.get("power_on_hours")
-        poc = data.get("power_on_count")
-        lines.append(f"  Encendidos:          {f'{poc:,}' if poc else '—'}")
-        lines.append(f"  Horas encendido:     {f'{poh:,} h' if poh else '—'}")
+        lines.append("=" * 60)
+        lines.append("  LINUXHWMONITOR — RESUMEN DE TODOS LOS DISCOS")
+        lines.append(f"  Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        lines.append(f"  Total de discos: {len(self._all_disks_data)}")
+        lines.append("=" * 60)
 
-        if parts:
+        for idx, entry in enumerate(self._all_disks_data, 1):
+            disk = entry["disk"]
+            data = entry["data"]
+            parts = entry["partitions"]
+
             lines.append("")
-            lines.append("  ── PARTICIONES ─────────────────────")
-            for pt in parts:
-                name = pt.get("name", "—")
-                fstype = pt.get("fstype") or "—"
-                total = f"{pt['total_gb']:.1f} GB" if pt.get("total_gb") else pt.get("size", "—")
-                mounts = pt.get("mounts", [])
-                montaje = mounts[0] if mounts else "sin montar"
-                used = f"{pt['used_gb']:.1f} GB" if pt.get("used_gb") is not None else "sin montar"
-                free = f"{pt['free_gb']:.1f} GB" if pt.get("free_gb") is not None else "sin montar"
-                lines.append(f"    {name}:")
-                lines.append(f"      Tipo:      {fstype}")
-                lines.append(f"      Tamaño:    {total}")
-                lines.append(f"      Montaje:   {montaje}")
-                lines.append(f"      Usado:     {used}")
-                lines.append(f"      Libre:     {free}")
+            lines.append(f"  ── DISCO {idx}: {data.get('model') or disk.get('model', '—')} ──")
+            lines.append(f"  Nombre:              {disk.get('name', '—')}")
+            lines.append(f"  Modelo:              {data.get('model') or disk.get('model', '—')}")
+            lines.append(f"  Capacidad:           {data.get('capacity') or disk.get('size', '—')}")
+            lines.append(f"  Estado de salud:     {data.get('health', '—')}")
+            lines.append(f"  Temperatura:         {data.get('temp', '—')} °C" if data.get('temp') else "  Temperatura:         —")
+            poh = data.get("power_on_hours")
+            poc = data.get("power_on_count")
+            lines.append(f"  Encendidos:          {f'{poc:,}' if poc else '—'}")
+            lines.append(f"  Horas encendido:     {f'{poh:,} h' if poh else '—'}")
+
+            if parts:
+                lines.append("")
+                lines.append("    ── PARTICIONES ─────────────────────")
+                for pt in parts:
+                    name = pt.get("name", "—")
+                    fstype = pt.get("fstype") or "—"
+                    total = f"{pt['total_gb']:.1f} GB" if pt.get("total_gb") else pt.get("size", "—")
+                    mounts = pt.get("mounts", [])
+                    montaje = mounts[0] if mounts else "sin montar"
+                    used = f"{pt['used_gb']:.1f} GB" if pt.get("used_gb") is not None else "sin montar"
+                    free = f"{pt['free_gb']:.1f} GB" if pt.get("free_gb") is not None else "sin montar"
+                    lines.append(f"      {name}:")
+                    lines.append(f"        Tipo:      {fstype}")
+                    lines.append(f"        Tamaño:    {total}")
+                    lines.append(f"        Montaje:   {montaje}")
+                    lines.append(f"        Usado:     {used}")
+                    lines.append(f"        Libre:     {free}")
+
+            lines.append("")
+            lines.append("  " + "─" * 56)
 
         lines.append("")
-        lines.append("=" * 50)
+        lines.append("=" * 60)
 
         text = "\n".join(lines)
-        model_name = (data.get("model") or disk.get("name", "disco")).replace(" ", "_").replace("/", "_")
-        default_name = f"LinuxHWMonitor_Disco_{model_name}.txt"
+        default_name = f"LinuxHWMonitor_Discos_{datetime.now().strftime('%Y%m%d')}.txt"
         path, _ = QFileDialog.getSaveFileName(
-            self, "Guardar resumen del disco", default_name,
+            self, "Guardar resumen de discos", default_name,
             "Texto (*.txt);;Markdown (*.md);;Todos (*)"
         )
         if path:
@@ -1893,7 +1917,7 @@ class SystemInfoPanel(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("LinuxHWMonitor  v1.2")
+        self.setWindowTitle("LinuxHWMonitor  v1.2 Rev 1")
         self.resize(1100, 780)
         self.setMinimumSize(860, 600)
         self._disks          = []
@@ -1933,7 +1957,7 @@ class MainWindow(QMainWindow):
 
         # Créditos — permanente a la izquierda
         author_lbl = QLabel(
-            "  Creado por: tuxor  ·  tuxor.max@gmail.com  ·  v1.2  ·  2026"
+            "  Creado por: tuxor.max@gmail.com"
         )
         author_lbl.setStyleSheet("color: #ffffff; font-size: 13px; padding: 0 6px;")
         self.status.addWidget(author_lbl, 0)
@@ -1962,7 +1986,7 @@ class MainWindow(QMainWindow):
         self.disk_panel.populate_disks(self._disks, self._on_disk_selected)
 
         n = len(self._disks)
-        msg = f"✓  {n} disco(s) detectado(s)" if n else "⚠  No se encontraron discos"
+        msg = "" if n else "⚠  No se encontraron discos"
         self.status_msg.setText(msg)
         self.disk_panel._scan_btn.setEnabled(True)
         self.disk_panel._scan_btn.setText("⟳  Escanear discos")
@@ -1971,8 +1995,7 @@ class MainWindow(QMainWindow):
         """Llamado cuando el usuario selecciona un disco."""
         self._current_disk = disk
         self._current_btn  = btn
-        health, temp = self.disk_panel.load_disk(disk)
-        self.disk_panel.refresh_button(btn, health, temp)
+        self.disk_panel.load_disk(disk)
 
     def _start_timer(self):
         self._timer = QTimer(self)
