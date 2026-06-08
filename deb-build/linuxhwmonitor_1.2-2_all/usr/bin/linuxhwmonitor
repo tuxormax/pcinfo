@@ -1,0 +1,19 @@
+#!/bin/bash
+# LinuxHWMonitor — Lanzador del sistema
+APP="/usr/lib/linuxhwmonitor/linux_hwmonitor.py"
+
+if [ "$EUID" -eq 0 ]; then
+    python3 "$APP"
+elif command -v pkexec &>/dev/null; then
+    pkexec env \
+        DISPLAY="$DISPLAY" \
+        XAUTHORITY="$XAUTHORITY" \
+        HOME="$HOME" \
+        python3 "$APP"
+    EC=$?
+    [ $EC -eq 126 ] || [ $EC -eq 127 ] && python3 "$APP"
+elif command -v sudo &>/dev/null; then
+    sudo -E python3 "$APP" 2>/dev/null || python3 "$APP"
+else
+    python3 "$APP"
+fi

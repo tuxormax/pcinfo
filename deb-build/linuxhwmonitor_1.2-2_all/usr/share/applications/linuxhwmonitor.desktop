@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=LinuxHWMonitor
+GenericName=Monitor de Hardware
+Comment=Monitor S.M.A.R.T. y detección de hardware para Linux
+Exec=linuxhwmonitor
+Icon=org.linuxhwmonitor.App
+Terminal=false
+Type=Application
+Categories=System;Monitor;HardwareSettings;
+Keywords=hardware;monitor;smart;disco;cpu;gpu;ram;temperatura;
+StartupWMClass=LinuxHWMonitor
+StartupNotify=true
