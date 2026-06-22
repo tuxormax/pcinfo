@@ -12,9 +12,9 @@ class PcInfoApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Fuente de datos. Hoy mock; al integrar el backend Go se cambia por
-    // HttpHardwareService sin tocar la UI.
-    final service = MockHardwareService();
+    // Fuente de datos: backend Go en localhost; si no está corriendo, cae al
+    // mock para que la GUI siga mostrándose.
+    final service = HttpHardwareService(fallback: MockHardwareService());
     return MaterialApp(
       title: 'PCInfo',
       debugShowCheckedModeBanner: false,

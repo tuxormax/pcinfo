@@ -28,5 +28,14 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Go backend (binario compilado)
+backend/pcinfo-backend
+backend/pcinfo-backend.exe
+
+# Instaladores generados (binarios pesados; se reconstruyen con los scripts)
+instaladores/*.deb
+instaladores/*.exe
+
 .claude/
 CLAUDE.md

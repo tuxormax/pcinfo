@@ -330,12 +330,17 @@ class _DashboardPageState extends State<DashboardPage> {
         rows: [SpecRow('Estado', 'No detectada')],
       );
     }
+    final multi = g.cards.length > 1;
     return SpecCard(
       icon: Icons.videogame_asset_rounded,
       accent: AppColors.gpu,
-      title: 'Tarjeta gráfica (GPU)',
+      title: multi
+          ? 'Tarjetas gráficas (${g.cards.length})'
+          : 'Tarjeta gráfica (GPU)',
       rows: [
-        for (final card in g.cards) ...[
+        for (final (i, card) in g.cards.indexed) ...[
+          // Con varias GPU (ej. integrada + dedicada) se numera cada una.
+          if (multi) SpecRow('GPU ${i + 1}', _gpuKind(card)),
           SpecRow('Fabricante', cleanVendor(card.vendor)),
           SpecRow('Modelo', card.product),
           if (card.memoryBytes > 0)
@@ -344,6 +349,21 @@ class _DashboardPageState extends State<DashboardPage> {
         ],
       ],
     );
+  }
+
+  /// Heurística para distinguir GPU integrada (del CPU) de dedicada.
+  String _gpuKind(GpuCard card) {
+    final v = card.vendor.toLowerCase();
+    final p = card.product.toLowerCase();
+    final integrada = v.contains('intel') ||
+        p.contains('uhd') ||
+        p.contains('iris') ||
+        p.contains('vega') ||
+        p.contains('radeon graphics') ||
+        p.contains('raphael') ||
+        p.contains('cezanne') ||
+        p.contains('renoir');
+    return integrada ? 'Integrada' : 'Dedicada';
   }
 
   Widget _disksCard(List<DiskInfo> disks) {

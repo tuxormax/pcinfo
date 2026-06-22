@@ -1,10 +1,44 @@
+import 'dart:convert';
+import 'dart:io';
+
 import '../models/hardware.dart';
 
 /// Fuente de datos de hardware.
-/// Hoy: MockHardwareService (datos de ejemplo para construir la GUI).
-/// Después: HttpHardwareService que consume el backend Go en localhost.
+/// MockHardwareService: datos de ejemplo. HttpHardwareService: backend Go real.
 abstract class HardwareService {
   Future<HardwareInfo> load();
+}
+
+/// Consume el backend Go (GET /hardware en localhost). Si no responde y se
+/// definió [fallback], usa esos datos (p. ej. el mock) en vez de fallar.
+class HttpHardwareService implements HardwareService {
+  final Uri endpoint;
+  final HardwareService? fallback;
+
+  HttpHardwareService({
+    String url = 'http://127.0.0.1:51247/hardware',
+    this.fallback,
+  }) : endpoint = Uri.parse(url);
+
+  @override
+  Future<HardwareInfo> load() async {
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 3);
+    try {
+      final req = await client.getUrl(endpoint);
+      final resp = await req.close().timeout(const Duration(seconds: 8));
+      if (resp.statusCode != 200) {
+        throw HttpException('HTTP ${resp.statusCode}', uri: endpoint);
+      }
+      final body = await resp.transform(utf8.decoder).join();
+      return HardwareInfo.fromJson(jsonDecode(body) as Map<String, dynamic>);
+    } catch (e) {
+      if (fallback != null) return fallback!.load();
+      rethrow;
+    } finally {
+      client.close(force: true);
+    }
+  }
 }
 
 class MockHardwareService implements HardwareService {
