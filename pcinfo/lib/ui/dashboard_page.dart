@@ -288,8 +288,10 @@ class _DashboardPageState extends State<DashboardPage> {
       rows: [
         SpecRow('Fabricante', b.vendor),
         SpecRow('Modelo', b.product),
-        SpecRow('Tamaño', b.formFactor.isEmpty ? 'Desconocido' : b.formFactor),
-        SpecRow('Versión', b.version),
+        // Tamaño y Versión solo si el hardware los reporta (muchas placas no
+        // exponen el form factor en DMI, y algunas ponen versiones basura).
+        if (b.formFactor.isNotEmpty) SpecRow('Tamaño', b.formFactor),
+        if (b.version.isNotEmpty) SpecRow('Versión', b.version),
         SpecRow('BIOS', '${b.biosVendor} ${b.biosVersion}'.trim()),
         SpecRow('Fecha BIOS', b.biosDate),
       ],
