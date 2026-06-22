@@ -5,7 +5,7 @@ metadata:
   type: project
 ---
 
-`/home/tuxor/www/LinuxHWMonitor` — monitor de hardware para Linux de tuxor, inspirado en CrystalDiskInfo + HWiNFO64. Repo `tuxormax/LinuxHWMonitor`.
+`/home/tuxor/www/pcinfo` — monitor de hardware para Linux de tuxor, inspirado en CrystalDiskInfo + HWiNFO64. Repo `tuxormax/pcinfo`.
 
 **Stack:** Python 3.8+ con **PyQt5**. GPL v3. Fuente principal: `src/linux_hwmonitor.py` (~2040 líneas). Empaquetado: `.deb` (deb-build/) y flatpak (flatpak/, build-flatpak.sh).
 

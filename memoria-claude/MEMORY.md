@@ -1,6 +1,6 @@
-# Memoria - LinuxHWMonitor
+# Memoria - PCInfo
 
-Monitor/inventario de hardware de tuxor. Repo `tuxormax/LinuxHWMonitor`. **En migración: de Python+PyQt5 → Go+Flutter (cross-platform Linux/Windows), solo inventario sin temperaturas.**
+Monitor/inventario de hardware de tuxor. Repo `tuxormax/pcinfo`. **En migración: de Python+PyQt5 → Go+Flutter (cross-platform Linux/Windows), solo inventario sin temperaturas.**
 
 ## Indice
 - [proyecto-rewrite-go-flutter](proyecto-rewrite-go-flutter.md) — ⭐ ACTUAL (2026-06-22): rewrite a Go+Flutter, reemplaza el plan PyQt5. Por qué, estado, pendientes.
