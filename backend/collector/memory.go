@@ -149,7 +149,9 @@ func isSoldered(formFactor string) bool {
 // cleanDMI descarta los placeholders típicos de DMI vacío.
 func cleanDMI(s string) string {
 	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "", "unknown", "not specified", "none", "to be filled by o.e.m.", "no module installed":
+	case "", "unknown", "not specified", "none", "to be filled by o.e.m.",
+		"no module installed", "x.x", "default string", "n/a", "0",
+		"00000000", "1234567890":
 		return ""
 	}
 	return strings.TrimSpace(s)

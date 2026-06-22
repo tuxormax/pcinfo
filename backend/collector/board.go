@@ -8,7 +8,7 @@ func collectBoard() BoardInfo {
 	if bb, err := ghw.Baseboard(); err == nil && bb != nil {
 		out.Vendor = bb.Vendor
 		out.Product = bb.Product
-		out.Version = bb.Version
+		out.Version = cleanDMI(bb.Version) // descarta "x.x" y similares
 	} else {
 		warn("baseboard", err)
 	}

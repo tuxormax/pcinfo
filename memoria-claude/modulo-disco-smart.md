@@ -20,6 +20,10 @@ Todo vive en `src/linux_hwmonitor.py` (archivo único). Clase `DiskInfoPanel`. D
 ## Conversión de unidades — clave
 `_attr_to_bytes(name, raw, lba_size)` decide la unidad por el **nombre** del atributo: contiene "gib"→×1024³, "gb"→×1e9, "lba/sector"→×lba_size (512), default→×512. NVMe: 1 data unit = 512000 bytes. `_fmt_bytes()` formatea a TB/GB/MB. Si la cifra no cuadra con un disco real, revisar el nombre real del atributo con `sudo smartctl -A /dev/sdX`.
 
+## ⭐ Replicado en backend Go (2026-06-22) — `backend/collector/smart.go`
+La misma lógica name-based vive ahora en Go (`attrToBytes`, `ataLifeUsed`). **Bug real corregido**: antes multiplicaba SIEMPRE ×512 → Kingston SA400 (atributo 241 `Lifetime_Writes_GiB` raw=6531) mostraba **3.2 MiB** en vez de **6.4 TiB** (6531×1024³). Fix: decidir unidad por nombre (gib/gb/mib/mb/lba/sector). Vida SSD SATA (`ataLifeUsed`): por nombre — `ssd_life_left`/`life_left`/`media_wearout` → 100−valorNormalizado; `*life_used` → raw directo; respaldo `wear_leveling`. Ejemplos verificados con SMART real de tuxor: Kingston SA400 231 `SSD_Life_Left`=97 → 97% restante; ADATA SU800 177 `Wear_Leveling_Count`=100 → 100% restante.
+- ⚠️ **Pendiente/caveat ADATA SU800**: su atributo 241 se llama `Total_LBAs_Written` (→×512) pero el valor (raw=137050 → 67 MiB) es irrealmente bajo para 2110h encendido; el controlador SMI reporta en unidad no estándar bajo nombre estándar y NO hay señal programática para detectarlo. Si el usuario confirma el valor real (CrystalDiskInfo/TBW), special-case por modelo. El GUI ya tiene filas "Vida restante" y escrituras/lecturas; el bug era 100% del backend.
+
 ## Atributos en español
 `SMART_ATTRS_ES` (dict por **id** entero) y `SMART_NVME_ES` (dict por nombre). Tabla de 8 columnas: ID · Atributo · Qué significa · Estado · Valor · Peor · Umbral · Raw. El nombre técnico original va en tooltip. Si el id no está en el dict → usa el nombre de smartctl + "atributo del fabricante".
 
