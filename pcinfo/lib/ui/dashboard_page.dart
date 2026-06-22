@@ -1,0 +1,632 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
+import '../version.dart';
+import '../models/hardware.dart';
+import '../services/hardware_service.dart';
+import '../theme.dart';
+import '../utils/format.dart';
+import 'widgets/spec_card.dart';
+
+class DashboardPage extends StatefulWidget {
+  final HardwareService service;
+  const DashboardPage({super.key, required this.service});
+
+  @override
+  State<DashboardPage> createState() => _DashboardPageState();
+}
+
+class _DashboardPageState extends State<DashboardPage> {
+  late Future<HardwareInfo> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = widget.service.load();
+  }
+
+  void _refresh() {
+    setState(() => _future = widget.service.load());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: FutureBuilder<HardwareInfo>(
+          future: _future,
+          builder: (context, snap) {
+            if (snap.connectionState != ConnectionState.done) {
+              return const Center(
+                child: CircularProgressIndicator(color: AppColors.accent),
+              );
+            }
+            if (snap.hasError) {
+              return Center(
+                child: Text('Error: ${snap.error}',
+                    style: const TextStyle(color: AppColors.textMid)),
+              );
+            }
+            return _content(snap.data!);
+          },
+        ),
+      ),
+      bottomNavigationBar: _footer(),
+    );
+  }
+
+  Widget _footer() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        border: Border(top: BorderSide(color: AppColors.border)),
+      ),
+      child: Row(
+        children: [
+          Text(
+            '$appName v$appVersion Rev $appRevision',
+            style: const TextStyle(
+              color: AppColors.textMid,
+              fontSize: kFont,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(width: 12),
+          _dot(),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              '$appCopyright  ·  $appEmail  ·  Licencia $appLicense',
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: AppColors.textLow, fontSize: kFont),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _dot() => Container(
+        width: 4,
+        height: 4,
+        decoration: const BoxDecoration(
+          color: AppColors.textLow,
+          shape: BoxShape.circle,
+        ),
+      );
+
+  Widget _content(HardwareInfo hw) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _topBar(hw),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+            child: LayoutBuilder(
+              builder: (context, c) {
+                const gap = 18.0;
+                // 2 columnas si hay espacio; si no, 1.
+                final twoCols = c.maxWidth > 720;
+                if (!twoCols) {
+                  // Una sola columna: todas las fichas con el mismo gap.
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _systemCard(hw.system),
+                      const SizedBox(height: gap),
+                      _cpuCard(hw.cpu),
+                      const SizedBox(height: gap),
+                      _boardCard(hw.board),
+                      const SizedBox(height: gap),
+                      _ramCard(hw.memory),
+                      const SizedBox(height: gap),
+                      _gpuCard(hw.gpu),
+                      const SizedBox(height: gap),
+                      _disksCard(hw.disks),
+                    ],
+                  );
+                }
+                // Masonry real: cada ficha se coloca en la columna más corta,
+                // así no quedan huecos por diferencia de altura.
+                final cards = [
+                  _systemCard(hw.system),
+                  _cpuCard(hw.cpu),
+                  _boardCard(hw.board),
+                  _ramCard(hw.memory),
+                  _gpuCard(hw.gpu),
+                ];
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    MasonryGridView.count(
+                      crossAxisCount: 2,
+                      mainAxisSpacing: gap,
+                      crossAxisSpacing: gap,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: cards.length,
+                      itemBuilder: (context, i) => cards[i],
+                    ),
+                    const SizedBox(height: gap),
+                    _disksCard(hw.disks),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _topBar(HardwareInfo hw) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(24, 18, 18, 16),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: AppColors.border)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.memory_rounded, color: AppColors.accent, size: 26),
+          const SizedBox(width: 10),
+          const Text(
+            'PCInfo',
+            style: TextStyle(
+              color: AppColors.textHi,
+              fontSize: kFont,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.3,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Row(
+              children: [
+                Flexible(child: _chip(Icons.dns_rounded, hw.system.hostname)),
+                const SizedBox(width: 8),
+                Flexible(child: _chip(Icons.terminal_rounded, hw.system.distro)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          _refreshButton(),
+        ],
+      ),
+    );
+  }
+
+  Widget _chip(IconData icon, String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: AppColors.textMid),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(text,
+                overflow: TextOverflow.ellipsis,
+                softWrap: false,
+                style:
+                    const TextStyle(color: AppColors.textMid, fontSize: kFont)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _refreshButton() {
+    return Material(
+      color: AppColors.accentDim.withValues(alpha: 0.35),
+      borderRadius: BorderRadius.circular(9),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(9),
+        onTap: _refresh,
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.refresh_rounded, size: 16, color: AppColors.accent),
+              SizedBox(width: 6),
+              Text('Refrescar',
+                  style: TextStyle(
+                      color: AppColors.accent,
+                      fontSize: kFont,
+                      fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ---- Tarjetas por categoría ----
+
+  Widget _systemCard(SystemInfo s) {
+    return SpecCard(
+      icon: Icons.computer_rounded,
+      accent: AppColors.system,
+      title: 'Sistema operativo',
+      rows: [
+        SpecRow('Sistema', s.distro),
+        SpecRow('Nombre del equipo', s.hostname),
+        SpecRow('Kernel', s.kernel),
+        SpecRow('Arquitectura', s.arch),
+        if (s.desktop.isNotEmpty) SpecRow('Escritorio', s.desktop),
+      ],
+    );
+  }
+
+  Widget _cpuCard(CpuInfo c) {
+    return SpecCard(
+      icon: Icons.developer_board_rounded,
+      accent: AppColors.cpu,
+      title: 'Procesador (CPU)',
+      rows: [
+        SpecRow('Fabricante', cleanVendor(c.vendor)),
+        SpecRow('Modelo', c.model),
+        SpecRow('Núcleos', '${c.cores}'),
+        SpecRow('Hilos', '${c.threads}'),
+        SpecRow('Frecuencia base', formatMhz(c.baseMhz)),
+        SpecRow('Frecuencia máxima', formatMhz(c.maxMhz)),
+      ],
+    );
+  }
+
+  Widget _boardCard(BoardInfo b) {
+    return SpecCard(
+      icon: Icons.dashboard_customize_rounded,
+      accent: AppColors.board,
+      title: 'Tarjeta madre',
+      rows: [
+        SpecRow('Fabricante', b.vendor),
+        SpecRow('Modelo', b.product),
+        SpecRow('Tamaño', b.formFactor.isEmpty ? 'Desconocido' : b.formFactor),
+        SpecRow('Versión', b.version),
+        SpecRow('BIOS', '${b.biosVendor} ${b.biosVersion}'.trim()),
+        SpecRow('Fecha BIOS', b.biosDate),
+      ],
+    );
+  }
+
+  Widget _ramCard(MemoryInfo m) {
+    final rows = <SpecRow>[
+      SpecRow('Total', formatBytes(m.totalBytes)),
+      SpecRow('Montaje', m.soldered ? 'Soldada (no ampliable)' : 'Ranuras (ampliable)'),
+    ];
+    if (m.totalSlots > 0) {
+      final libres = m.freeSlots;
+      rows.add(SpecRow('Ranuras',
+          '${m.modules.length} de ${m.totalSlots} ocupadas'));
+      rows.add(SpecRow('Ranuras libres', '$libres'));
+    } else {
+      rows.add(SpecRow('Módulos', '${m.modules.length}'));
+    }
+    if (m.maxCapacityBytes > 0) {
+      rows.add(SpecRow('Capacidad máx.', formatBytes(m.maxCapacityBytes)));
+    }
+    return SpecCard(
+      icon: Icons.memory_rounded,
+      accent: AppColors.ram,
+      title: 'Memoria RAM',
+      rows: rows,
+      footer: _slotsList(m),
+    );
+  }
+
+  Widget _gpuCard(GpuInfo g) {
+    if (g.cards.isEmpty) {
+      return const SpecCard(
+        icon: Icons.videogame_asset_rounded,
+        accent: AppColors.gpu,
+        title: 'Tarjeta gráfica (GPU)',
+        rows: [SpecRow('Estado', 'No detectada')],
+      );
+    }
+    return SpecCard(
+      icon: Icons.videogame_asset_rounded,
+      accent: AppColors.gpu,
+      title: 'Tarjeta gráfica (GPU)',
+      rows: [
+        for (final card in g.cards) ...[
+          SpecRow('Fabricante', cleanVendor(card.vendor)),
+          SpecRow('Modelo', card.product),
+          if (card.memoryBytes > 0)
+            SpecRow('VRAM', formatBytes(card.memoryBytes)),
+          SpecRow('Driver', card.driver),
+        ],
+      ],
+    );
+  }
+
+  Widget _disksCard(List<DiskInfo> disks) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+      ),
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: AppColors.disk.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.storage_rounded,
+                    color: AppColors.disk, size: 21),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Almacenamiento',
+                style: TextStyle(
+                  color: AppColors.textHi,
+                  fontSize: kFont,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (disks.isEmpty)
+            const Text('No se detectaron discos',
+                style: TextStyle(color: AppColors.textMid, fontSize: kFont))
+          else
+            ...disks.map(_diskRow),
+        ],
+      ),
+    );
+  }
+
+  Widget _diskRow(DiskInfo d) {
+    final isSsd = d.type.toLowerCase().contains('ssd') ||
+        d.bus.toLowerCase() == 'nvme';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(isSsd ? Icons.bolt_rounded : Icons.album_rounded,
+                  size: 20, color: AppColors.disk),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            d.model,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppColors.textHi,
+                              fontSize: kFont,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        _typeBadge(d.type),
+                        const SizedBox(width: 8),
+                        _healthBadge(d.healthStatus),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${d.name}   ·   Serie: ${d.serial}   ·   Bus: ${d.bus.toUpperCase()}',
+                      style: const TextStyle(
+                          color: AppColors.textLow, fontSize: kFont),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                formatBytes(d.sizeBytes),
+                style: const TextStyle(
+                  color: AppColors.textHi,
+                  fontSize: kFont,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          if (d.smartAvailable) ...[
+            const SizedBox(height: 12),
+            const Divider(height: 1, color: AppColors.border),
+            const SizedBox(height: 12),
+            _diskMetrics(d),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _diskMetrics(DiskInfo d) {
+    final items = <Widget>[];
+    if (d.writtenBytes > 0) {
+      items.add(_metric('Escrituras totales', formatBytes(d.writtenBytes)));
+    }
+    if (d.readBytes > 0) {
+      items.add(_metric('Lecturas totales', formatBytes(d.readBytes)));
+    }
+    if (d.lifePercentUsed >= 0) {
+      items.add(_metric('Vida restante', '${100 - d.lifePercentUsed}%'));
+    }
+    items.add(_metric('Horas encendido', '${d.powerOnHours} h'));
+    items.add(_metric('Ciclos de encendido', '${d.powerCycles}'));
+    items.add(_metric('Sectores reasignados', '${d.reallocatedSectors}',
+        warn: d.reallocatedSectors > 0));
+    return Wrap(spacing: 28, runSpacing: 12, children: items);
+  }
+
+  Widget _metric(String label, String value, {bool warn = false}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(label,
+            style: const TextStyle(color: AppColors.textLow, fontSize: kFont)),
+        const SizedBox(height: 2),
+        Text(value,
+            style: TextStyle(
+                color: warn ? const Color(0xFFE3A84B) : AppColors.textHi,
+                fontSize: kFont,
+                fontWeight: FontWeight.w700)),
+      ],
+    );
+  }
+
+  Widget _typeBadge(String type) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppColors.disk.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: AppColors.disk.withValues(alpha: 0.30)),
+      ),
+      child: Text(type,
+          style: const TextStyle(color: AppColors.disk, fontSize: kFont)),
+    );
+  }
+
+  Widget _healthBadge(DiskHealth h) {
+    late final Color c;
+    late final String label;
+    late final IconData icon;
+    switch (h) {
+      case DiskHealth.good:
+        c = const Color(0xFF3FB950);
+        label = 'SALUDABLE';
+        icon = Icons.check_circle_rounded;
+        break;
+      case DiskHealth.warning:
+        c = const Color(0xFFE3A84B);
+        label = 'ADVERTENCIA';
+        icon = Icons.warning_amber_rounded;
+        break;
+      case DiskHealth.fail:
+        c = const Color(0xFFF2768D);
+        label = 'FALLA';
+        icon = Icons.error_rounded;
+        break;
+      case DiskHealth.unknown:
+        c = AppColors.textLow;
+        label = 'SIN SMART';
+        icon = Icons.help_outline_rounded;
+        break;
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: c.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: c),
+          const SizedBox(width: 4),
+          Text(label,
+              style: TextStyle(
+                  color: c, fontSize: kFont, fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+
+  // ---- Auxiliares ----
+
+  Widget _slotsList(MemoryInfo m) {
+    if (m.modules.isEmpty && m.freeSlots <= 0) return const SizedBox.shrink();
+    final rows = <Widget>[];
+    // Ranuras ocupadas.
+    for (final mod in m.modules) {
+      final ff = mod.formFactor.isEmpty ? '' : '  ·  ${mod.formFactor}';
+      rows.add(_slotTile(
+        icon: Icons.sd_card_rounded,
+        iconColor: AppColors.ram,
+        left: '${mod.location}$ff',
+        right:
+            '${formatBytes(mod.sizeBytes)}  ${mod.type} ${mod.speedMhz > 0 ? "${mod.speedMhz}MHz" : ""}'
+                .trim(),
+        rightColor: AppColors.textHi,
+      ));
+    }
+    // Ranuras libres (placeholder por cada una).
+    final libres = m.freeSlots;
+    for (var i = 0; i < libres; i++) {
+      rows.add(_slotTile(
+        icon: Icons.crop_square_rounded,
+        iconColor: AppColors.textLow,
+        left: 'Ranura libre',
+        right: 'Vacía',
+        rightColor: AppColors.textLow,
+        dimmed: true,
+      ));
+    }
+    return Column(children: rows);
+  }
+
+  Widget _slotTile({
+    required IconData icon,
+    required Color iconColor,
+    required String left,
+    required String right,
+    required Color rightColor,
+    bool dimmed = false,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: dimmed ? AppColors.bg : AppColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+            color: dimmed
+                ? AppColors.border.withValues(alpha: 0.5)
+                : AppColors.border),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 15, color: iconColor),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Text(left,
+                style:
+                    TextStyle(color: AppColors.textMid, fontSize: kFont)),
+          ),
+          Text(right,
+              style: TextStyle(
+                  color: rightColor,
+                  fontSize: kFont,
+                  fontWeight: FontWeight.w500)),
+        ],
+      ),
+    );
+  }
+}
