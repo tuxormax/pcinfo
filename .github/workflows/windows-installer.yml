@@ -36,6 +36,9 @@ jobs:
           cd backend
           go build -ldflags "-s -w" -o pcinfo-backend.exe .
 
+      - name: Diagnóstico Flutter (detección de Visual Studio)
+        run: flutter doctor -v
+
       - name: Compilar GUI Flutter (Windows release)
         run: |
           cd pcinfo
