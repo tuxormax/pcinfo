@@ -29,11 +29,28 @@ El usuario decidió **reescribir** LinuxHWMonitor (antes Python+PyQt5) en **Go +
 - Fuente **Ubuntu** empaquetada (Regular+Bold en pcinfo/fonts/), **todo a un solo tamaño** (`kFont=14`), sin monoespaciada.
 - Dashboard con fichas: Sistema operativo, CPU, Tarjeta madre, RAM, GPU, Almacenamiento.
 
-## Pendiente — BACKEND GO (próxima fase, arranca aquí)
-- Crear `backend/` (módulo Go). Servidor HTTP local (ej. `127.0.0.1:PORT`) con endpoint **`GET /hardware`** que devuelve el JSON **exactamente con la forma de `pcinfo/lib/models/hardware.dart`**: `{system, cpu, board, memory, gpu, disks}` (campos y nombres = el contrato; ver [[modulo-gui-pcinfo]]).
-- Fuentes: **`jaypipes/ghw`** (CPU, RAM+slots, madre/BIOS, GPU, discos) · **`smartctl --json`** (salud SMART, escrituras/lecturas, vida, sectores) · **`nvidia-smi`** (driver/VRAM NVIDIA). En Windows el equivalente lo resuelve ghw (WMI).
-- Datos que ghw NO da y hay que resolver (mostrar ""/"Desconocido"): frecuencia máx CPU, tamaño placa ATX, VRAM real >4GB en Win, RAM soldada (form factor).
-- Integrar en GUI: crear `HttpHardwareService implements HardwareService` (GET /hardware) y cambiar la línea en `main.dart` (`MockHardwareService()` → `HttpHardwareService()`). La UI NO se toca.
-- Decidir cómo empaqueta Flutter el binario Go (lanzarlo como subproceso al iniciar la app, o servicio aparte).
+## BACKEND GO — ✅ HECHO (2026-06-22)
+- Módulo `backend/` (`pcinfo-backend`, Go 1.26, dep `jaypipes/ghw`). Servidor HTTP en **`127.0.0.1:51247`** (override `--addr` o env `PCINFO_ADDR`), endpoint **`GET /hardware`** + `/healthz`. JSON con la forma EXACTA de `hardware.dart` (tags json camelCase = contrato).
+- Estructura: `main.go` (server) + `collector/` (types.go contrato, collect.go orquesta, system/cpu/board/memory/gpu/disk/smart .go). Cada colector degrada con elegancia (`warn()`), nunca aborta.
+- Fuentes: **ghw** (CPU, board/BIOS, GPU, discos, totales RAM) · **dmidecode -t 16/17** (ranuras/módulos/maxCap/soldada) · **smartctl --json -a** (SMART por disco) · **nvidia-smi** (driver+VRAM NVIDIA, enriquece tarjetas ghw por índice).
+- ⚠️ **Permisos**: sin root, `dmidecode` (módulos/ranuras RAM) y `smartctl` (SMART) fallan → la app muestra solo totales y `smartAvailable=false`. Para datos completos correr backend con sudo / `setcap`. Probado OK sin root: system/cpu/board/memory-totales/gpu/discos básicos salen bien.
+- smartctl sale con código ≠0 aunque el JSON sea válido (flags) → parseamos stdout ignorando el exit code.
+- **Integración GUI HECHA**: `HttpHardwareService` (en `services/hardware_service.dart`, usa `dart:io`, sin deps nuevas) con `fallback: MockHardwareService()`. `main.dart` ya lo usa → datos reales si el backend corre, mock si no. UI no se tocó (salvo numerar GPUs).
+- Gaps conocidos que quedan ""/-1: formFactor placa (ATX), baseMhz/maxMhz en VM/Windows (en Linux se leen de cpufreq).
+- **Pendiente menor**: empaquetar/lanzar el binario Go como subproceso al abrir la app (hoy se lanza aparte). Build Windows (ghw usa WMI ahí).
+
+## Multi-GPU (integrada + dedicada)
+- Backend y GUI YA soportan N tarjetas (ghw devuelve todas; GUI itera `g.cards`, las numera "GPU 1/2" con etiqueta Integrada/Dedicada por heurística de vendor/modelo).
+- En la PC de tuxor (Ryzen 5 5600G **con Radeon** + RTX 3060) el SO solo ve **una** GPU: la Radeon integrada está **deshabilitada en BIOS** al haber GPU dedicada (confirmado: `lspci` y `/sys/class/drm` solo listan la NVIDIA). No es bug; si se habilita el iGPU en BIOS o en laptops Optimus, aparecerán ambas.
+
+## Cómo correr
+- GUI (Linux): `cd /home/tuxor/www/pcinfo/pcinfo && flutter run -d linux`.
+- Backend: `cd /home/tuxor/www/pcinfo/backend && go build -o pcinfo-backend . && ./pcinfo-backend` (o con `sudo` para RAM modules + SMART).
+
+## Instaladores (v1.1 Rev 2, 2026-06-22) — carpeta `instaladores/`
+- Binarios generados (`*.deb`, `*.exe`) NO se versionan (`.gitignore`); sí los scripts.
+- **Linux `.deb`**: `bash instaladores/construir_linux.sh` → `pcinfo_1.1.0_amd64.deb` (~17MB). Instala GUI en `/opt/pcinfo/app` + lanzador `/usr/bin/pcinfo` + `.desktop`, y el backend como **servicio systemd `pcinfo-backend.service`** corriendo como **root** (así dmidecode+smartctl dan datos completos). Depends: smartmontools, dmidecode, libgtk-3-0.
+- **Windows**: NO se puede compilar el bundle Flutter Windows desde Linux (necesita Visual Studio). Se construye en **GitHub Actions** → `.github/workflows/windows-installer.yml` (runner `windows-latest`: Go + Flutter 3.35.6 + `choco install innosetup` → ISCC). Inno Setup script: `instaladores/instalador_windows.iss` (instala en Program Files, backend al inicio de sesión vía HKLM\...\Run). Salida: artifact `pcinfo-windows-installer` (`pcinfo-setup-1.1.0.exe`). Se dispara en push a main o manual (workflow_dispatch). El backend Go SÍ cross-compila a `.exe` desde Linux (`GOOS=windows`), pero la GUI no.
+- Versión en `pcinfo/lib/version.dart` (appVersion/appRevision) + `pubspec.yaml` (1.1.0+2). Único lugar de la versión.
 
 **Ver también:** [[modulo-gui-pcinfo]] [[proyecto-contexto]] [[modulo-disco-smart]]

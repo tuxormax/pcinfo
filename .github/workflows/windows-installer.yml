@@ -1,0 +1,61 @@
+name: Instalador Windows
+
+# Compila el instalador de Windows (no se puede generar desde Linux: el bundle
+# Flutter para Windows requiere Visual Studio). Se ejecuta en un runner Windows.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'pcinfo/**'
+      - 'backend/**'
+      - 'instaladores/instalador_windows.iss'
+      - '.github/workflows/windows-installer.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Configurar Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.35.6'
+
+      - name: Compilar backend Go (.exe)
+        run: |
+          cd backend
+          go build -ldflags "-s -w" -o pcinfo-backend.exe .
+
+      - name: Compilar GUI Flutter (Windows release)
+        run: |
+          cd pcinfo
+          flutter config --enable-windows-desktop
+          flutter pub get
+          flutter build windows --release
+
+      - name: Instalar Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Generar instalador
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
+            /DSourceFlutter="pcinfo\build\windows\x64\runner\Release" `
+            /DSourceBackend="backend\pcinfo-backend.exe" `
+            instaladores\instalador_windows.iss
+
+      - name: Subir instalador como artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pcinfo-windows-installer
+          path: instaladores/pcinfo-setup-*.exe
+          if-no-files-found: error
