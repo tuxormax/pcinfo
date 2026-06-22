@@ -1,13 +1,15 @@
 ---
 name: proyecto-contexto
-description: Que es LinuxHWMonitor y su stack
+description: App original PyQt5 (ELIMINADA) — se conserva como referencia de qué datos/herramientas recolectaba, para el backend Go.
 metadata:
-  type: project
+  type: reference
 ---
+
+> ⚠️ **HISTÓRICO / REFERENCIA.** Esta es la app **original Python+PyQt5, ya ELIMINADA** del repo (ver [[proyecto-rewrite-go-flutter]]). Se conserva porque la lista de **qué muestra** y **qué colectores/herramientas** usa es la mejor spec para construir el backend Go.
 
 `/home/tuxor/www/pcinfo` — monitor de hardware para Linux de tuxor, inspirado en CrystalDiskInfo + HWiNFO64. Repo `tuxormax/pcinfo`.
 
-**Stack:** Python 3.8+ con **PyQt5**. GPL v3. Fuente principal: `src/linux_hwmonitor.py` (~2040 líneas). Empaquetado: `.deb` (deb-build/) y flatpak (flatpak/, build-flatpak.sh).
+**Stack (eliminado):** era Python 3.8+ con **PyQt5**, GPL v3, en `src/linux_hwmonitor.py` (~2040 líneas).
 
 **2 pestañas:** "🖥 Sistema & Hardware" y "💾 Disco (S.M.A.R.T.)".
 
@@ -17,6 +19,4 @@ metadata:
 
 **Aviso licencia (GPL v3):** los créditos del autor (tuxor) deben mantenerse visibles en código e interfaz en cualquier fork/derivado.
 
-Pendiente principal: portar a Windows -> [[mejora-port-windows]].
-
-**Ver también:** [[mejora-port-windows]]
+**Ver también:** [[proyecto-rewrite-go-flutter]] [[modulo-gui-pcinfo]] [[modulo-disco-smart]]
