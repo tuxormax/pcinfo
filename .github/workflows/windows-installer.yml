@@ -17,7 +17,7 @@ on:
       revision:
         description: 'Revisión (ej: 2)'
         required: true
-        default: '3'
+        default: '4'
   push:
     branches: [main]
     paths:
@@ -36,8 +36,8 @@ jobs:
       contents: write
     env:
       VERSION: ${{ github.event.inputs.version || '1.1' }}
-      REVISION: ${{ github.event.inputs.revision || '3' }}
-      PCINFO_NAME: pcinfo_v${{ github.event.inputs.version || '1.1' }}_rev-${{ github.event.inputs.revision || '3' }}
+      REVISION: ${{ github.event.inputs.revision || '4' }}
+      PCINFO_NAME: pcinfo_v${{ github.event.inputs.version || '1.1' }}_rev-${{ github.event.inputs.revision || '4' }}
     steps:
       - uses: actions/checkout@v4
 
