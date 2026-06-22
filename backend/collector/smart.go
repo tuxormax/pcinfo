@@ -3,6 +3,8 @@ package collector
 import (
 	"encoding/json"
 	"os/exec"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -88,9 +90,9 @@ func readSmart(di *DiskInfo) {
 			case 5: // Reallocated_Sector_Ct
 				di.ReallocatedSectors = int(a.Raw.Value)
 			case 241: // escrituras totales del host
-				di.WrittenBytes = attrToBytes(a.Name, a.Raw.Value, lbs)
+				di.WrittenBytes = hostBytes(di.Model, a.Name, a.Raw.Value, lbs)
 			case 242: // lecturas totales del host
-				di.ReadBytes = attrToBytes(a.Name, a.Raw.Value, lbs)
+				di.ReadBytes = hostBytes(di.Model, a.Name, a.Raw.Value, lbs)
 			}
 		}
 		di.LifePercentUsed = ataLifeUsed(s.ATA.Table)
@@ -108,26 +110,61 @@ func readSmart(di *DiskInfo) {
 	}
 }
 
+// reUnit extrae un múltiplo embebido en el nombre del atributo, p. ej.
+// "Host_Writes_32MiB" → (32, MiB), "NAND_Writes_1GiB" → (1, GiB).
+var reUnit = regexp.MustCompile(`(\d*)\s*(gib|mib|gb|mb)`)
+
+// hostUnitsBytes mapea modelos cuyo controlador reporta 241/242 en una unidad
+// que el preset de smartmontools NO le aplica al modelo concreto. Copiado del
+// propio drivedb.h: la familia ADATA SU Silicon Motion usa 32 MiB por unidad,
+// pero el regex del preset no cubre variantes como "SU800NS38".
+var modelHostUnit = []struct {
+	re    *regexp.Regexp
+	bytes int64
+}{
+	{regexp.MustCompile(`(?i)ADATA[ _]SU[689]\d\d`), 32 * 1024 * 1024},
+}
+
+// hostBytes calcula los bytes de escrituras/lecturas del host: primero un
+// override por modelo (firmware que miente bajo un nombre estándar), si no, la
+// unidad deducida del nombre del atributo.
+func hostBytes(model, name string, raw, lbs int64) int64 {
+	for _, o := range modelHostUnit {
+		if o.re.MatchString(model) {
+			return raw * o.bytes
+		}
+	}
+	return attrToBytes(name, raw, lbs)
+}
+
 // attrToBytes convierte el raw de un atributo a bytes decidiendo la unidad por
-// el NOMBRE (los controladores reportan en GiB/GB/MiB o en sectores LBA bajo
-// nombres distintos). Ej.: Kingston usa "Lifetime_Writes_GiB" (×1024³),
-// la mayoría usa "Total_LBAs_Written" (×tamaño de sector).
+// el NOMBRE (los controladores reportan en GiB/GB/MiB/sectores bajo nombres
+// distintos). Soporta múltiplos embebidos ("..._32MiB"). Ej.: Kingston usa
+// "Lifetime_Writes_GiB" (×1024³); la mayoría "Total_LBAs_Written" (×sector).
 func attrToBytes(name string, raw, lbs int64) int64 {
 	n := strings.ToLower(name)
-	switch {
-	case strings.Contains(n, "gib"):
-		return raw * 1024 * 1024 * 1024
-	case strings.Contains(n, "gb"):
-		return raw * 1000 * 1000 * 1000
-	case strings.Contains(n, "mib"):
-		return raw * 1024 * 1024
-	case strings.Contains(n, "mb"):
-		return raw * 1000 * 1000
-	case strings.Contains(n, "lba"), strings.Contains(n, "sector"):
-		return raw * lbs
-	default:
+	if m := reUnit.FindStringSubmatch(n); m != nil {
+		mult := int64(1)
+		if m[1] != "" {
+			if v, err := strconv.ParseInt(m[1], 10, 64); err == nil {
+				mult = v
+			}
+		}
+		switch m[2] {
+		case "gib":
+			return raw * mult * 1024 * 1024 * 1024
+		case "gb":
+			return raw * mult * 1000 * 1000 * 1000
+		case "mib":
+			return raw * mult * 1024 * 1024
+		case "mb":
+			return raw * mult * 1000 * 1000
+		}
+	}
+	if strings.Contains(n, "lba") || strings.Contains(n, "sector") {
 		return raw * lbs
 	}
+	return raw * lbs
 }
 
 // ataLifeUsed devuelve el % de vida CONSUMIDA del SSD (-1 si no aplica/HDD).
