@@ -1,9 +1,23 @@
 name: Instalador Windows
 
 # Compila el instalador de Windows (no se puede generar desde Linux: el bundle
-# Flutter para Windows requiere Visual Studio). Se ejecuta en un runner Windows.
+# Flutter para Windows requiere Visual Studio). Patrón replicado de SIGARN:
+# flutter-action channel stable SIN fijar versión (la detección de Visual Studio
+# falla si se fija), Inno Setup ya viene en el runner, se empaqueta el VC++
+# Redistributable y se publica como GitHub Release (no artifact: la cuota de
+# artifacts se llena con los builds históricos).
 
 on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Versión (ej: 1.1)'
+        required: true
+        default: '1.1'
+      revision:
+        description: 'Revisión (ej: 2)'
+        required: true
+        default: '2'
   push:
     branches: [main]
     paths:
@@ -11,54 +25,61 @@ on:
       - 'backend/**'
       - 'instaladores/instalador_windows.iss'
       - '.github/workflows/windows-installer.yml'
-  workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: windows-latest
+  build-windows:
+    # windows-2022 = Visual Studio 2022 (v17). NO usar windows-latest: trae
+    # VS 2026 (v18), que Flutter stable aún no mapea a un generador CMake y cae
+    # al viejo "Visual Studio 16 2019" → falla la compilación.
+    runs-on: windows-2022
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ github.event.inputs.version || '1.1' }}
+      REVISION: ${{ github.event.inputs.revision || '2' }}
+      PCINFO_NAME: pcinfo_v${{ github.event.inputs.version || '1.1' }}_rev-${{ github.event.inputs.revision || '2' }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Configurar Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
           go-version: '1.26'
 
-      - name: Configurar Flutter
-        uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: '3.35.6'
 
       - name: Compilar backend Go (.exe)
-        run: |
-          cd backend
-          go build -ldflags "-s -w" -o pcinfo-backend.exe .
-
-      - name: Diagnóstico Flutter (detección de Visual Studio)
-        run: flutter doctor -v
+        working-directory: backend
+        run: go build -ldflags "-s -w" -o pcinfo-backend.exe .
 
       - name: Compilar GUI Flutter (Windows release)
-        run: |
-          cd pcinfo
-          flutter config --enable-windows-desktop
-          flutter pub get
-          flutter build windows --release
+        working-directory: pcinfo
+        run: flutter build windows --release
 
-      - name: Instalar Inno Setup
-        run: choco install innosetup -y --no-progress
+      - name: Descargar VC++ Redistributable
+        run: Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "instaladores\vc_redist.x64.exe"
 
-      - name: Generar instalador
+      - name: Generar instalador con Inno Setup
         run: |
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
-            /DSourceFlutter="pcinfo\build\windows\x64\runner\Release" `
-            /DSourceBackend="backend\pcinfo-backend.exe" `
-            instaladores\instalador_windows.iss
+            "/DSourceFlutter=${{ github.workspace }}\pcinfo\build\windows\x64\runner\Release" `
+            "/DSourceBackend=${{ github.workspace }}\backend\pcinfo-backend.exe" `
+            "/DVcRedist=${{ github.workspace }}\instaladores\vc_redist.x64.exe" `
+            "/DOutDir=${{ github.workspace }}\instaladores" `
+            "/DBaseName=$env:PCINFO_NAME" `
+            "/DAppVer=$env:VERSION" `
+            "${{ github.workspace }}\instaladores\instalador_windows.iss"
 
-      - name: Subir instalador como artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: pcinfo-windows-installer
-          path: instaladores/pcinfo-setup-*.exe
-          if-no-files-found: error
+      # Publicar en GitHub Release (NO artifact): los release assets no consumen
+      # la cuota de almacenamiento de Actions.
+      - name: Publicar instalador (Release)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="win-v${VERSION}-rev${REVISION}"
+          gh release create "$TAG" "instaladores/${PCINFO_NAME}.exe" \
+            --title "PCInfo v${VERSION} Rev ${REVISION} (Windows)" \
+            --notes "Instalador Windows generado por CI." \
+            || gh release upload "$TAG" "instaladores/${PCINFO_NAME}.exe" --clobber

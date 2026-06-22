@@ -27,16 +27,21 @@ sudo apt remove pcinfo
 
 ## Windows (`.exe`) — vía GitHub Actions
 El bundle Flutter para Windows **no se puede compilar desde Linux** (requiere
-Visual Studio). Se genera en CI:
+Visual Studio). Se genera en CI (patrón replicado de SIGARN):
 
 - Workflow: `.github/workflows/windows-installer.yml` (runner `windows-latest`).
 - Pasos: compila backend Go (`.exe`) → `flutter build windows --release` →
-  Inno Setup (`instalador_windows.iss`) → sube el instalador como **artifact**
-  `pcinfo-windows-installer`.
-- Se dispara solo al hacer push a `main` (cambios en `pcinfo/`, `backend/` o el
-  `.iss`) o manualmente desde la pestaña **Actions → Run workflow**.
-- El instalador resultante (`pcinfo-setup-1.1.0.exe`) se descarga desde la
-  ejecución del workflow en GitHub.
+  descarga el **VC++ Redistributable** (se empaqueta dentro del instalador, la
+  app no arranca sin él) → Inno Setup (`instalador_windows.iss`, ISCC ya viene
+  en el runner) → publica el instalador como **GitHub Release**.
+- ⚠️ `subosito/flutter-action` se usa con `channel: stable` **sin fijar
+  versión**: al fijarla, Flutter no detecta Visual Studio y CMake cae a su
+  generador viejo ("Visual Studio 16 2019") → falla.
+- Se publica como **Release** (no artifact): los release assets no consumen la
+  cuota de almacenamiento de Actions.
+- Se dispara con push a `main` (cambios en `pcinfo/`, `backend/` o el `.iss`) o
+  manual en **Actions → Run workflow** (inputs versión/revisión → nombre del
+  `.exe`). Tag del release: `win-v<ver>-rev<rev>`.
 
 ### Compilar el instalador Windows a mano (en una máquina Windows)
 Requiere Flutter + Visual Studio (Desktop C++) + Inno Setup 6:
