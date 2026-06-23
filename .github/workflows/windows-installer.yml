@@ -8,16 +8,8 @@ name: Instalador Windows
 # artifacts se llena con los builds históricos).
 
 on:
+  # Disparo manual: siempre construye lo que diga pcinfo/lib/version.dart.
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Versión (ej: 1.1)'
-        required: true
-        default: '1.1'
-      revision:
-        description: 'Revisión (ej: 2)'
-        required: true
-        default: '4'
   push:
     branches: [main]
     paths:
@@ -34,12 +26,21 @@ jobs:
     runs-on: windows-2022
     permissions:
       contents: write
-    env:
-      VERSION: ${{ github.event.inputs.version || '1.1' }}
-      REVISION: ${{ github.event.inputs.revision || '4' }}
-      PCINFO_NAME: pcinfo_v${{ github.event.inputs.version || '1.1' }}_rev-${{ github.event.inputs.revision || '4' }}
     steps:
       - uses: actions/checkout@v4
+
+      # Versión y revisión SIEMPRE desde version.dart (única fuente de verdad).
+      # Antes estaban hardcodeadas en defaults → un push publicaba con Rev viejo.
+      - name: Resolver versión desde version.dart
+        shell: pwsh
+        run: |
+          $dart = Get-Content pcinfo/lib/version.dart -Raw
+          $ver = [regex]::Match($dart, "appVersion = '([^']+)'").Groups[1].Value
+          $rev = [regex]::Match($dart, 'appRevision = (\d+)').Groups[1].Value
+          "VERSION=$ver"  | Out-File -FilePath $env:GITHUB_ENV -Append
+          "REVISION=$rev" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "PCINFO_NAME=pcinfo_v${ver}_rev-${rev}" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "Construyendo PCInfo v$ver Rev $rev"
 
       - uses: actions/setup-go@v5
         with:
