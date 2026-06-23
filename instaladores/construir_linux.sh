@@ -94,7 +94,11 @@ cat > "$PKG/DEBIAN/postinst" <<'EOF'
 #!/bin/sh
 set -e
 systemctl daemon-reload || true
-systemctl enable --now pcinfo-backend.service || true
+systemctl enable pcinfo-backend.service || true
+# restart (no "enable --now"): si el servicio ya corría con el binario viejo,
+# "start" sería no-op y se quedaría el proceso anterior. restart SIEMPRE recarga
+# el binario nuevo tras una actualización.
+systemctl restart pcinfo-backend.service || true
 exit 0
 EOF
 cat > "$PKG/DEBIAN/prerm" <<'EOF'
