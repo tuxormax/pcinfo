@@ -32,6 +32,16 @@ func collectDisks() []DiskInfo {
 			Type:            diskType(ctrl, drive),
 			LifePercentUsed: -1,
 		}
+		// Uso del sistema de archivos: suma de las particiones montadas del disco.
+		for _, p := range d.Partitions {
+			if p == nil || p.MountPoint == "" {
+				continue
+			}
+			if used, avail, ok := diskUsage(p.MountPoint); ok {
+				di.UsedBytes += int64(used)
+				di.AvailBytes += int64(avail)
+			}
+		}
 		// Enriquecer con S.M.A.R.T. (smartctl --json).
 		readSmart(&di)
 		disks = append(disks, di)

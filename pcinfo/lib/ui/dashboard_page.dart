@@ -476,6 +476,12 @@ class _DashboardPageState extends State<DashboardPage> {
               ),
             ],
           ),
+          if (d.hasUsage) ...[
+            const SizedBox(height: 12),
+            const Divider(height: 1, color: AppColors.border),
+            const SizedBox(height: 12),
+            _diskUsage(d),
+          ],
           if (d.smartAvailable) ...[
             const SizedBox(height: 12),
             const Divider(height: 1, color: AppColors.border),
@@ -484,6 +490,57 @@ class _DashboardPageState extends State<DashboardPage> {
           ],
         ],
       ),
+    );
+  }
+
+  /// Uso del sistema de archivos: Capacidad / Ocupado / Disponible (GB y %)
+  /// más una barra visual del porcentaje ocupado.
+  Widget _diskUsage(DiskInfo d) {
+    final usedPct = d.usedPercent;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 28,
+          runSpacing: 12,
+          children: [
+            _metric('Capacidad', formatGB(d.sizeBytes)),
+            _metric('Ocupado',
+                '${formatGB(d.usedBytes)}  (${usedPct.round()}%)'),
+            _metric('Disponible',
+                '${formatGB(d.availBytes)}  (${d.availPercent.round()}%)'),
+          ],
+        ),
+        const SizedBox(height: 10),
+        _usageBar(usedPct),
+      ],
+    );
+  }
+
+  Widget _usageBar(double usedPct) {
+    final value = (usedPct / 100).clamp(0.0, 1.0);
+    // Verde si hay espacio; ámbar al llenarse; rojo casi lleno.
+    final color = usedPct >= 90
+        ? const Color(0xFFF2768D)
+        : usedPct >= 75
+            ? const Color(0xFFE3A84B)
+            : AppColors.disk;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: LinearProgressIndicator(
+            value: value,
+            minHeight: 8,
+            backgroundColor: AppColors.bg,
+            valueColor: AlwaysStoppedAnimation<Color>(color),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text('${usedPct.round()}% usado',
+            style: const TextStyle(color: AppColors.textLow, fontSize: kFont)),
+      ],
     );
   }
 

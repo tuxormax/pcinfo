@@ -64,6 +64,11 @@ class DiskInfo {
   final String serial;
   final String bus; // "nvme", "sata", "usb"
 
+  // Uso del sistema de archivos (suma de particiones montadas). 0 si el disco
+  // no tiene particiones montadas.
+  final int usedBytes;
+  final int availBytes;
+
   // S.M.A.R.T. (lo llena smartctl en el backend). smartAvailable=false si el
   // disco no reporta SMART (USB, VM, sin permisos).
   final bool smartAvailable;
@@ -83,6 +88,8 @@ class DiskInfo {
     required this.type,
     required this.serial,
     required this.bus,
+    this.usedBytes = 0,
+    this.availBytes = 0,
     this.smartAvailable = false,
     this.health = '',
     this.writtenBytes = 0,
@@ -101,6 +108,8 @@ class DiskInfo {
         type: j['type'] ?? '',
         serial: j['serial'] ?? '',
         bus: j['bus'] ?? '',
+        usedBytes: (j['usedBytes'] ?? 0) as int,
+        availBytes: (j['availBytes'] ?? 0) as int,
         smartAvailable: j['smartAvailable'] ?? false,
         health: j['health'] ?? '',
         writtenBytes: (j['writtenBytes'] ?? 0) as int,
@@ -110,6 +119,21 @@ class DiskInfo {
         lifePercentUsed: (j['lifePercentUsed'] ?? -1) as int,
         reallocatedSectors: (j['reallocatedSectors'] ?? 0) as int,
       );
+
+  /// Total del sistema de archivos (ocupado + disponible). 0 si no hay
+  /// particiones montadas.
+  int get fsTotalBytes => usedBytes + availBytes;
+
+  /// true si el disco tiene particiones montadas (hay uso que mostrar).
+  bool get hasUsage => fsTotalBytes > 0;
+
+  /// % ocupado respecto al total montado (0 si no aplica).
+  double get usedPercent =>
+      fsTotalBytes > 0 ? usedBytes / fsTotalBytes * 100 : 0;
+
+  /// % disponible respecto al total montado.
+  double get availPercent =>
+      fsTotalBytes > 0 ? availBytes / fsTotalBytes * 100 : 0;
 
   /// Estado de salud legible: saludable / advertencia / falla / desconocido.
   DiskHealth get healthStatus {

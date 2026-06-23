@@ -79,6 +79,11 @@ type DiskInfo struct {
 	Serial    string `json:"serial"`
 	Bus       string `json:"bus"`
 
+	// Uso del sistema de archivos (suma de las particiones montadas del disco).
+	// 0 si el disco no tiene particiones montadas (secundario sin montar, etc.).
+	UsedBytes  int64 `json:"usedBytes"`
+	AvailBytes int64 `json:"availBytes"`
+
 	// S.M.A.R.T. (lo llena smartctl). smartAvailable=false si no reporta.
 	SmartAvailable     bool  `json:"smartAvailable"`
 	Health             string `json:"health"`
