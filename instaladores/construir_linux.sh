@@ -4,10 +4,16 @@
 # Requiere: flutter (desktop linux), go, dpkg-deb.
 set -euo pipefail
 
-VERSION="1.1.0"
 ARCH="amd64"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # raíz del repo
 APP_DIR="$ROOT/pcinfo"
+
+# Versión y revisión desde version.dart (única fuente de verdad, igual que el
+# workflow de Windows). Así el .deb se nombra idéntico al .exe.
+VERSION="$(grep -oP "appVersion = '\K[^']+" "$APP_DIR/lib/version.dart")"
+REVISION="$(grep -oP "appRevision = \K[0-9]+" "$APP_DIR/lib/version.dart")"
+DEB_VERSION="${VERSION}.${REVISION}"            # versión Debian válida (p.ej. 1.1.6)
+BASENAME="pcinfo_v${VERSION}_rev-${REVISION}"   # mismo nombre base que Windows
 BACKEND_DIR="$ROOT/backend"
 OUT_DIR="$ROOT/instaladores"
 STAGE="$(mktemp -d)"
@@ -72,7 +78,7 @@ EOF
 # Metadatos del paquete.
 cat > "$PKG/DEBIAN/control" <<EOF
 Package: pcinfo
-Version: $VERSION
+Version: $DEB_VERSION
 Architecture: $ARCH
 Maintainer: tuxor <tuxor.max@gmail.com>
 Section: utils
@@ -105,7 +111,7 @@ exit 0
 EOF
 chmod 755 "$PKG/DEBIAN/postinst" "$PKG/DEBIAN/prerm" "$PKG/DEBIAN/postrm"
 
-DEB="$OUT_DIR/pcinfo_${VERSION}_${ARCH}.deb"
+DEB="$OUT_DIR/${BASENAME}.deb"
 echo ">> Generando $DEB ..."
 dpkg-deb --build --root-owner-group "$PKG" "$DEB"
 echo ">> Listo: $DEB"
