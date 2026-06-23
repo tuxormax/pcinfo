@@ -515,7 +515,7 @@ class _DashboardPageState extends State<DashboardPage> {
               ),
               const SizedBox(width: 12),
               Text(
-                formatBytes(d.sizeBytes),
+                formatDiskCap(d.sizeBytes),
                 style: const TextStyle(
                   color: AppColors.textHi,
                   fontSize: kFont,
@@ -552,7 +552,7 @@ class _DashboardPageState extends State<DashboardPage> {
           spacing: 28,
           runSpacing: 12,
           children: [
-            _metric('Capacidad', formatGB(d.sizeBytes)),
+            _metric('Capacidad', formatDiskCap(d.sizeBytes)),
             _metric('Ocupado',
                 '${formatGB(d.usedBytes)}  (${usedPct.round()}%)'),
             _metric('Disponible',
