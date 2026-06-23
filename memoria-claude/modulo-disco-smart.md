@@ -31,6 +31,12 @@ La misma lógica name-based vive ahora en Go (`attrToBytes`, `ataLifeUsed`). **B
 ## Unidad de capacidad de disco — Rev 8
 `formatDiskCap()` (en format.dart): el encabezado del disco y la fila "Capacidad" usan unidad DECIMAL del fabricante (GB hasta 1000, luego TB). Antes el encabezado iba en GiB (binario) y "Capacidad" en GB → confundía (447.1 GiB vs 480.1 GB = MISMO disco de 480 GB). Ocupado/Disponible siguen en GB (`formatGB`).
 
+## Horas encendido vs ciclos — NO es bug, es del firmware (2026-06-23)
+Duda real de tuxor: dos discos instalados a la vez (Kingston SA400 y WD Green 2.5) mostraban **12220 h vs 133 h** "Horas encendido", pero **ambos 647 ciclos de encendido**. No es error de la app — PCInfo muestra fiel lo que reporta cada SMART (atributo 9 power_on_hours, 12 power_cycle_count).
+- Cada disco lleva su PROPIO contador en su firmware; **cada marca cuenta las horas distinto**. SanDisk/WD (como este WD Green) son conocidos por reportar power_on_hours de forma NO estándar (cuentan solo cierto estado de actividad / resolución distinta), por eso 133 h ≠ tiempo real de pared.
+- **Los ciclos de encendido SÍ son comparables** entre marcas: 647=647 confirma misma PC, mismo número de arranques. Para comparar antigüedad/uso entre discos de distinta marca, fiarse de los ciclos, no de las horas.
+- Regla: si un usuario pregunta "por qué las horas no cuadran entre discos", la respuesta es esta (firmware), NO tocar el parseo. Si dudas de la unidad real, `sudo smartctl -x /dev/sdX`.
+
 ## Sobre la "base de datos" tipo CrystalDiskInfo
 - **CDI es open source (BSD modificada) pero NO tiene archivo de DB**: la lógica por modelo está hardcodeada en C++ (`AtaSmart.cpp`). No se puede "bajar" una DB; habría que portar código.
 - **La DB curada equivalente es `drivedb.h` de smartmontools** (ya en el sistema: `/var/lib/smartmontools/drivedb/drivedb.h`, actualizable con `update-smart-drivedb`). De ahí salen los nombres con unidad. smartctl la aplica solo por regex de modelo.
