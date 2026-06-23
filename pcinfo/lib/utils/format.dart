@@ -19,6 +19,17 @@ String formatGB(int bytes, {int decimals = 1}) {
   return '${(bytes / 1e9).toStringAsFixed(decimals)} GB';
 }
 
+/// Formatea la capacidad de un disco en unidad DECIMAL (la real del fabricante):
+/// GB hasta 1000, TB de ahí en adelante. Se usa tanto en el encabezado del disco
+/// como en "Capacidad" para que coincidan (antes el encabezado iba en GiB y
+/// confundía: 447.1 GiB vs 480.1 GB son el MISMO disco). Ej.: 480 GB / 1.0 TB.
+String formatDiskCap(int bytes, {int decimals = 1}) {
+  if (bytes <= 0) return '—';
+  final gb = bytes / 1e9;
+  if (gb >= 1000) return '${(gb / 1000).toStringAsFixed(decimals)} TB';
+  return '${gb.toStringAsFixed(decimals)} GB';
+}
+
 /// Normaliza el nombre del fabricante de CPU a su forma corta.
 String cleanVendor(String vendor) {
   final v = vendor.trim();

@@ -52,3 +52,18 @@
   "-v 249,raw48,Unkn_SiliconMotion_Attr "
   "-v 251,raw48,Unkn_SiliconMotion_Attr"
 },
+{
+  /* WD Green / WD Blue 2.5" y M.2 (SSD basados en SanDisk).
+   * Su 241/242 están en GiB, NO en LBAs: el preset oficial de smartmontools
+   * (familia "SanDisk based SSDs") usa "-v 241,raw48,Total_Writes_GiB". Modelos
+   * como "WD Green 2.5 1000GB" NO están en el drivedb por defecto, así que
+   * smartctl cae al genérico "Total_LBAs_Written" y la app multiplicaba ×512
+   * (6.9 MiB en vez de ~13.8 TiB). Solo renombramos 241/242 a GiB; el resto de
+   * atributos (incl. el de vida) se dejan como los nombra smartctl para no
+   * alterar el cálculo de "Vida restante". attrToBytes ve "GiB" → ×1024³. */
+  "WD Green/Blue 2.5/M.2 (SanDisk) [PCInfo]",
+  "WD (Green|Blue) (2\\.5|M\\.2|3D|SA510) .*",
+  "", "",
+  "-v 241,raw48,Total_Writes_GiB "
+  "-v 242,raw48,Total_Reads_GiB"
+},

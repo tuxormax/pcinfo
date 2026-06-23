@@ -135,7 +135,7 @@ String buildReport(HardwareInfo hw) {
       kv('Dispositivo', d.name);
       kv('Serie', d.serial);
       kv('Bus', d.bus.toUpperCase());
-      kv('Capacidad', formatBytes(d.sizeBytes));
+      kv('Capacidad', formatDiskCap(d.sizeBytes));
       if (d.hasUsage) {
         kv('Ocupado',
             '${formatGB(d.usedBytes)} (${d.usedPercent.round()}%)');
