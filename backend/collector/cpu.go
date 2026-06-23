@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -39,7 +40,26 @@ func collectCPU() CPUInfo {
 
 	out.BaseMhz = cpuFreqMhz("base_frequency", "scaling_min_freq")
 	out.MaxMhz = cpuFreqMhz("cpuinfo_max_freq", "scaling_max_freq")
+	// Fallback VM/Windows: sin cpufreq, muchos modelos Intel llevan la frecuencia
+	// base embebida en el nombre ("... @ 3.80GHz"). La usamos como BaseMhz.
+	if out.BaseMhz == 0 {
+		out.BaseMhz = mhzFromModel(out.Model)
+	}
 	return out
+}
+
+// reModelGHz captura "@ 3.80GHz" del nombre del CPU.
+var reModelGHz = regexp.MustCompile(`@\s*([0-9]+(?:\.[0-9]+)?)\s*GHz`)
+
+// mhzFromModel extrae la frecuencia embebida en el nombre del modelo (GHz→MHz).
+// Devuelve 0 si no la trae (típico en AMD).
+func mhzFromModel(model string) float64 {
+	if m := reModelGHz.FindStringSubmatch(model); m != nil {
+		if ghz, err := strconv.ParseFloat(m[1], 64); err == nil {
+			return ghz * 1000.0
+		}
+	}
+	return 0
 }
 
 // cpuFreqMhz lee la primera frecuencia disponible (en kHz) de cpufreq de cpu0 y
