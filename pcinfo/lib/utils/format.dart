@@ -12,6 +12,13 @@ String formatBytes(int bytes, {int decimals = 1}) {
   return '$n ${units[i]}';
 }
 
+/// Formatea bytes a GB decimales (base 1000, como se etiqueta la capacidad de
+/// discos). Ej.: 240057409536 → "240.1 GB".
+String formatGB(int bytes, {int decimals = 1}) {
+  if (bytes <= 0) return '0 GB';
+  return '${(bytes / 1e9).toStringAsFixed(decimals)} GB';
+}
+
 /// Normaliza el nombre del fabricante de CPU a su forma corta.
 String cleanVendor(String vendor) {
   final v = vendor.trim();

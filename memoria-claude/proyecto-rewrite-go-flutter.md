@@ -58,6 +58,6 @@ El usuario decidió **reescribir** LinuxHWMonitor (antes Python+PyQt5) en **Go +
   4. ⚠️ **SOLO disparo manual `workflow_dispatch`** (como SIGARN) — NUNCA trigger `push`. El instalador no debe quedarse/publicarse solo en cada commit; se genera bajo demanda desde Actions → "Run workflow". Regla de tuxor (2026-06-23): "nunca se deja el instalador en github" → se quitó el trigger push y se borraron los releases auto-creados (rev2–5). La versión/revisión las lee el workflow de `version.dart` (paso "Resolver versión"), no de inputs hardcodeados.
   - Publicar como **GitHub Release** (no artifact; la cuota de artifacts se llena). Tag `win-v<ver>-rev<rev>`, asset `pcinfo_v<ver>_rev-<rev>.exe`. Requiere `permissions: contents: write`. (El usuario descarga el .exe y luego puede borrar el release; no se acumulan como en SIGARN.)
   - El backend Go SÍ cross-compila a `.exe` desde Linux (`GOOS=windows`), pero la GUI no. Inno script: `instaladores/instalador_windows.iss` (AppId fijo, instala en Program Files, backend autostart vía HKLM\...\Run, rutas/version por `/D`).
-- Versión en `pcinfo/lib/version.dart` (appVersion/appRevision) + `pubspec.yaml` (actual **1.1.0+5**, v1.1 Rev 5). Único lugar de la versión.
+- Versión en `pcinfo/lib/version.dart` (appVersion/appRevision) + `pubspec.yaml` (actual **1.1.0+6**, v1.1 Rev 6). Único lugar de la versión.
 
 **Ver también:** [[modulo-gui-pcinfo]] [[proyecto-contexto]] [[modulo-disco-smart]]

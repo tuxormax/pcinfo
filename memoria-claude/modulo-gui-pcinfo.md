@@ -29,10 +29,11 @@ App de inventario de hardware. Carpeta `pcinfo/` (paquete Flutter `pcinfo`). Hoy
 ## Qué muestra cada ficha
 - **Sistema operativo**: Sistema, Nombre equipo, Kernel, Arquitectura, Escritorio. (SIN tiempo encendido — el usuario no lo quiere.)
 - **CPU**: Fabricante, Modelo, Núcleos, Hilos, Frecuencia base, Frecuencia máxima. (SIN flags/instrucciones — el usuario los quitó.)
-- **Tarjeta madre**: Fabricante, Modelo, Tamaño (ATX…), Versión, BIOS, Fecha BIOS. (SIN chasis.)
+- **Tarjeta madre**: Fabricante, Modelo, Tamaño, Versión, BIOS, Fecha BIOS. "Tamaño" = tipo de CHASIS real (Desktop/Tower/…) vía `ghw.Chassis` (Rev 5); DMI no expone el form factor ATX de la placa.
 - **RAM**: Total, Montaje (soldada/ranuras), Ranuras ocupadas/libres, Capacidad máx + lista de ranuras (ocupadas y vacías).
 - **GPU**: Fabricante, Modelo, VRAM, Driver.
-- **Almacenamiento** (ancho completo): por disco — modelo, tipo (badge), salud SMART (badge SALUDABLE/ADVERTENCIA/FALLA/SIN SMART), tamaño, device/serie/bus, y métricas (escrituras/lecturas totales, vida restante, horas, ciclos, sectores reasignados).
+- **Almacenamiento** (ancho completo): por disco — modelo, tipo (badge), salud SMART (badge SALUDABLE/ADVERTENCIA/FALLA/SIN SMART), tamaño, device/serie/bus, **uso del sistema de archivos** (Capacidad/Ocupado/Disponible en GB y %, con barra de progreso — verde/ámbar≥75%/rojo≥90%), y métricas SMART (escrituras/lecturas totales, vida restante, horas, ciclos, sectores reasignados).
+  - **Uso (Rev 6, 2026-06-23)**: backend suma `usedBytes`/`availBytes` de las particiones MONTADAS del disco (`disk_usage_linux.go` statfs / `disk_usage_windows.go` GetDiskFreeSpaceEx). La sección solo aparece si el disco tiene particiones montadas (`DiskInfo.hasUsage`); un disco secundario sin montar no la muestra. Capacidad = `sizeBytes` físico; %ocupado = used/(used+avail). Helper `formatGB` (base 1000, "GB" como pide el usuario). Es independiente de SMART: se ve aunque el disco no reporte SMART.
 
 ## Datos difíciles en Windows (backend deberá manejar, mostrar "—"/"Desconocido")
 - Frecuencia máxima/turbo del CPU (WMI solo da base).

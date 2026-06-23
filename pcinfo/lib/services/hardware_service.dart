@@ -117,6 +117,8 @@ class MockHardwareService implements HardwareService {
           type: 'NVMe SSD',
           serial: 'S5GXNX0R123456',
           bus: 'nvme',
+          usedBytes: 442000000000, // ~442 GB ocupados
+          availBytes: 558000000000, // ~558 GB disponibles
           smartAvailable: true,
           health: 'PASSED',
           writtenBytes: 48922361036800, // ~44.5 TiB escritos
@@ -134,6 +136,8 @@ class MockHardwareService implements HardwareService {
           type: 'HDD',
           serial: 'WD-WCC4M1234567',
           bus: 'sata',
+          usedBytes: 1480000000000, // ~1.48 TB ocupados
+          availBytes: 520000000000, // ~520 GB disponibles
           smartAvailable: true,
           health: 'PASSED',
           writtenBytes: 0, // los HDD ATA no reportan total escrito por host
