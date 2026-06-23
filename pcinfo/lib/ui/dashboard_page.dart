@@ -5,6 +5,7 @@ import '../models/hardware.dart';
 import '../services/hardware_service.dart';
 import '../theme.dart';
 import '../utils/format.dart';
+import '../utils/report.dart';
 import 'widgets/spec_card.dart';
 
 class DashboardPage extends StatefulWidget {
@@ -190,10 +191,57 @@ class _DashboardPageState extends State<DashboardPage> {
             ),
           ),
           const SizedBox(width: 12),
+          _saveButton(hw),
+          const SizedBox(width: 8),
           _refreshButton(),
         ],
       ),
     );
+  }
+
+  Widget _saveButton(HardwareInfo hw) {
+    return Material(
+      color: AppColors.surfaceAlt,
+      borderRadius: BorderRadius.circular(9),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(9),
+        onTap: () => _onSave(hw),
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.save_alt_rounded, size: 16, color: AppColors.textMid),
+              SizedBox(width: 6),
+              Text('Guardar',
+                  style: TextStyle(
+                      color: AppColors.textMid,
+                      fontSize: kFont,
+                      fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _onSave(HardwareInfo hw) async {
+    try {
+      final path = await saveReport(hw);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        backgroundColor: AppColors.surfaceAlt,
+        content: Text('Reporte guardado en: $path',
+            style: const TextStyle(color: AppColors.textHi, fontSize: kFont)),
+      ));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        backgroundColor: AppColors.surfaceAlt,
+        content: Text('No se pudo guardar el reporte: $e',
+            style: const TextStyle(color: Color(0xFFF2768D), fontSize: kFont)),
+      ));
+    }
   }
 
   Widget _chip(IconData icon, String text) {

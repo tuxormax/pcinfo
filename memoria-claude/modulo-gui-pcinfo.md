@@ -16,7 +16,8 @@ App de inventario de hardware. Carpeta `pcinfo/` (paquete Flutter `pcinfo`). Hoy
 - `lib/services/hardware_service.dart` — `HardwareService` abstracto + `MockHardwareService`. Al tener backend: crear `HttpHardwareService` (GET localhost) **sin tocar la UI**.
 - `lib/ui/dashboard_page.dart` — dashboard, fichas, masonry.
 - `lib/ui/widgets/spec_card.dart` — `SpecCard` (header categoría + filas `SpecRow` etiqueta/valor).
-- `lib/theme.dart` — colores (acento por categoría) + `kFont`. `lib/utils/format.dart` — formatBytes, formatMhz, cleanVendor.
+- `lib/theme.dart` — colores (acento por categoría) + `kFont`. `lib/utils/format.dart` — formatBytes, formatMhz, formatGB, cleanVendor.
+- `lib/utils/report.dart` — **botón Guardar (Rev 7)**: `buildReport(hw)` arma un .txt espejo de TODAS las fichas (sistema, CPU, placa, RAM+módulos, GPU, discos con uso+SMART); `saveReport(hw)` lo escribe en HOME (Linux) / USERPROFILE (Windows) como `PCInfo_<equipo>_<fecha>_<hora>.txt` y devuelve la ruta. En el dashboard el botón va junto a Refrescar (`_saveButton`/`_onSave`), avisa la ruta con un SnackBar. Sin dependencias nuevas (dart:io). Para mantener concordancia, si se agrega/quita una ficha o campo en la UI, reflejarlo también en `buildReport`.
 - `lib/version.dart` — único lugar de versión: appName/appVersion/appRevision/autor/copyright/licencia. Footer fijo abajo (`_footer()` en dashboard) muestra "PCInfo vX.Y Rev N · © 2026 tuxor · email · GPL v3" (los créditos visibles los exige la licencia).
 
 ## Diseño acordado con el usuario
