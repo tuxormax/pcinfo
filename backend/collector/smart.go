@@ -2,11 +2,54 @@ package collector
 
 import (
 	"encoding/json"
+	_ "embed"
+	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 )
+
+// drivedbAdd es la base de datos por modelo de PCInfo (formato oficial de
+// smartmontools) embebida en el binario. Se materializa a un archivo temporal
+// una sola vez y se pasa a smartctl con `-B +<archivo>` para que prependa estas
+// entradas a su drivedb.h interno (ganan prioridad, caen al built-in si no
+// matchean). Así un modelo cuyo regex oficial no cubra su variante recibe los
+// presets correctos (unidad de 241/242, vida) sin tocar el sistema.
+//
+//go:embed drivedb-add.h
+var drivedbAdd []byte
+
+var (
+	drivedbOnce sync.Once
+	drivedbPath string // ruta del archivo temporal; "" si no se pudo crear
+)
+
+// drivedbArg devuelve el argumento `-B +<ruta>` para smartctl, materializando
+// el drivedb-add.h embebido la primera vez. Si no se puede escribir el temporal,
+// devuelve nil y smartctl corre con su drivedb interno (override por modelo en
+// modelHostUnit sigue como respaldo).
+func drivedbArg() []string {
+	drivedbOnce.Do(func() {
+		f, err := os.CreateTemp("", "pcinfo-drivedb-*.h")
+		if err != nil {
+			warn("drivedb temp", err)
+			return
+		}
+		if _, err := f.Write(drivedbAdd); err != nil {
+			warn("drivedb write", err)
+			f.Close()
+			return
+		}
+		f.Close()
+		drivedbPath = f.Name()
+	})
+	if drivedbPath == "" {
+		return nil
+	}
+	return []string{"-B", "+" + drivedbPath}
+}
 
 // ataAttr es una fila de la tabla de atributos S.M.A.R.T. ATA.
 type ataAttr struct {
@@ -49,7 +92,8 @@ const nvmeDataUnit = 1000 * 512
 // devuelve un código de salida con flags (≠0 aunque el JSON sea válido), por
 // eso parseamos stdout sin importar el error del proceso.
 func readSmart(di *DiskInfo) {
-	out, _ := exec.Command("smartctl", "--json", "-a", di.Name).Output()
+	args := append(drivedbArg(), "--json", "-a", di.Name)
+	out, _ := exec.Command("smartctl", args...).Output()
 	if len(out) == 0 {
 		return
 	}
@@ -114,10 +158,13 @@ func readSmart(di *DiskInfo) {
 // "Host_Writes_32MiB" → (32, MiB), "NAND_Writes_1GiB" → (1, GiB).
 var reUnit = regexp.MustCompile(`(\d*)\s*(gib|mib|gb|mb)`)
 
-// hostUnitsBytes mapea modelos cuyo controlador reporta 241/242 en una unidad
-// que el preset de smartmontools NO le aplica al modelo concreto. Copiado del
-// propio drivedb.h: la familia ADATA SU Silicon Motion usa 32 MiB por unidad,
-// pero el regex del preset no cubre variantes como "SU800NS38".
+// modelHostUnit es el RESPALDO del drivedb-add.h embebido (ver drivedbArg): si
+// smartctl no pudo cargar el archivo temporal (-B falló) o es muy viejo, este
+// override por modelo sigue corrigiendo la unidad de 241/242 en código. Con el
+// drivedb-add.h activo, smartctl ya devuelve el nombre "Host_Writes_32MiB" y
+// attrToBytes lo resuelve solo, así que esta tabla normalmente no se usa.
+// Copiado del drivedb.h: la familia ADATA SU Silicon Motion usa 32 MiB por
+// unidad, pero el regex del preset oficial no cubre variantes como "SU800NS38".
 var modelHostUnit = []struct {
 	re    *regexp.Regexp
 	bytes int64

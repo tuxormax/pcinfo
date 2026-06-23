@@ -35,9 +35,10 @@ El usuario decidió **reescribir** LinuxHWMonitor (antes Python+PyQt5) en **Go +
 - Fuentes: **ghw** (CPU, board/BIOS, GPU, discos, totales RAM) · **dmidecode -t 16/17** (ranuras/módulos/maxCap/soldada) · **smartctl --json -a** (SMART por disco) · **nvidia-smi** (driver+VRAM NVIDIA, enriquece tarjetas ghw por índice).
 - ⚠️ **Permisos**: sin root, `dmidecode` (módulos/ranuras RAM) y `smartctl` (SMART) fallan → la app muestra solo totales y `smartAvailable=false`. Para datos completos correr backend con sudo / `setcap`. Probado OK sin root: system/cpu/board/memory-totales/gpu/discos básicos salen bien.
 - smartctl sale con código ≠0 aunque el JSON sea válido (flags) → parseamos stdout ignorando el exit code.
+- **DB por modelo (Rev 5, 2026-06-23)**: `collector/drivedb-add.h` embebido (`go:embed`) → `smartctl -B +<temp>` aplica presets a modelos que su regex base no cubre (ej. ADATA `SU800NS38`). Detalle en [[mejora-smart-drivedb]]. `attrToBytes` resuelve la unidad sola por el nombre del atributo.
 - **Integración GUI HECHA**: `HttpHardwareService` (en `services/hardware_service.dart`, usa `dart:io`, sin deps nuevas) con `fallback: MockHardwareService()`. `main.dart` ya lo usa → datos reales si el backend corre, mock si no. UI no se tocó (salvo numerar GPUs).
-- Gaps conocidos que quedan ""/-1: formFactor placa (ATX), baseMhz/maxMhz en VM/Windows (en Linux se leen de cpufreq).
-- **Pendiente menor**: empaquetar/lanzar el binario Go como subproceso al abrir la app (hoy se lanza aparte). Build Windows (ghw usa WMI ahí).
+- **Gaps cerrados (Rev 5)**: `formFactor` ahora trae el tipo de CHASIS real (`ghw.Chassis().TypeDescription`, ej. "Desktop") en vez de "" — DMI no expone ATX de la placa, el chasis es lo más cercano. `baseMhz` tiene fallback VM/Windows: parsea "@ x.xGHz" del nombre del CPU (`mhzFromModel`, típico Intel) cuando no hay cpufreq. En Linux sigue saliendo de cpufreq sin tocar.
+- **Subproceso backend HECHO (Rev 5)**: `pcinfo/lib/services/backend_launcher.dart` — `ensureRunning()` sondea `/healthz` y SOLO si nadie responde lanza el binario empaquetado (detached). Así no choca con el servicio root (que da mejores datos) ni duplica proceso en el puerto. `main()` lo await-ea antes de `runApp`; `stop()` mata solo el que lanzamos nosotros (lifecycle detached/dispose). Busca el binario junto al ejecutable y en `../backend/`.
 
 ## Multi-GPU (integrada + dedicada)
 - Backend y GUI YA soportan N tarjetas (ghw devuelve todas; GUI itera `g.cards`, las numera "GPU 1/2" con etiqueta Integrada/Dedicada por heurística de vendor/modelo).
@@ -56,6 +57,6 @@ El usuario decidió **reescribir** LinuxHWMonitor (antes Python+PyQt5) en **Go +
   3. **Empaquetar VC++ Redistributable** (`aka.ms/vs/17/release/vc_redist.x64.exe`) dentro del `.iss` con install silencioso (regla global [[feedback-instalador-windows de SIGARN]]: la app no arranca sin VCRUNTIME140).
   - Publicar como **GitHub Release** (no artifact; la cuota de artifacts se llena). Tag `win-v<ver>-rev<rev>`, asset `pcinfo_v<ver>_rev-<rev>.exe`. Requiere `permissions: contents: write`.
   - El backend Go SÍ cross-compila a `.exe` desde Linux (`GOOS=windows`), pero la GUI no. Inno script: `instaladores/instalador_windows.iss` (AppId fijo, instala en Program Files, backend autostart vía HKLM\...\Run, rutas/version por `/D`).
-- Versión en `pcinfo/lib/version.dart` (appVersion/appRevision) + `pubspec.yaml` (1.1.0+2). Único lugar de la versión.
+- Versión en `pcinfo/lib/version.dart` (appVersion/appRevision) + `pubspec.yaml` (actual **1.1.0+5**, v1.1 Rev 5). Único lugar de la versión.
 
 **Ver también:** [[modulo-gui-pcinfo]] [[proyecto-contexto]] [[modulo-disco-smart]]

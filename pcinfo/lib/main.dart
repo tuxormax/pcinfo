@@ -1,14 +1,47 @@
 import 'package:flutter/material.dart';
+import 'services/backend_launcher.dart';
 import 'services/hardware_service.dart';
 import 'theme.dart';
 import 'ui/dashboard_page.dart';
 
-void main() {
-  runApp(const PcInfoApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Arranca el backend Go si no hay uno corriendo (en producción ya está como
+  // servicio/autostart; esto cubre dev y portable). Acotado por su propio poll;
+  // si no levanta, la GUI muestra el mock igualmente.
+  final launcher = BackendLauncher();
+  await launcher.ensureRunning();
+  runApp(PcInfoApp(launcher: launcher));
 }
 
-class PcInfoApp extends StatelessWidget {
-  const PcInfoApp({super.key});
+class PcInfoApp extends StatefulWidget {
+  final BackendLauncher launcher;
+  const PcInfoApp({super.key, required this.launcher});
+
+  @override
+  State<PcInfoApp> createState() => _PcInfoAppState();
+}
+
+class _PcInfoAppState extends State<PcInfoApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Al cerrar la app, detener SOLO el backend que lanzamos nosotros (si fue el
+    // servicio/autostart, BackendLauncher.stop() no lo toca).
+    if (state == AppLifecycleState.detached) widget.launcher.stop();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    widget.launcher.stop();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {

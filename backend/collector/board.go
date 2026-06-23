@@ -21,7 +21,15 @@ func collectBoard() BoardInfo {
 		warn("bios", err)
 	}
 
-	// formFactor (ATX/Micro-ATX/…) no lo expone DMI de forma fiable; queda ""
-	// (gap conocido, la GUI muestra "Desconocido").
+	// Form factor: DMI no expone ATX/Micro-ATX de la PLACA, pero sí el tipo de
+	// CHASIS (Desktop/Tower/Notebook/…) vía ghw.Chassis (SMBIOS tipo 3 en Linux,
+	// WMI en Windows). Es el dato real más cercano; antes quedaba "".
+	if ch, err := ghw.Chassis(); err == nil && ch != nil {
+		if ff := cleanDMI(ch.TypeDescription); ff != "" {
+			out.FormFactor = ff
+		}
+	} else {
+		warn("chassis", err)
+	}
 	return out
 }
