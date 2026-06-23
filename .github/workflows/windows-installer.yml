@@ -8,15 +8,10 @@ name: Instalador Windows
 # artifacts se llena con los builds históricos).
 
 on:
-  # Disparo manual: siempre construye lo que diga pcinfo/lib/version.dart.
+  # SOLO disparo manual (como SIGARN): el instalador NUNCA se publica solo en
+  # cada push. Se genera bajo demanda desde Actions → "Run workflow", y siempre
+  # construye lo que diga pcinfo/lib/version.dart.
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'pcinfo/**'
-      - 'backend/**'
-      - 'instaladores/instalador_windows.iss'
-      - '.github/workflows/windows-installer.yml'
 
 jobs:
   build-windows:
