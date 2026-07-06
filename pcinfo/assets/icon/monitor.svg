@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Halo blanco para separar el monitor de los colores del triángulo -->
+  <g stroke="#ffffff" stroke-width="26" stroke-linejoin="round" fill="#ffffff">
+    <rect x="286" y="292" width="452" height="356" rx="30"/>
+    <rect x="478" y="640" width="68" height="70"/>
+    <rect x="396" y="700" width="232" height="34" rx="16"/>
+  </g>
+  <!-- Cuerpo del monitor -->
+  <g fill="#25324f">
+    <rect x="286" y="292" width="452" height="356" rx="30"/>
+    <rect x="478" y="640" width="68" height="70"/>
+    <rect x="396" y="700" width="232" height="34" rx="16"/>
+  </g>
+  <!-- Pantalla -->
+  <rect x="326" y="332" width="372" height="276" rx="12" fill="#eef4fc"/>
+  <!-- Barras tipo "info del sistema" en los colores de seis -->
+  <g>
+    <rect x="372" y="500" width="60" height="72" rx="6" fill="#2f5fbf"/>
+    <rect x="482" y="452" width="60" height="120" rx="6" fill="#e2231a"/>
+    <rect x="592" y="410" width="60" height="162" rx="6" fill="#f5b301"/>
+  </g>
+</svg>

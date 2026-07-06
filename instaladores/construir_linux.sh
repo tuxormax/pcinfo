@@ -35,6 +35,7 @@ mkdir -p "$PKG/DEBIAN" \
          "$PKG/opt/pcinfo/backend" \
          "$PKG/usr/bin" \
          "$PKG/usr/share/applications" \
+         "$PKG/usr/share/icons/hicolor/256x256/apps" \
          "$PKG/lib/systemd/system"
 
 cp -r "$BUNDLE/." "$PKG/opt/pcinfo/app/"
@@ -59,6 +60,10 @@ Icon=pcinfo
 Categories=System;Utility;
 Terminal=false
 EOF
+
+# Icono de la app (triángulo de seis + monitor). El .desktop lo referencia por
+# nombre "pcinfo" → se instala en el tema hicolor.
+cp "$APP_DIR/assets/icon/pcinfo_256.png" "$PKG/usr/share/icons/hicolor/256x256/apps/pcinfo.png"
 
 # Servicio del backend (root → acceso a dmidecode y smartctl).
 cat > "$PKG/lib/systemd/system/pcinfo-backend.service" <<'EOF'
