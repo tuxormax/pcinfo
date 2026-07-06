@@ -47,18 +47,23 @@ func collectDisks() []DiskInfo {
 		disks = append(disks, di)
 	}
 
-	// Enriquecer con S.M.A.R.T. en PARALELO (cada smartctl ya tiene su timeout):
-	// así el tiempo total ≈ el disco más lento, no la suma. Evita que /hardware
-	// exceda el timeout de la GUI con varios discos.
-	var wg sync.WaitGroup
-	for i := range disks {
-		wg.Add(1)
-		go func(di *DiskInfo) {
-			defer wg.Done()
-			readSmart(di)
-		}(&disks[i])
+	// Enriquecer con S.M.A.R.T. En Windows se descubre el dispositivo correcto vía
+	// `smartctl --scan-open` y se empareja por serie (ghw da nombres que smartctl
+	// no siempre acepta). En Linux, cada disco por su /dev/sdX, en PARALELO (cada
+	// smartctl ya tiene su timeout) → total ≈ disco más lento, no la suma.
+	if runtime.GOOS == "windows" {
+		enrichSmartWindows(disks)
+	} else {
+		var wg sync.WaitGroup
+		for i := range disks {
+			wg.Add(1)
+			go func(di *DiskInfo) {
+				defer wg.Done()
+				readSmart(di)
+			}(&disks[i])
+		}
+		wg.Wait()
 	}
-	wg.Wait()
 	return disks
 }
 

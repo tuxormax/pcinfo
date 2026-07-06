@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -93,6 +94,9 @@ type ataAttr struct {
 
 // smartJSON mapea los campos de `smartctl --json -a` que nos interesan.
 type smartJSON struct {
+	SerialNumber string `json:"serial_number"`
+	ModelName    string `json:"model_name"`
+
 	SmartStatus *struct {
 		Passed bool `json:"passed"`
 	} `json:"smart_status"`
@@ -118,28 +122,42 @@ type smartJSON struct {
 // 1 "data unit" NVMe = 1000 sectores de 512 B = 512000 bytes.
 const nvmeDataUnit = 1000 * 512
 
-// readSmart llena los campos S.M.A.R.T. de di ejecutando smartctl. smartctl
-// devuelve un código de salida con flags (≠0 aunque el JSON sea válido), por
-// eso parseamos stdout sin importar el error del proceso.
-func readSmart(di *DiskInfo) {
-	// Timeout duro: en algunos discos (USB, ciertos NVMe/SATA) smartctl puede
-	// tardar mucho o colgarse. Sin este límite, /hardware excedería el timeout
-	// de la GUI y la app caería al mock. Si vence, el disco sale sin SMART pero
-	// con su info real.
+// runSmartctl ejecuta `smartctl --json -a <device>` (con `-d <type>` si se
+// indica) y devuelve stdout. Timeout duro: en algunos discos (USB, NVMe/SATA
+// tras ciertos controladores) smartctl puede tardar o colgarse; sin límite,
+// /hardware excedería el timeout de la GUI. smartctl sale con código ≠0 aunque
+// el JSON sea válido (flags), por eso ignoramos el error del proceso.
+func runSmartctl(device, dtype string) []byte {
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	args := append(drivedbArg(), "--json", "-a", di.Name)
+	args := drivedbArg()
+	if dtype != "" {
+		args = append(args, "-d", dtype)
+	}
+	args = append(args, "--json", "-a", device)
 	out, _ := exec.CommandContext(ctx, smartctlBin(), args...).Output()
+	return out
+}
+
+// readSmart llena los campos S.M.A.R.T. de di consultando smartctl con su
+// nombre de dispositivo (Linux: /dev/sdX). En Windows se usa enrichSmartWindows.
+func readSmart(di *DiskInfo) {
+	parseSmartInto(di, runSmartctl(di.Name, ""))
+}
+
+// parseSmartInto parsea la salida JSON de smartctl y llena los campos S.M.A.R.T.
+// de di. Devuelve true si el dispositivo reportó SMART.
+func parseSmartInto(di *DiskInfo, out []byte) bool {
 	if len(out) == 0 {
-		return
+		return false
 	}
 	var s smartJSON
 	if err := json.Unmarshal(out, &s); err != nil {
 		warn("smartctl", err)
-		return
+		return false
 	}
 	if s.SmartStatus == nil && s.NVMeLog == nil && s.ATA == nil {
-		return // el dispositivo no reporta SMART (USB/VM/sin permisos)
+		return false // el dispositivo no reporta SMART (USB/VM/sin permisos)
 	}
 	di.SmartAvailable = true
 
@@ -188,6 +206,7 @@ func readSmart(di *DiskInfo) {
 			}
 		}
 	}
+	return true
 }
 
 // reUnit extrae un múltiplo embebido en el nombre del atributo, p. ej.
@@ -284,4 +303,101 @@ func clampPct(v int) int {
 		return 100
 	}
 	return v
+}
+
+// scanEntry es un dispositivo que reporta `smartctl --scan-open`.
+type scanEntry struct {
+	Name string `json:"name"` // nombre de dispositivo que SÍ funciona en smartctl
+	Type string `json:"type"` // tipo detectado: ata, sat, nvme, scsi, ...
+}
+
+// scanOpen pregunta a smartctl qué discos puede abrir y con qué tipo. En Windows
+// esto es más fiable que construir "\\.\PHYSICALDRIVEn": smartctl da el nombre y
+// el `-d` correctos (cubre NVMe y varios controladores).
+func scanOpen() []scanEntry {
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	args := append(drivedbArg(), "--scan-open", "--json")
+	out, _ := exec.CommandContext(ctx, smartctlBin(), args...).Output()
+	var r struct {
+		Devices []scanEntry `json:"devices"`
+	}
+	if json.Unmarshal(out, &r) != nil {
+		return nil
+	}
+	return r.Devices
+}
+
+// enrichSmartWindows llena el S.M.A.R.T. en Windows: en vez de adivinar el
+// nombre del dispositivo (ghw da "\\.\PHYSICALDRIVEn", que smartctl no siempre
+// acepta), pregunta con `--scan-open` y empareja cada resultado con el disco de
+// ghw por número de serie/modelo. Deja un log de diagnóstico junto al ejecutable
+// (smart-debug.log) por si algún equipo sigue sin reportar SMART.
+func enrichSmartWindows(disks []DiskInfo) {
+	var log strings.Builder
+	devs := scanOpen()
+	fmt.Fprintf(&log, "smartctl bin: %s\n", smartctlBin())
+	fmt.Fprintf(&log, "scan-open: %d dispositivo(s)\n", len(devs))
+
+	if len(devs) == 0 {
+		// Respaldo: intentar con los nombres nativos de ghw.
+		for i := range disks {
+			ok := parseSmartInto(&disks[i], runSmartctl(disks[i].Name, ""))
+			fmt.Fprintf(&log, "respaldo %s: smart=%v\n", disks[i].Name, ok)
+		}
+		writeSmartDebug(log.String())
+		return
+	}
+
+	for _, d := range devs {
+		out := runSmartctl(d.Name, d.Type)
+		var meta smartJSON
+		json.Unmarshal(out, &meta)
+		idx := matchDisk(disks, meta.SerialNumber, meta.ModelName)
+		ok := false
+		if idx >= 0 {
+			ok = parseSmartInto(&disks[idx], out)
+		}
+		fmt.Fprintf(&log, "dev %s (-d %s): serial=%q modelo=%q → disco #%d smart=%v\n",
+			d.Name, d.Type, meta.SerialNumber, meta.ModelName, idx, ok)
+	}
+	writeSmartDebug(log.String())
+}
+
+// matchDisk empareja un resultado de smartctl con un disco de ghw: primero por
+// número de serie (normalizado), luego —si hay un solo disco— directo, y por
+// último por modelo. Devuelve el índice o -1.
+func matchDisk(disks []DiskInfo, serial, model string) int {
+	if ns := normSerial(serial); ns != "" {
+		for i := range disks {
+			if normSerial(disks[i].Serial) == ns {
+				return i
+			}
+		}
+	}
+	if len(disks) == 1 {
+		return 0
+	}
+	if m := strings.TrimSpace(model); m != "" {
+		for i := range disks {
+			if strings.EqualFold(strings.TrimSpace(disks[i].Model), m) {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+func normSerial(s string) string {
+	return strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(s), " ", ""))
+}
+
+// writeSmartDebug escribe el log de diagnóstico junto al ejecutable del backend
+// (best-effort; corre elevado en Windows, así que puede escribir en Program Files).
+func writeSmartDebug(content string) {
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(filepath.Join(filepath.Dir(exe), "smart-debug.log"), []byte(content), 0o644)
 }
