@@ -5,10 +5,16 @@
       <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2</dpiAwareness>
     </windowsSettings>
   </application>
-  <!-- La elevación (requireAdministrator, estilo HWiNFO para leer el S.M.A.R.T.)
-       NO se pone aquí: la genera el linker con /MANIFESTUAC en el CMake del
-       runner. Ponerla también aquí duplica requestedExecutionLevel y mt.exe
-       falla (LNK1327) o el manifiesto queda mal y el exe no abre. -->
+  <!-- Pide administrador al abrir (estilo HWiNFO): necesario para leer el
+       S.M.A.R.T. El linker NO debe generar su propio UAC (asInvoker) o mt.exe
+       falla al fusionar dos → por eso el CMake del runner usa /MANIFESTUAC:NO. -->
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+    <security>
+      <requestedPrivileges>
+        <requestedExecutionLevel level="requireAdministrator" uiAccess="false"/>
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
   <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
     <application>
       <!-- Windows 10 and Windows 11 -->
