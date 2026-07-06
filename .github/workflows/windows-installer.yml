@@ -67,6 +67,21 @@ jobs:
         working-directory: pcinfo
         run: flutter build windows --release
 
+      # Verifica que el manifiesto incrustado pida administrador. Si no, el .exe
+      # abre sin elevación (sin SMART) o no abre; mejor fallar aquí que entregar
+      # un instalador roto (pasó en Rev 10).
+      - name: Verificar elevación (requireAdministrator) en el exe
+        shell: pwsh
+        run: |
+          $exe = "pcinfo\build\windows\x64\runner\Release\pcinfo.exe"
+          $mt = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\mt.exe" -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $mt) { throw "mt.exe no encontrado" }
+          & $mt.FullName -nologo "-inputresource:$exe;#1" "-out:manifest.xml"
+          $m = Get-Content manifest.xml -Raw
+          Write-Host $m
+          if ($m -notmatch 'requireAdministrator') { throw "El exe NO pide administrador" }
+          Write-Host "OK: el exe pide administrador (requireAdministrator)"
+
       - name: Descargar VC++ Redistributable
         run: Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "instaladores\vc_redist.x64.exe"
 
