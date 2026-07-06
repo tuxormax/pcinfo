@@ -63,6 +63,15 @@ jobs:
           Copy-Item "$bin\drivedb.h"    "backend\drivedb.h"    -Force
           if (-not (Test-Path "backend\smartctl.exe")) { throw "smartctl.exe no encontrado" }
 
+      # Windows Defender en el runner interfiere con mt.exe al incrustar el
+      # manifiesto (requireAdministrator) → LINK fatal error LNK1327. Se desactiva
+      # el monitoreo en tiempo real (best-effort) para el build.
+      - name: Desactivar Defender realtime (evita LNK1327 en mt.exe)
+        shell: pwsh
+        run: |
+          try { Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction Stop; Write-Host "Realtime monitoring desactivado" }
+          catch { try { Add-MpPreference -ExclusionPath "${{ github.workspace }}" -ErrorAction Stop; Write-Host "Exclusión agregada" } catch { Write-Host "No se pudo tocar Defender (se intenta compilar igual): $_" } }
+
       - name: Compilar GUI Flutter (Windows release)
         working-directory: pcinfo
         run: flutter build windows --release
