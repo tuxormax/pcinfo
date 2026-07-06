@@ -79,7 +79,10 @@ Filename: "{tmp}\vc_redist.x64.exe"; Parameters: "/install /quiet /norestart"; S
 ; NO hay servicio en 2º plano: la GUI (elevada, requireAdministrator) lanza el
 ; backend como proceso hijo mientras está abierta y lo mata al cerrar (estilo
 ; HWiNFO). Aquí solo se ofrece iniciar la app al terminar.
-Filename: "{app}\pcinfo.exe"; Description: "Iniciar PCInfo"; Flags: nowait postinstall skipifsilent
+; shellexec (ShellExecute), NO CreateProcess: pcinfo.exe pide administrador
+; (requireAdministrator) y CreateProcess falla con "código 740, requiere
+; elevación". ShellExecute sí lo lanza elevado.
+Filename: "{app}\pcinfo.exe"; Description: "Iniciar PCInfo"; Flags: shellexec nowait postinstall skipifsilent
 
 [UninstallRun]
 ; Cerrar cualquier backend que la app haya dejado corriendo.
