@@ -2,7 +2,7 @@
 // Versionado: vX.Y (Y = módulos) Rev N (despliegues, +1, nunca se reinicia).
 const String appName = 'PCInfo';
 const String appVersion = '1.1';
-const int appRevision = 10;
+const int appRevision = 11;
 
 const String appAuthor = 'tuxor';
 const String appEmail = 'tuxor.max@gmail.com';
