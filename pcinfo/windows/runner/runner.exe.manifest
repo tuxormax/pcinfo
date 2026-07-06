@@ -5,6 +5,16 @@
       <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2</dpiAwareness>
     </windowsSettings>
   </application>
+  <!-- Pide administrador al abrir (estilo HWiNFO): necesario para leer el
+       S.M.A.R.T. de los discos. El backend hijo hereda esta elevación. Sin esto
+       la salud/desgaste del disco no está disponible. -->
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+    <security>
+      <requestedPrivileges>
+        <requestedExecutionLevel level="requireAdministrator" uiAccess="false"/>
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
   <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
     <application>
       <!-- Windows 10 and Windows 11 -->

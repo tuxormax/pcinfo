@@ -76,23 +76,22 @@ Name: "desktopicon"; Description: "Crear acceso directo en el escritorio"; Group
 #ifdef VcRedist
 Filename: "{tmp}\vc_redist.x64.exe"; Parameters: "/install /quiet /norestart"; StatusMsg: "Instalando Visual C++ Runtime..."; Flags: waituntilterminated
 #endif
-; El backend se instala como SERVICIO de Windows (LocalSystem): arranca sin
-; ventana de consola y con privilegios para leer el S.M.A.R.T. de los discos.
-; El propio binario crea/inicia el servicio (evita el escapado frágil de sc.exe).
-Filename: "{app}\pcinfo-backend.exe"; Parameters: "--addr 127.0.0.1:51247 install"; StatusMsg: "Instalando el servicio de PCInfo..."; Flags: runhidden waituntilterminated
+; NO hay servicio en 2º plano: la GUI (elevada, requireAdministrator) lanza el
+; backend como proceso hijo mientras está abierta y lo mata al cerrar (estilo
+; HWiNFO). Aquí solo se ofrece iniciar la app al terminar.
 Filename: "{app}\pcinfo.exe"; Description: "Iniciar PCInfo"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
-; Detener y eliminar el servicio al desinstalar.
-Filename: "{app}\pcinfo-backend.exe"; Parameters: "uninstall"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveSvc"
+; Cerrar cualquier backend que la app haya dejado corriendo.
+Filename: "{sys}\taskkill.exe"; Parameters: "/IM pcinfo-backend.exe /F"; Flags: runhidden; RunOnceId: "KillBackend"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
 
 [Code]
-// Antes de copiar archivos, detener/eliminar el servicio y matar cualquier
-// backend en ejecución: si sigue vivo tiene bloqueado pcinfo-backend.exe y la
-// copia fallaría al actualizar. El servicio se recrea luego en [Run].
+// Antes de copiar archivos: (1) eliminar el SERVICIO de versiones anteriores
+// (rev-9 lo instalaba; ya no se usa), y (2) matar la app/backend si están
+// abiertos, porque tendrían bloqueados los .exe y la copia fallaría.
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   Rc: Integer;
@@ -100,6 +99,7 @@ begin
   Exec(ExpandConstant('{sys}\sc.exe'), 'stop PCInfoBackend', '', SW_HIDE, ewWaitUntilTerminated, Rc);
   Exec(ExpandConstant('{sys}\sc.exe'), 'delete PCInfoBackend', '', SW_HIDE, ewWaitUntilTerminated, Rc);
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM pcinfo-backend.exe /F', '', SW_HIDE, ewWaitUntilTerminated, Rc);
-  Sleep(1500);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM pcinfo.exe /F', '', SW_HIDE, ewWaitUntilTerminated, Rc);
+  Sleep(1200);
   Result := '';
 end;

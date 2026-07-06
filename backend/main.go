@@ -16,21 +16,13 @@ import (
 func main() {
 	addr := flag.String("addr", defaultAddr(), "dirección de escucha (host:puerto)")
 	flag.Parse()
-
-	// En Windows admite subcomandos de servicio (install/uninstall/start/stop);
-	// devuelve true si atendió uno. En otras plataformas siempre es false.
-	if handleServiceControl(flag.Arg(0), *addr) {
-		return
-	}
-
-	// runService: en Windows corre como servicio cuando lo arranca el SCM (sin
-	// consola y con privilegios para SMART); si no, corre como proceso normal.
-	// En otras plataformas simplemente levanta el servidor.
-	runService(*addr)
+	// La GUI lo lanza como proceso hijo mientras la app está abierta y lo mata al
+	// cerrar (estilo HWiNFO: sin servicio en 2º plano). En Windows se compila con
+	// -H windowsgui, así que no abre ventana de consola.
+	runServer(*addr)
 }
 
-// runServer levanta el servidor HTTP y bloquea. Es el punto común que usan
-// tanto el arranque directo como el modo servicio de Windows.
+// runServer levanta el servidor HTTP y bloquea.
 func runServer(addr string) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/hardware", handleHardware)

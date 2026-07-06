@@ -1,14 +1,14 @@
 import 'dart:async';
 import 'dart:io';
 
-/// Arranca el backend Go (pcinfo-backend) como subproceso si no hay ya uno
-/// escuchando. En producción el backend YA corre como SERVICIO —systemd (root)
-/// en Linux, servicio de Windows (LocalSystem) en Windows— y da datos completos
-/// (dmidecode/WMI + SMART); por eso primero se sondea /healthz y, solo si nadie
-/// responde (dev, portable, o el servicio caído), se lanza el binario
-/// empaquetado. Así nunca choca con el servicio ni duplica el proceso en el
-/// puerto. Nota: lanzado así (sin servicio) NO tiene privilegios de admin, por
-/// lo que el SMART puede salir vacío; el modo normal es vía el servicio.
+/// Arranca el backend Go (pcinfo-backend) como proceso HIJO mientras la app está
+/// abierta y lo mata al cerrar (estilo HWiNFO: NO hay servicio en 2º plano). El
+/// backend hereda la elevación de la GUI (manifest requireAdministrator en
+/// Windows), así que puede leer el SMART. Primero sondea /healthz por si ya hay
+/// una instancia (p. ej. otra ventana abierta) para no duplicar el proceso; si
+/// nadie responde, lanza el binario empaquetado. `stop()` lo termina al cerrar.
+/// En Linux el .deb sí usa un servicio systemd (root); ahí ensureRunning ve el
+/// /healthz y no lanza nada.
 class BackendLauncher {
   /// Puerto/host fijo del backend (debe coincidir con HttpHardwareService y los
   /// instaladores: 127.0.0.1:51247).
@@ -19,16 +19,16 @@ class BackendLauncher {
 
   /// Garantiza que haya un backend respondiendo. Devuelve true si al terminar
   /// /healthz responde (sea el que ya estaba o el que se acaba de lanzar).
-  /// Nunca lanza excepción: si algo falla, la GUI cae al mock.
+  /// Nunca lanza excepción: si algo falla, la GUI muestra el estado de error.
   Future<bool> ensureRunning() async {
-    if (await _healthy()) return true; // ya corre (servicio o instancia previa)
+    if (await _healthy()) return true; // ya corre (otra ventana, o servicio en Linux)
 
     final bin = _locateBinary();
     if (bin == null) return false; // sin binario empaquetado (p. ej. dev sin build)
 
     try {
-      // Detached: el backend sobrevive como en producción; como ya sondeamos
-      // /healthz antes, jamás se lanza un segundo proceso sobre el puerto.
+      // Detached (sin consola/pipes); guardamos el Process para matarlo en
+      // stop(). Como ya sondeamos /healthz, no se duplica el proceso.
       _proc = await Process.start(
         bin.path,
         ['--addr', '$host:$port'],
