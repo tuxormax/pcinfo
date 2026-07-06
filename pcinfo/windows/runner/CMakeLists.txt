@@ -20,6 +20,12 @@ add_executable(${BINARY_NAME} WIN32
 # that need different build settings.
 apply_standard_settings(${BINARY_NAME})
 
+# El manifiesto (runner.exe.manifest) ya define requestedExecutionLevel
+# (requireAdministrator, estilo HWiNFO). Sin esto el linker genera ADEMÁS su
+# propio fragmento UAC (asInvoker) y mt.exe falla al fusionar dos niveles
+# distintos → "LNK1327: failure during running mt.exe".
+target_link_options(${BINARY_NAME} PRIVATE "/MANIFESTUAC:NO")
+
 # Add preprocessor definitions for the build version.
 target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION=\"${FLUTTER_VERSION}\"")
 target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION_MAJOR=${FLUTTER_VERSION_MAJOR}")
