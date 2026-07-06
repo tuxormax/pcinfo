@@ -47,7 +47,21 @@ jobs:
 
       - name: Compilar backend Go (.exe)
         working-directory: backend
-        run: go build -ldflags "-s -w" -o pcinfo-backend.exe .
+        # -H windowsgui = subsistema GUI: el backend NO abre ventana de consola
+        # (antes se veía el cmd negro "PCInfo backend escuchando..." al iniciar).
+        run: go build -ldflags "-s -w -H windowsgui" -o pcinfo-backend.exe .
+
+      - name: Empaquetar smartctl (smartmontools) para el backend
+        shell: pwsh
+        # Sin smartctl.exe en Windows la ficha de discos sale "SIN SMART".
+        # choco lo instala en C:\Program Files\smartmontools\bin; copiamos el
+        # binario + drivedb.h junto al backend para que el instalador los meta.
+        run: |
+          choco install smartmontools -y --no-progress
+          $bin = "C:\Program Files\smartmontools\bin"
+          Copy-Item "$bin\smartctl.exe" "backend\smartctl.exe" -Force
+          Copy-Item "$bin\drivedb.h"    "backend\drivedb.h"    -Force
+          if (-not (Test-Path "backend\smartctl.exe")) { throw "smartctl.exe no encontrado" }
 
       - name: Compilar GUI Flutter (Windows release)
         working-directory: pcinfo
@@ -61,6 +75,8 @@ jobs:
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
             "/DSourceFlutter=${{ github.workspace }}\pcinfo\build\windows\x64\runner\Release" `
             "/DSourceBackend=${{ github.workspace }}\backend\pcinfo-backend.exe" `
+            "/DSourceSmartctl=${{ github.workspace }}\backend\smartctl.exe" `
+            "/DSourceDrivedb=${{ github.workspace }}\backend\drivedb.h" `
             "/DVcRedist=${{ github.workspace }}\instaladores\vc_redist.x64.exe" `
             "/DOutDir=${{ github.workspace }}\instaladores" `
             "/DBaseName=$env:PCINFO_NAME" `

@@ -2,11 +2,13 @@ import 'dart:async';
 import 'dart:io';
 
 /// Arranca el backend Go (pcinfo-backend) como subproceso si no hay ya uno
-/// escuchando. En producción el backend YA corre — servicio systemd (root) en
-/// Linux, autostart HKLM en Windows — y da datos completos (dmidecode + SMART);
-/// por eso primero se sondea /healthz y, solo si nadie responde (dev, portable,
-/// o el servicio caído), se lanza el binario empaquetado. Así nunca choca con el
-/// servicio ni duplica el proceso en el puerto.
+/// escuchando. En producción el backend YA corre como SERVICIO —systemd (root)
+/// en Linux, servicio de Windows (LocalSystem) en Windows— y da datos completos
+/// (dmidecode/WMI + SMART); por eso primero se sondea /healthz y, solo si nadie
+/// responde (dev, portable, o el servicio caído), se lanza el binario
+/// empaquetado. Así nunca choca con el servicio ni duplica el proceso en el
+/// puerto. Nota: lanzado así (sin servicio) NO tiene privilegios de admin, por
+/// lo que el SMART puede salir vacío; el modo normal es vía el servicio.
 class BackendLauncher {
   /// Puerto/host fijo del backend (debe coincidir con HttpHardwareService y los
   /// instaladores: 127.0.0.1:51247).

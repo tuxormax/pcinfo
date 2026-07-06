@@ -1,11 +1,13 @@
 package collector
 
 import (
-	"encoding/json"
 	_ "embed"
+	"encoding/json"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -51,6 +53,32 @@ func drivedbArg() []string {
 	return []string{"-B", "+" + drivedbPath}
 }
 
+var (
+	smartctlOnce sync.Once
+	smartctlPath = "smartctl" // Linux/PATH; en Windows se resuelve junto al exe.
+)
+
+// smartctlBin devuelve el ejecutable de smartctl. En Linux/instalación .deb está
+// en el PATH (dependencia smartmontools). En Windows NO hay smartctl en el PATH,
+// así que el instalador lo empaqueta junto al backend; aquí lo buscamos en la
+// carpeta del propio ejecutable (síntoma si falta: "SIN SMART").
+func smartctlBin() string {
+	smartctlOnce.Do(func() {
+		if runtime.GOOS != "windows" {
+			return
+		}
+		exe, err := os.Executable()
+		if err != nil {
+			return
+		}
+		cand := filepath.Join(filepath.Dir(exe), "smartctl.exe")
+		if _, err := os.Stat(cand); err == nil {
+			smartctlPath = cand
+		}
+	})
+	return smartctlPath
+}
+
 // ataAttr es una fila de la tabla de atributos S.M.A.R.T. ATA.
 type ataAttr struct {
 	ID    int    `json:"id"`
@@ -93,7 +121,7 @@ const nvmeDataUnit = 1000 * 512
 // eso parseamos stdout sin importar el error del proceso.
 func readSmart(di *DiskInfo) {
 	args := append(drivedbArg(), "--json", "-a", di.Name)
-	out, _ := exec.Command("smartctl", args...).Output()
+	out, _ := exec.Command(smartctlBin(), args...).Output()
 	if len(out) == 0 {
 		return
 	}

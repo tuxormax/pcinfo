@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"runtime"
 	"strings"
 
 	"github.com/jaypipes/ghw"
@@ -23,7 +24,7 @@ func collectDisks() []DiskInfo {
 		drive := strings.ToLower(d.DriveType.String())
 
 		di := DiskInfo{
-			Name:            "/dev/" + d.Name,
+			Name:            deviceName(d.Name),
 			Model:           strings.TrimSpace(d.Model),
 			Vendor:          cleanDMI(d.Vendor),
 			SizeBytes:       int64(d.SizeBytes),
@@ -47,6 +48,17 @@ func collectDisks() []DiskInfo {
 		disks = append(disks, di)
 	}
 	return disks
+}
+
+// deviceName arma el nombre de dispositivo que ve el usuario y que se pasa a
+// smartctl. En Linux ghw da "sda" → "/dev/sda". En Windows ghw ya da la ruta
+// nativa "\\.\PHYSICALDRIVE0", que smartctl acepta tal cual; anteponerle
+// "/dev/" la rompía (síntoma: "SIN SMART" en Windows).
+func deviceName(name string) string {
+	if runtime.GOOS == "windows" {
+		return name
+	}
+	return "/dev/" + name
 }
 
 func skipDisk(name string, size uint64) bool {

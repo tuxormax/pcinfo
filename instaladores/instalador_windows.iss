@@ -15,6 +15,12 @@
 #ifndef SourceBackend
   #define SourceBackend "..\backend\pcinfo-backend.exe"
 #endif
+#ifndef SourceSmartctl
+  #define SourceSmartctl "..\backend\smartctl.exe"
+#endif
+#ifndef SourceDrivedb
+  #define SourceDrivedb "..\backend\drivedb.h"
+#endif
 #ifndef OutDir
   #define OutDir "."
 #endif
@@ -49,6 +55,10 @@ Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl"
 Source: "{#SourceFlutter}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; Backend Go.
 Source: "{#SourceBackend}"; DestDir: "{app}"; DestName: "pcinfo-backend.exe"; Flags: ignoreversion
+; smartctl (smartmontools) + su base de datos de discos: sin esto la ficha de
+; almacenamiento sale "SIN SMART" en Windows (no viene en el PATH del sistema).
+Source: "{#SourceSmartctl}"; DestDir: "{app}"; DestName: "smartctl.exe"; Flags: ignoreversion
+Source: "{#SourceDrivedb}"; DestDir: "{app}"; DestName: "drivedb.h"; Flags: ignoreversion
 #ifdef VcRedist
 ; Runtime de Visual C++ empaquetado (la app no arranca sin VCRUNTIME140).
 Source: "{#VcRedist}"; DestDir: "{tmp}"; Flags: deleteafterinstall
@@ -62,23 +72,19 @@ Name: "{commondesktop}\PCInfo"; Filename: "{app}\pcinfo.exe"; Tasks: desktopicon
 [Tasks]
 Name: "desktopicon"; Description: "Crear acceso directo en el escritorio"; GroupDescription: "Accesos directos:"
 
-[Registry]
-; El backend arranca en cada inicio de sesión (la GUI le consulta el hardware).
-Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
-  ValueType: string; ValueName: "PCInfoBackend"; \
-  ValueData: """{app}\pcinfo-backend.exe"" --addr 127.0.0.1:51247"; \
-  Flags: uninsdeletevalue
-
 [Run]
 #ifdef VcRedist
 Filename: "{tmp}\vc_redist.x64.exe"; Parameters: "/install /quiet /norestart"; StatusMsg: "Instalando Visual C++ Runtime..."; Flags: waituntilterminated
 #endif
-Filename: "{app}\pcinfo-backend.exe"; Parameters: "--addr 127.0.0.1:51247"; Flags: nowait runhidden
+; El backend se instala como SERVICIO de Windows (LocalSystem): arranca sin
+; ventana de consola y con privilegios para leer el S.M.A.R.T. de los discos.
+; El propio binario crea/inicia el servicio (evita el escapado frágil de sc.exe).
+Filename: "{app}\pcinfo-backend.exe"; Parameters: "--addr 127.0.0.1:51247 install"; StatusMsg: "Instalando el servicio de PCInfo..."; Flags: runhidden waituntilterminated
 Filename: "{app}\pcinfo.exe"; Description: "Iniciar PCInfo"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
-; Cerrar el backend al desinstalar.
-Filename: "{cmd}"; Parameters: "/C taskkill /IM pcinfo-backend.exe /F"; Flags: runhidden; RunOnceId: "KillBackend"
+; Detener y eliminar el servicio al desinstalar.
+Filename: "{app}\pcinfo-backend.exe"; Parameters: "uninstall"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveSvc"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"

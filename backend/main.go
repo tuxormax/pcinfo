@@ -17,6 +17,21 @@ func main() {
 	addr := flag.String("addr", defaultAddr(), "dirección de escucha (host:puerto)")
 	flag.Parse()
 
+	// En Windows admite subcomandos de servicio (install/uninstall/start/stop);
+	// devuelve true si atendió uno. En otras plataformas siempre es false.
+	if handleServiceControl(flag.Arg(0), *addr) {
+		return
+	}
+
+	// runService: en Windows corre como servicio cuando lo arranca el SCM (sin
+	// consola y con privilegios para SMART); si no, corre como proceso normal.
+	// En otras plataformas simplemente levanta el servidor.
+	runService(*addr)
+}
+
+// runServer levanta el servidor HTTP y bloquea. Es el punto común que usan
+// tanto el arranque directo como el modo servicio de Windows.
+func runServer(addr string) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/hardware", handleHardware)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -24,12 +39,12 @@ func main() {
 	})
 
 	srv := &http.Server{
-		Addr:              *addr,
+		Addr:              addr,
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	log.Printf("PCInfo backend escuchando en http://%s/hardware", *addr)
+	log.Printf("PCInfo backend escuchando en http://%s/hardware", addr)
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("no se pudo iniciar el servidor: %v", err)
 	}
