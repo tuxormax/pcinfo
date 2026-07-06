@@ -23,10 +23,12 @@ class HttpHardwareService implements HardwareService {
   @override
   Future<HardwareInfo> load() async {
     final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 3);
+      ..connectionTimeout = const Duration(seconds: 5);
     try {
       final req = await client.getUrl(endpoint);
-      final resp = await req.close().timeout(const Duration(seconds: 8));
+      // Margen amplio: el primer arranque en frío del colector (WMI + smartctl
+      // por disco) puede tardar varios segundos en algunas máquinas.
+      final resp = await req.close().timeout(const Duration(seconds: 30));
       if (resp.statusCode != 200) {
         throw HttpException('HTTP ${resp.statusCode}', uri: endpoint);
       }

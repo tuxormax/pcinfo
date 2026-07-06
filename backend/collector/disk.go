@@ -3,6 +3,7 @@ package collector
 import (
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/jaypipes/ghw"
 )
@@ -43,10 +44,21 @@ func collectDisks() []DiskInfo {
 				di.AvailBytes += int64(avail)
 			}
 		}
-		// Enriquecer con S.M.A.R.T. (smartctl --json).
-		readSmart(&di)
 		disks = append(disks, di)
 	}
+
+	// Enriquecer con S.M.A.R.T. en PARALELO (cada smartctl ya tiene su timeout):
+	// así el tiempo total ≈ el disco más lento, no la suma. Evita que /hardware
+	// exceda el timeout de la GUI con varios discos.
+	var wg sync.WaitGroup
+	for i := range disks {
+		wg.Add(1)
+		go func(di *DiskInfo) {
+			defer wg.Done()
+			readSmart(di)
+		}(&disks[i])
+	}
+	wg.Wait()
 	return disks
 }
 

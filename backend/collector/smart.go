@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"context"
 	_ "embed"
 	"encoding/json"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // drivedbAdd es la base de datos por modelo de PCInfo (formato oficial de
@@ -120,8 +122,14 @@ const nvmeDataUnit = 1000 * 512
 // devuelve un código de salida con flags (≠0 aunque el JSON sea válido), por
 // eso parseamos stdout sin importar el error del proceso.
 func readSmart(di *DiskInfo) {
+	// Timeout duro: en algunos discos (USB, ciertos NVMe/SATA) smartctl puede
+	// tardar mucho o colgarse. Sin este límite, /hardware excedería el timeout
+	// de la GUI y la app caería al mock. Si vence, el disco sale sin SMART pero
+	// con su info real.
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
 	args := append(drivedbArg(), "--json", "-a", di.Name)
-	out, _ := exec.Command(smartctlBin(), args...).Output()
+	out, _ := exec.CommandContext(ctx, smartctlBin(), args...).Output()
 	if len(out) == 0 {
 		return
 	}

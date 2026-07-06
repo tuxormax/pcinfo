@@ -45,9 +45,10 @@ class _PcInfoAppState extends State<PcInfoApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    // Fuente de datos: backend Go en localhost; si no está corriendo, cae al
-    // mock para que la GUI siga mostrándose.
-    final service = HttpHardwareService(fallback: MockHardwareService());
+    // Fuente de datos: backend Go en localhost. SIN fallback al mock: si el
+    // backend no responde preferimos mostrar un error claro con "Reintentar"
+    // antes que datos de ejemplo que el usuario podría confundir con los reales.
+    final service = HttpHardwareService();
     return MaterialApp(
       title: 'PCInfo',
       debugShowCheckedModeBanner: false,

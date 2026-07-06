@@ -29,6 +29,45 @@ class _DashboardPageState extends State<DashboardPage> {
     setState(() => _future = widget.service.load());
   }
 
+  // Estado cuando el backend no responde: NO se muestran datos de ejemplo, sino
+  // un aviso claro con "Reintentar". El backend corre como servicio; si no está,
+  // este mensaje evita confundir datos falsos con los del equipo.
+  Widget _errorState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, color: AppColors.textMid, size: 48),
+            const SizedBox(height: 16),
+            const Text(
+              'No se pudo leer el hardware',
+              style: TextStyle(
+                color: AppColors.textHi,
+                fontSize: kFont + 2,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'El servicio de PCInfo no está respondiendo.\n'
+              'Verifica que el servicio "PCInfoBackend" esté en ejecución.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textMid, fontSize: kFont),
+            ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: _refresh,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Reintentar'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -42,10 +81,7 @@ class _DashboardPageState extends State<DashboardPage> {
               );
             }
             if (snap.hasError) {
-              return Center(
-                child: Text('Error: ${snap.error}',
-                    style: const TextStyle(color: AppColors.textMid)),
-              );
+              return _errorState();
             }
             return _content(snap.data!);
           },

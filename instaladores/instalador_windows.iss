@@ -88,3 +88,18 @@ Filename: "{app}\pcinfo-backend.exe"; Parameters: "uninstall"; Flags: runhidden 
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
+
+[Code]
+// Antes de copiar archivos, detener/eliminar el servicio y matar cualquier
+// backend en ejecución: si sigue vivo tiene bloqueado pcinfo-backend.exe y la
+// copia fallaría al actualizar. El servicio se recrea luego en [Run].
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Rc: Integer;
+begin
+  Exec(ExpandConstant('{sys}\sc.exe'), 'stop PCInfoBackend', '', SW_HIDE, ewWaitUntilTerminated, Rc);
+  Exec(ExpandConstant('{sys}\sc.exe'), 'delete PCInfoBackend', '', SW_HIDE, ewWaitUntilTerminated, Rc);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM pcinfo-backend.exe /F', '', SW_HIDE, ewWaitUntilTerminated, Rc);
+  Sleep(1500);
+  Result := '';
+end;
