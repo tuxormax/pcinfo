@@ -1,7 +1,9 @@
 package collector
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -34,6 +36,9 @@ func collectGPU() GPUInfo {
 				}
 				card.Driver = gc.DeviceInfo.Driver
 			}
+			// VRAM de AMD/Intel vía sysfs (NVIDIA la pone nvidia-smi luego). Igual
+			// que en Windows con el registro: sin esto solo NVIDIA mostraba VRAM.
+			card.MemoryBytes = linuxGPUVRAM(gc.Address)
 			out.Cards = append(out.Cards, card)
 		}
 	}
@@ -42,6 +47,34 @@ func collectGPU() GPUInfo {
 	// (ghw/WMI no dan VRAM fiable, y >4GB se rompe en WMI AdapterRAM).
 	enrichNvidia(out.Cards)
 	return out
+}
+
+// linuxGPUVRAM devuelve la VRAM (bytes) de la GPU en la dirección PCI dada,
+// leyendo `/sys/class/drm/cardN/device/mem_info_vram_total` (lo expone amdgpu).
+// Empareja el cardN con la tarjeta de ghw por dirección PCI (el symlink
+// `device`). Devuelve 0 si no aplica (Intel iGPU sin VRAM dedicada, o NVIDIA con
+// driver propietario que no expone el archivo → esa la pone nvidia-smi).
+func linuxGPUVRAM(pciAddr string) int64 {
+	if runtime.GOOS != "linux" || pciAddr == "" {
+		return 0
+	}
+	entries, _ := filepath.Glob("/sys/class/drm/card[0-9]*")
+	for _, e := range entries {
+		if strings.ContainsRune(filepath.Base(e), '-') {
+			continue // saltar conectores (card1-DP-1, card1-HDMI-A-1, ...)
+		}
+		target, err := os.Readlink(e + "/device")
+		if err != nil || filepath.Base(target) != pciAddr {
+			continue
+		}
+		if raw := readTrim(e + "/device/mem_info_vram_total"); raw != "" {
+			if n, err := strconv.ParseInt(raw, 10, 64); err == nil {
+				return n
+			}
+		}
+		return 0
+	}
+	return 0
 }
 
 func enrichNvidia(cards []GPUCard) {
