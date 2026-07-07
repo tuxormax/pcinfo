@@ -15,10 +15,17 @@ import (
 
 func main() {
 	addr := flag.String("addr", defaultAddr(), "dirección de escucha (host:puerto)")
+	parentPID := flag.Int("parent-pid", 0, "PID de la GUI; al morir ésta, el backend se cierra")
 	flag.Parse()
-	// La GUI lo lanza como proceso hijo mientras la app está abierta y lo mata al
-	// cerrar (estilo HWiNFO: sin servicio en 2º plano). En Windows se compila con
-	// -H windowsgui, así que no abre ventana de consola.
+	// La GUI lo lanza como proceso hijo mientras la app está abierta. En Windows
+	// el backend puede correr ELEVADO (Start-Process -Verb RunAs para leer SMART)
+	// mientras la GUI es asInvoker: entonces la GUI no puede matarlo (elevación
+	// distinta), así que el backend vigila el PID de la GUI y se cierra solo
+	// cuando ésta desaparece. Estilo HWiNFO: sin servicio en 2º plano. En Windows
+	// se compila con -H windowsgui, así que no abre ventana de consola.
+	if *parentPID > 0 {
+		go watchParent(*parentPID)
+	}
 	runServer(*addr)
 }
 

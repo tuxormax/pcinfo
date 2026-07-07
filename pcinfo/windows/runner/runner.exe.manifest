@@ -5,16 +5,11 @@
       <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2</dpiAwareness>
     </windowsSettings>
   </application>
-  <!-- Pide administrador al abrir (estilo HWiNFO): necesario para leer el
-       S.M.A.R.T. El linker NO debe generar su propio UAC (asInvoker) o mt.exe
-       falla al fusionar dos → por eso el CMake del runner usa /MANIFESTUAC:NO. -->
-  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
-    <security>
-      <requestedPrivileges>
-        <requestedExecutionLevel level="requireAdministrator" uiAccess="false"/>
-      </requestedPrivileges>
-    </security>
-  </trustInfo>
+  <!-- SIN requireAdministrator: la GUI corre como asInvoker (default de Flutter)
+       y ABRE SIEMPRE, en cualquier cuenta y sin UAC. La elevación se pide SOLO
+       para el backend cuando hace falta leer S.M.A.R.T. (ver backend_launcher:
+       Start-Process -Verb RunAs). Poner requireAdministrator aquí rompía el
+       arranque del exe (Rev 11/12 no abrían ni con "Ejecutar como admin"). -->
   <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
     <application>
       <!-- Windows 10 and Windows 11 -->

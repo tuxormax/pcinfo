@@ -76,13 +76,12 @@ Name: "desktopicon"; Description: "Crear acceso directo en el escritorio"; Group
 #ifdef VcRedist
 Filename: "{tmp}\vc_redist.x64.exe"; Parameters: "/install /quiet /norestart"; StatusMsg: "Instalando Visual C++ Runtime..."; Flags: waituntilterminated
 #endif
-; NO hay servicio en 2º plano: la GUI (elevada, requireAdministrator) lanza el
-; backend como proceso hijo mientras está abierta y lo mata al cerrar (estilo
-; HWiNFO). Aquí solo se ofrece iniciar la app al terminar.
-; shellexec (ShellExecute), NO CreateProcess: pcinfo.exe pide administrador
-; (requireAdministrator) y CreateProcess falla con "código 740, requiere
-; elevación". ShellExecute sí lo lanza elevado.
-Filename: "{app}\pcinfo.exe"; Description: "Iniciar PCInfo"; Flags: shellexec nowait postinstall skipifsilent
+; NO hay servicio en 2º plano: la GUI (asInvoker, abre siempre) lanza el backend
+; como proceso hijo mientras está abierta y lo cierra al salir (estilo HWiNFO).
+; El backend se lanza elevado (UAC) solo si se necesita SMART. Aquí solo se ofrece
+; iniciar la app al terminar. runasoriginaluser: abrir la app como el usuario
+; normal (no heredar la elevación del instalador), igual que un doble clic.
+Filename: "{app}\pcinfo.exe"; Description: "Iniciar PCInfo"; Flags: nowait postinstall skipifsilent runasoriginaluser
 
 [UninstallRun]
 ; Cerrar cualquier backend que la app haya dejado corriendo.

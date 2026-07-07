@@ -20,12 +20,10 @@ add_executable(${BINARY_NAME} WIN32
 # that need different build settings.
 apply_standard_settings(${BINARY_NAME})
 
-# El nivel de elevación (requireAdministrator) va en runner.exe.manifest. Aquí
-# solo se le dice al linker que NO genere su propio fragmento UAC (asInvoker),
-# porque tener dos requestedExecutionLevel hace fallar a mt.exe (LNK1327). NO
-# usar /MANIFESTUAC:"level=..." con uiAccess: el espacio interno se parte al
-# pasar por MSBuild y el linker termina embebiendo asInvoker (bug Rev 11).
-target_link_options(${BINARY_NAME} PRIVATE "/MANIFESTUAC:NO")
+# La app corre como asInvoker (default): no se toca /MANIFESTUAC, el linker
+# genera el fragmento asInvoker estándar. NO poner requireAdministrator en el
+# manifiesto ni forzar UAC aquí: el exe elevado no arrancaba (Rev 11/12). La
+# elevación se pide solo para el backend (ver backend_launcher.dart).
 
 # Add preprocessor definitions for the build version.
 target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION=\"${FLUTTER_VERSION}\"")

@@ -67,10 +67,11 @@ jobs:
         working-directory: pcinfo
         run: flutter build windows --release
 
-      # Verifica que el manifiesto incrustado pida administrador. Si no, el .exe
-      # abre sin elevación (sin SMART) o no abre; mejor fallar aquí que entregar
-      # un instalador roto (pasó en Rev 10).
-      - name: Verificar elevación (requireAdministrator) en el exe
+      # Verifica que el manifiesto incrustado NO pida administrador: la GUI debe
+      # correr como asInvoker para ABRIR SIEMPRE (requireAdministrator rompía el
+      # arranque, Rev 11/12 no abrían ni con "Ejecutar como admin"). La elevación
+      # se pide solo para el backend en runtime (Start-Process -Verb RunAs).
+      - name: Verificar que el exe NO exige administrador (asInvoker)
         shell: pwsh
         run: |
           $exe = "pcinfo\build\windows\x64\runner\Release\pcinfo.exe"
@@ -79,8 +80,8 @@ jobs:
           & $mt.FullName -nologo "-inputresource:$exe;#1" "-out:manifest.xml"
           $m = Get-Content manifest.xml -Raw
           Write-Host $m
-          if ($m -notmatch 'requireAdministrator') { throw "El exe NO pide administrador" }
-          Write-Host "OK: el exe pide administrador (requireAdministrator)"
+          if ($m -match 'requireAdministrator') { throw "El exe EXIGE administrador; debe ser asInvoker para abrir siempre" }
+          Write-Host "OK: el exe corre como asInvoker (abre siempre)"
 
       - name: Descargar VC++ Redistributable
         run: Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "instaladores\vc_redist.x64.exe"
