@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/yusufpapurcu/wmi"
+	"golang.org/x/sys/windows/registry"
 )
 
 // win32VideoController mapea Win32_VideoController (una GPU cada fila).
@@ -47,5 +48,46 @@ func windowsGPUCards() []GPUCard {
 			Driver:  strings.TrimSpace(c.DriverVersion),
 		})
 	}
+	fillVRAMFromRegistry(cards)
 	return cards
+}
+
+// fillVRAMFromRegistry lee la VRAM real de cada GPU del registro. WMI
+// (AdapterRAM) topa a 4 GB y no sirve; el driver deja el tamaño real en
+// HKLM\...\Class\{4d36e968...}\NNNN\HardwareInformation.qwMemorySize (QWORD,
+// bytes). Sirve para CUALQUIER fabricante (AMD/Intel/NVIDIA), incluida la
+// integrada. Se empareja por DriverDesc == nombre de la GPU. Para NVIDIA,
+// nvidia-smi puede refinar luego (mismo dato).
+func fillVRAMFromRegistry(cards []GPUCard) {
+	const classPath = `SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}`
+	base, err := registry.OpenKey(registry.LOCAL_MACHINE, classPath, registry.READ)
+	if err != nil {
+		warn("registry gpu class", err)
+		return
+	}
+	defer base.Close()
+	subs, err := base.ReadSubKeyNames(-1)
+	if err != nil {
+		return
+	}
+	for _, n := range subs {
+		sub, err := registry.OpenKey(base, n, registry.QUERY_VALUE)
+		if err != nil {
+			continue
+		}
+		desc, _, derr := sub.GetStringValue("DriverDesc")
+		qw, _, qerr := sub.GetIntegerValue("HardwareInformation.qwMemorySize")
+		sub.Close()
+		if derr != nil || qerr != nil || qw == 0 {
+			continue
+		}
+		d := strings.TrimSpace(desc)
+		for i := range cards {
+			if cards[i].MemoryBytes == 0 &&
+				strings.EqualFold(strings.TrimSpace(cards[i].Product), d) {
+				cards[i].MemoryBytes = int64(qw)
+				break
+			}
+		}
+	}
 }
