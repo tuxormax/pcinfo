@@ -45,6 +45,10 @@ func collectCPU() CPUInfo {
 	if out.BaseMhz == 0 {
 		out.BaseMhz = mhzFromModel(out.Model)
 	}
+	// Windows: la base sale de WMI (Win32_Processor.MaxClockSpeed). El turbo/boost
+	// NO lo expone WMI de forma fiable, así que MaxMhz queda en 0 (la GUI oculta
+	// la fila "Frecuencia máxima" si es 0). Impl en cpu_windows.go.
+	enrichCPU(&out)
 	return out
 }
 

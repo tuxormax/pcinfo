@@ -72,7 +72,7 @@ String buildReport(HardwareInfo hw) {
   kv('Núcleos', '${c.cores}');
   kv('Hilos', '${c.threads}');
   kv('Frecuencia base', formatMhz(c.baseMhz));
-  kv('Frecuencia máxima', formatMhz(c.maxMhz));
+  if (c.maxMhz > 0) kv('Frecuencia máxima', formatMhz(c.maxMhz));
 
   // Tarjeta madre
   final bd = hw.board;
@@ -107,16 +107,19 @@ String buildReport(HardwareInfo hw) {
     line('    - Ranura libre: Vacía');
   }
 
-  // GPU
-  section('Tarjeta gráfica (GPU)');
+  // GPU — una sección por tarjeta (espejo de las fichas del dashboard).
   if (hw.gpu.cards.isEmpty) {
+    section('Tarjeta gráfica (GPU)');
     kv('Estado', 'No detectada');
   } else {
     final multi = hw.gpu.cards.length > 1;
     for (final (i, card) in hw.gpu.cards.indexed) {
-      if (multi) line('  GPU ${i + 1} (${_gpuKind(card)}):');
+      section(multi
+          ? 'Tarjeta gráfica ${i + 1} · ${_gpuKind(card)}'
+          : 'Tarjeta gráfica (GPU)');
       kv('Fabricante', cleanVendor(card.vendor));
       kv('Modelo', card.product);
+      kv('Tipo', _gpuKind(card));
       if (card.memoryBytes > 0) kv('VRAM', formatBytes(card.memoryBytes));
       kv('Driver', card.driver);
     }
@@ -174,10 +177,14 @@ String _healthLabel(DiskHealth h) {
   }
 }
 
-/// Misma heurística integrada/dedicada que el dashboard.
+/// Misma heurística integrada/dedicada que el dashboard (normaliza "(tm)"/"(r)"
+/// para que "AMD Radeon(TM) Graphics" cuente como integrada).
 String _gpuKind(GpuCard card) {
   final v = card.vendor.toLowerCase();
-  final p = card.product.toLowerCase();
+  final p = card.product
+      .toLowerCase()
+      .replaceAll('(tm)', '')
+      .replaceAll('(r)', '');
   final integrada = v.contains('intel') ||
       p.contains('uhd') ||
       p.contains('iris') ||
@@ -185,6 +192,9 @@ String _gpuKind(GpuCard card) {
       p.contains('radeon graphics') ||
       p.contains('raphael') ||
       p.contains('cezanne') ||
-      p.contains('renoir');
+      p.contains('renoir') ||
+      p.contains('phoenix') ||
+      p.contains('rembrandt') ||
+      p.contains('hawk point');
   return integrada ? 'Integrada' : 'Dedicada';
 }

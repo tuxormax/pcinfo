@@ -145,8 +145,10 @@ class _DashboardPageState extends State<DashboardPage> {
                 const gap = 18.0;
                 // 2 columnas si hay espacio; si no, 1.
                 final twoCols = c.maxWidth > 720;
+                final gpuCards = _gpuCardList(hw.gpu);
                 if (!twoCols) {
-                  // Una sola columna: todas las fichas con el mismo gap.
+                  // Una sola columna: todas las fichas con el mismo gap (una por
+                  // GPU intercaladas antes de Almacenamiento).
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -157,8 +159,10 @@ class _DashboardPageState extends State<DashboardPage> {
                       _boardCard(hw.board),
                       const SizedBox(height: gap),
                       _ramCard(hw.memory),
-                      const SizedBox(height: gap),
-                      _gpuCard(hw.gpu),
+                      for (final gc in gpuCards) ...[
+                        const SizedBox(height: gap),
+                        gc,
+                      ],
                       const SizedBox(height: gap),
                       _disksCard(hw.disks),
                     ],
@@ -171,7 +175,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   _cpuCard(hw.cpu),
                   _boardCard(hw.board),
                   _ramCard(hw.memory),
-                  _gpuCard(hw.gpu),
+                  ...gpuCards,
                 ];
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -359,7 +363,9 @@ class _DashboardPageState extends State<DashboardPage> {
         SpecRow('Núcleos', '${c.cores}'),
         SpecRow('Hilos', '${c.threads}'),
         SpecRow('Frecuencia base', formatMhz(c.baseMhz)),
-        SpecRow('Frecuencia máxima', formatMhz(c.maxMhz)),
+        // La máxima (turbo) no está disponible en todas las plataformas (Windows
+        // no la expone) → solo se muestra si el backend la reportó.
+        if (c.maxMhz > 0) SpecRow('Frecuencia máxima', formatMhz(c.maxMhz)),
       ],
     );
   }
@@ -407,40 +413,51 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  Widget _gpuCard(GpuInfo g) {
+  /// Una ficha POR tarjeta gráfica: si hay 1, 2 o N GPU, se crea una ficha por
+  /// cada una (no una sola ficha con GPU 1 / GPU 2). Si no hay ninguna, una
+  /// ficha de "No detectada".
+  List<Widget> _gpuCardList(GpuInfo g) {
     if (g.cards.isEmpty) {
-      return const SpecCard(
-        icon: Icons.videogame_asset_rounded,
-        accent: AppColors.gpu,
-        title: 'Tarjeta gráfica (GPU)',
-        rows: [SpecRow('Estado', 'No detectada')],
-      );
+      return const [
+        SpecCard(
+          icon: Icons.videogame_asset_rounded,
+          accent: AppColors.gpu,
+          title: 'Tarjeta gráfica (GPU)',
+          rows: [SpecRow('Estado', 'No detectada')],
+        ),
+      ];
     }
     final multi = g.cards.length > 1;
-    return SpecCard(
-      icon: Icons.videogame_asset_rounded,
-      accent: AppColors.gpu,
-      title: multi
-          ? 'Tarjetas gráficas (${g.cards.length})'
-          : 'Tarjeta gráfica (GPU)',
-      rows: [
-        for (final (i, card) in g.cards.indexed) ...[
-          // Con varias GPU (ej. integrada + dedicada) se numera cada una.
-          if (multi) SpecRow('GPU ${i + 1}', _gpuKind(card)),
-          SpecRow('Fabricante', cleanVendor(card.vendor)),
-          SpecRow('Modelo', card.product),
-          if (card.memoryBytes > 0)
-            SpecRow('VRAM', formatBytes(card.memoryBytes)),
-          SpecRow('Driver', card.driver),
-        ],
-      ],
-    );
+    return [
+      for (final (i, card) in g.cards.indexed)
+        SpecCard(
+          icon: Icons.videogame_asset_rounded,
+          accent: AppColors.gpu,
+          // Con varias GPU se numera y se indica integrada/dedicada en el título.
+          title: multi
+              ? 'Tarjeta gráfica ${i + 1} · ${_gpuKind(card)}'
+              : 'Tarjeta gráfica (GPU)',
+          rows: [
+            SpecRow('Fabricante', cleanVendor(card.vendor)),
+            SpecRow('Modelo', card.product),
+            SpecRow('Tipo', _gpuKind(card)),
+            if (card.memoryBytes > 0)
+              SpecRow('VRAM', formatBytes(card.memoryBytes)),
+            SpecRow('Driver', card.driver),
+          ],
+        ),
+    ];
   }
 
-  /// Heurística para distinguir GPU integrada (del CPU) de dedicada.
+  /// Heurística para distinguir GPU integrada (del CPU) de dedicada. Se normaliza
+  /// el modelo quitando "(tm)"/"(r)" para que "AMD Radeon(TM) Graphics" (el iGPU
+  /// de los Ryzen) cuente como integrada y no como dedicada.
   String _gpuKind(GpuCard card) {
     final v = card.vendor.toLowerCase();
-    final p = card.product.toLowerCase();
+    final p = card.product
+        .toLowerCase()
+        .replaceAll('(tm)', '')
+        .replaceAll('(r)', '');
     final integrada = v.contains('intel') ||
         p.contains('uhd') ||
         p.contains('iris') ||
@@ -448,7 +465,10 @@ class _DashboardPageState extends State<DashboardPage> {
         p.contains('radeon graphics') ||
         p.contains('raphael') ||
         p.contains('cezanne') ||
-        p.contains('renoir');
+        p.contains('renoir') ||
+        p.contains('phoenix') ||
+        p.contains('rembrandt') ||
+        p.contains('hawk point');
     return integrada ? 'Integrada' : 'Dedicada';
   }
 

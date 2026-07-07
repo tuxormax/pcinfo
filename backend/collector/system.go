@@ -20,9 +20,9 @@ func collectSystem() SystemInfo {
 		s.Kernel = readTrim("/proc/sys/kernel/osrelease")
 		s.Desktop = linuxDesktop()
 	case "windows":
-		// ghw/WMI no exponen esto directo; se completa con datos del SO.
-		s.Distro = windowsCaption()
-		s.Kernel = osBuild()
+		// Nombre comercial (Windows 11 Pro 24H2) + build (10.0.26100.1742) vía
+		// WMI + registro; ghw no lo expone. Impl en system_windows.go.
+		windowsSystem(&s)
 	default:
 		s.Distro = runtime.GOOS
 	}
@@ -82,9 +82,6 @@ func linuxDesktop() string {
 	}
 	return de
 }
-
-func windowsCaption() string { return cmdOut("cmd", "/c", "ver") }
-func osBuild() string        { return "" }
 
 func readTrim(path string) string {
 	b, err := os.ReadFile(path)
