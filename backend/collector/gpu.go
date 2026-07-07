@@ -2,6 +2,7 @@ package collector
 
 import (
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -11,28 +12,34 @@ import (
 func collectGPU() GPUInfo {
 	out := GPUInfo{Cards: []GPUCard{}}
 
-	info, err := ghw.GPU()
-	if err != nil || info == nil {
-		warn("gpu", err)
-		return out
-	}
-
-	for _, gc := range info.GraphicsCards {
-		card := GPUCard{}
-		if gc.DeviceInfo != nil {
-			if gc.DeviceInfo.Vendor != nil {
-				card.Vendor = gc.DeviceInfo.Vendor.Name
-			}
-			if gc.DeviceInfo.Product != nil {
-				card.Product = gc.DeviceInfo.Product.Name
-			}
-			card.Driver = gc.DeviceInfo.Driver
+	// En Windows ghw no da un nombre de GPU fiable (a veces vacío, p. ej. el iGPU
+	// AMD Radeon). Se leen de WMI Win32_VideoController, que siempre trae nombre,
+	// fabricante y versión de driver. En Linux, ghw (lee PCI) va bien.
+	if runtime.GOOS == "windows" {
+		out.Cards = windowsGPUCards()
+	} else {
+		info, err := ghw.GPU()
+		if err != nil || info == nil {
+			warn("gpu", err)
+			return out
 		}
-		out.Cards = append(out.Cards, card)
+		for _, gc := range info.GraphicsCards {
+			card := GPUCard{}
+			if gc.DeviceInfo != nil {
+				if gc.DeviceInfo.Vendor != nil {
+					card.Vendor = gc.DeviceInfo.Vendor.Name
+				}
+				if gc.DeviceInfo.Product != nil {
+					card.Product = gc.DeviceInfo.Product.Name
+				}
+				card.Driver = gc.DeviceInfo.Driver
+			}
+			out.Cards = append(out.Cards, card)
+		}
 	}
 
 	// nvidia-smi completa versión de driver y VRAM real de las tarjetas NVIDIA
-	// (ghw no da VRAM fiable, y >4GB se rompe en Windows/WMI).
+	// (ghw/WMI no dan VRAM fiable, y >4GB se rompe en WMI AdapterRAM).
 	enrichNvidia(out.Cards)
 	return out
 }
