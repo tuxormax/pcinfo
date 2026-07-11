@@ -11,11 +11,14 @@ import (
 // enrichMemory (Linux) llena ranuras/módulos vía dmidecode (requiere root). Si
 // falla, la ficha queda solo con los totales que dio ghw.
 func enrichMemory(out *MemoryInfo) {
-	// Tipo 16: arreglo físico → ranuras totales y capacidad máxima.
+	// Tipo 16: capacidad máxima soportada por la placa. Su "Number Of Devices"
+	// NO es fiable (mucho firmware lo declara genérico: la Gigabyte A520M K V2
+	// dice 4 con 2 ranuras físicas), así que solo lo usamos de respaldo.
+	declaradas := 0
 	if blocks := dmidecodeBlocks("16"); len(blocks) > 0 {
 		for _, b := range blocks {
-			if n, err := strconv.Atoi(b["Number Of Devices"]); err == nil && n > out.TotalSlots {
-				out.TotalSlots = n
+			if n, err := strconv.Atoi(b["Number Of Devices"]); err == nil && n > declaradas {
+				declaradas = n
 			}
 			if cap := parseSize(b["Maximum Capacity"]); cap > out.MaxCapacityBytes {
 				out.MaxCapacityBytes = cap
@@ -23,8 +26,16 @@ func enrichMemory(out *MemoryInfo) {
 		}
 	}
 
-	// Tipo 17: cada dispositivo de memoria (solo las ranuras ocupadas).
-	for _, b := range dmidecodeBlocks("17") {
+	// Tipo 17: un registro por ranura física, ocupada o no. Contarlos es la
+	// cuenta fiable de ranuras (lo que hacen CPU-Z/HWiNFO).
+	blocks17 := dmidecodeBlocks("17")
+	out.TotalSlots = len(blocks17)
+	if out.TotalSlots == 0 {
+		out.TotalSlots = declaradas
+	}
+	out.MaxCapacityBytes = ajustaMaxCapacidad(out.MaxCapacityBytes, declaradas, out.TotalSlots)
+
+	for _, b := range blocks17 {
 		size := parseSize(b["Size"])
 		if size <= 0 { // "No Module Installed"
 			continue

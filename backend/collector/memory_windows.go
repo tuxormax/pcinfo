@@ -31,14 +31,19 @@ type win32MemoryArray struct {
 // enrichMemory (Windows) llena ranuras/módulos vía WMI. No requiere elevación
 // para Win32_PhysicalMemory; corre igual como servicio (LocalSystem) o usuario.
 func enrichMemory(out *MemoryInfo) {
+	// Ranuras: primero la tabla SMBIOS cruda (un registro Type 17 por ranura,
+	// vacía o no). Es la única cuenta fiable; ver smbios_windows.go.
+	out.TotalSlots = smbiosSlots(smbiosTables())
+
 	var arrays []win32MemoryArray
+	declaradas := 0
 	q := "SELECT MemoryDevices, MaxCapacity, MaxCapacityEx FROM Win32_PhysicalMemoryArray"
 	if err := wmi.Query(q, &arrays); err != nil {
 		warn("wmi PhysicalMemoryArray", err)
 	} else {
 		for _, a := range arrays {
-			if int(a.MemoryDevices) > out.TotalSlots {
-				out.TotalSlots = int(a.MemoryDevices)
+			if int(a.MemoryDevices) > declaradas {
+				declaradas = int(a.MemoryDevices)
 			}
 			var maxBytes int64
 			if a.MaxCapacityEx > 0 {
@@ -51,6 +56,12 @@ func enrichMemory(out *MemoryInfo) {
 			}
 		}
 	}
+	// MemoryDevices (Type 16) solo de respaldo: mucho firmware lo declara mal
+	// (la A520M K V2 dice 4 con 2 ranuras físicas).
+	if out.TotalSlots == 0 {
+		out.TotalSlots = declaradas
+	}
+	out.MaxCapacityBytes = ajustaMaxCapacidad(out.MaxCapacityBytes, declaradas, out.TotalSlots)
 
 	var mods []win32PhysicalMemory
 	q = "SELECT DeviceLocator, BankLabel, Manufacturer, Capacity, Speed, " +

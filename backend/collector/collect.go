@@ -9,11 +9,14 @@ import "log"
 // Windows) se recupera y devuelve el valor cero de esa sección, en vez de tumbar
 // toda la respuesta /hardware (lo que haría que la GUI cayera al mock).
 func Collect() HardwareInfo {
+	// La placa se recoge primero: la memoria la necesita para consultar el
+	// catálogo de placas (ranuras y capacidad máxima verificadas).
+	board := safe("board", collectBoard)
 	return HardwareInfo{
 		System: safe("system", collectSystem),
 		CPU:    safe("cpu", collectCPU),
-		Board:  safe("board", collectBoard),
-		Memory: safe("memory", collectMemory),
+		Board:  board,
+		Memory: safe("memory", func() MemoryInfo { return collectMemory(board) }),
 		GPU:    safe("gpu", collectGPU),
 		Disks:  safe("disks", collectDisks),
 	}

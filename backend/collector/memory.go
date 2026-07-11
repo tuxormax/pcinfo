@@ -7,7 +7,7 @@ import (
 	"github.com/jaypipes/ghw"
 )
 
-func collectMemory() MemoryInfo {
+func collectMemory(board BoardInfo) MemoryInfo {
 	var out MemoryInfo
 
 	if mem, err := ghw.Memory(); err == nil && mem != nil {
@@ -25,13 +25,55 @@ func collectMemory() MemoryInfo {
 	// Si falla, la ficha muestra solo los totales.
 	enrichMemory(&out)
 
+	// El catálogo de placas manda sobre el firmware: es un dato verificado
+	// contra la hoja de datos del fabricante.
+	aplicaCatalogo(&out, board)
+
 	// Si ghw no dio el total físico, lo derivamos de los módulos.
 	if out.TotalBytes == 0 {
 		for _, m := range out.Modules {
 			out.TotalBytes += m.SizeBytes
 		}
 	}
+
+	// Nunca menos ranuras que módulos instalados.
+	if len(out.Modules) > out.TotalSlots {
+		out.TotalSlots = len(out.Modules)
+	}
 	return out
+}
+
+// aplicaCatalogo sobrescribe ranuras y capacidad máxima con la ficha verificada
+// de la placa, si está en el catálogo (ver catalogo.go). Orden de confianza para
+// estos dos datos, de mayor a menor:
+//
+//  1. catálogo de placas   → hoja de datos del fabricante (dato real)
+//  2. SMBIOS Type 17       → un registro por ranura física (cuenta fiable)
+//  3. ajustaMaxCapacidad() → deshace la cuenta inflada del firmware
+//  4. SMBIOS Type 16       → lo que declara el firmware (miente seguido)
+func aplicaCatalogo(out *MemoryInfo, board BoardInfo) {
+	p, ok := buscaPlaca(board.Vendor, board.Product)
+	if !ok {
+		return
+	}
+	if p.Ranuras > 0 {
+		out.TotalSlots = p.Ranuras
+	}
+	if p.MaxGiB > 0 {
+		out.MaxCapacityBytes = int64(p.MaxGiB) << 30
+	}
+}
+
+// ajustaMaxCapacidad corrige la capacidad máxima del SMBIOS Type 16 cuando ese
+// mismo registro miente en el número de ranuras. El firmware declara la máxima
+// PARA LAS RANURAS QUE DICE TENER, así que si dice 4 ranuras / 128 GiB pero la
+// placa tiene 2 físicas (registros Type 17), el tope real es por ranura ×
+// ranuras reales = 64 GiB. Caso Gigabyte A520M K V2.
+func ajustaMaxCapacidad(maxBytes int64, declaradas, reales int) int64 {
+	if maxBytes <= 0 || declaradas <= 0 || reales <= 0 || reales >= declaradas {
+		return maxBytes
+	}
+	return maxBytes / int64(declaradas) * int64(reales)
 }
 
 // parseSize convierte "128 GB" / "16384 MB" / "2 TB" a bytes (base 1024, como
