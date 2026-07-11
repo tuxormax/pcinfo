@@ -1,6 +1,10 @@
 package collector
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
 
 // TestBuscaPlaca: el DMI escribe el fabricante y el modelo de formas distintas
 // según la placa; todas deben caer en la misma ficha del catálogo.
@@ -9,10 +13,10 @@ func TestBuscaPlaca(t *testing.T) {
 		fabricante, modelo string
 		quiero             bool
 	}{
-		{"Gigabyte Technology Co., Ltd.", "A520M K V2", true},  // como lo reporta WMI/DMI
-		{"GIGABYTE", "A520M K V2 (rev. 1.1)", true},            // con revisión de placa
-		{"gigabyte technology co., ltd.", "a520m k v2", true},  // minúsculas
-		{"Gigabyte Technology Co., Ltd.", "A520M DS3H", false}, // otra placa: sin ficha
+		{"Gigabyte Technology Co., Ltd.", "A520M K V2", true},       // como lo reporta WMI/DMI
+		{"GIGABYTE", "A520M K V2 (rev. 1.1)", true},                 // con revisión de placa
+		{"gigabyte technology co., ltd.", "a520m k v2", true},       // minúsculas
+		{"Gigabyte Technology Co., Ltd.", "Z999M INVENTADA", false}, // placa fuera del catálogo
 		{"", "", false}, // DMI vacío
 	}
 	for _, c := range casos {
@@ -26,6 +30,44 @@ func TestBuscaPlaca(t *testing.T) {
 				c.fabricante, c.modelo, p.Ranuras, p.MaxGiB)
 		}
 	}
+}
+
+// TestCatalogoIntegro revisa el placas.json embebido: toda fila debe traer los
+// cuatro datos, valores sensatos y su URL de origen (el catálogo solo admite
+// datos VERIFICADOS contra la hoja de datos del fabricante), y ninguna clave
+// puede repetirse — un duplicado significaría que dos filas se pisan.
+func TestCatalogoIntegro(t *testing.T) {
+	var placas []PlacaSpec
+	if err := json.Unmarshal(placasEmbebidas, &placas); err != nil {
+		t.Fatal("placas.json no es JSON válido:", err)
+	}
+	if len(placas) < 50 {
+		t.Fatalf("el catálogo trae %d placas; se esperaban al menos 50", len(placas))
+	}
+
+	vistas := map[string]string{}
+	for _, p := range placas {
+		id := p.Fabricante + " " + p.Modelo
+		if p.Fabricante == "" || p.Modelo == "" {
+			t.Errorf("fila sin fabricante o modelo: %+v", p)
+			continue
+		}
+		if p.Ranuras < 1 || p.Ranuras > 8 {
+			t.Errorf("%s: %d ranuras, fuera de rango", id, p.Ranuras)
+		}
+		if p.MaxGiB < 1 || p.MaxGiB > 2048 {
+			t.Errorf("%s: máximo %d GiB, fuera de rango", id, p.MaxGiB)
+		}
+		if !strings.HasPrefix(p.Fuente, "https://") {
+			t.Errorf("%s: sin fuente verificable (%q)", id, p.Fuente)
+		}
+		k := clavePlaca(p.Fabricante, p.Modelo)
+		if otra, dup := vistas[k]; dup {
+			t.Errorf("clave duplicada %q: %q y %q se pisan", k, otra, id)
+		}
+		vistas[k] = id
+	}
+	t.Logf("catálogo: %d placas verificadas", len(placas))
 }
 
 // TestAplicaCatalogo: la ficha verificada pisa lo que dijo el firmware.
@@ -43,7 +85,7 @@ func TestAplicaCatalogo(t *testing.T) {
 
 	// Placa sin ficha: se respeta lo del firmware.
 	otra := MemoryInfo{TotalSlots: 4, MaxCapacityBytes: 128 << 30}
-	aplicaCatalogo(&otra, BoardInfo{Vendor: "ASUS", Product: "PRIME B450M-A"})
+	aplicaCatalogo(&otra, BoardInfo{Vendor: "ASUS", Product: "PRIME Z999M-INVENTADA"})
 	if otra.TotalSlots != 4 || otra.MaxCapacityBytes != 128<<30 {
 		t.Error("una placa fuera del catálogo no debe tocarse")
 	}
