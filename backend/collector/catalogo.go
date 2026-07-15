@@ -78,12 +78,46 @@ func clavePlaca(fabricante, modelo string) string {
 	if f == "" || m == "" {
 		return ""
 	}
-	// Del fabricante basta la marca: el DMI le cuelga "TECHNOLOGY CO LTD",
-	// "INC", "CORPORATION"…
-	if marca := strings.Fields(f); len(marca) > 0 {
-		f = marca[0]
+	return marcaCanonica(f) + "|" + m
+}
+
+// aliasMarca lista las marcas cuyo fabricante en el DMI empieza distinto a como
+// se escribe corto (o que el DMI escribe de varias formas). Cada entrada mapea
+// un PREFIJO ya normalizado (mayúsculas, sin puntuación) a la marca canónica.
+// Solo hacen falta las marcas DIVERGENTES: las demás (Dell→DELL, Lenovo, Acer,
+// Toshiba, Samsung, Apple, Intel, Microsoft, Huawei, Fujitsu, LG, Gigabyte,
+// ASRock, Biostar…) ya coinciden por su primera palabra y usan el default.
+// El prefijo debe ser específico: "MICRO STAR", NO "MICRO", o "Microsoft
+// Corporation" (Surface) caería en MSI.
+var aliasMarca = []struct{ prefijo, canonica string }{
+	{"ASUS", "ASUS"},              // ASUSTeK COMPUTER INC.
+	{"MICRO STAR", "MSI"},         // Micro-Star International Co., Ltd.
+	{"MSI", "MSI"},                // algunas placas ya reportan "MSI"
+	{"ELITEGROUP", "ECS"},         // Elitegroup Computer Systems
+	{"HEWLETT", "HP"},             // Hewlett-Packard (equipos viejos; los nuevos dicen "HP")
+	{"SUPER MICRO", "SUPERMICRO"}, // Super Micro Computer, Inc.
+	{"HON HAI", "FOXCONN"},        // Hon Hai Precision = Foxconn
+	{"TIMI", "XIAOMI"},            // los portátiles Xiaomi reportan "Timi"
+}
+
+// marcaCanonica reduce el fabricante a una marca única. El DMI escribe la misma
+// marca de muchas formas ("ASUSTeK COMPUTER INC." vs el "ASUS" del catálogo,
+// "Micro-Star International Co., Ltd." vs "MSI"). Sin esto la clave del firmware
+// ("ASUSTEK") y la del catálogo ("ASUS") nunca coincidirían y esas filas jamás
+// se aplicarían. Se aplica a AMBOS lados, así que la forma larga y la corta caen
+// en la misma clave.
+func marcaCanonica(f string) string {
+	for _, a := range aliasMarca {
+		if strings.HasPrefix(f, a.prefijo) {
+			return a.canonica
+		}
 	}
-	return f + "|" + m
+	// Por defecto: la primera palabra (marca); el DMI le cuelga
+	// "TECHNOLOGY CO LTD", "INC", "CORPORATION"…
+	if marca := strings.Fields(f); len(marca) > 0 {
+		return marca[0]
+	}
+	return f
 }
 
 // normalizaPlaca pasa a mayúsculas, quita la revisión de placa y la puntuación,

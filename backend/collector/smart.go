@@ -135,7 +135,9 @@ func runSmartctl(device, dtype string) []byte {
 		args = append(args, "-d", dtype)
 	}
 	args = append(args, "--json", "-a", device)
-	out, _ := exec.CommandContext(ctx, smartctlBin(), args...).Output()
+	cmd := exec.CommandContext(ctx, smartctlBin(), args...)
+	ocultaVentana(cmd) // Windows: sin ventana de consola negra
+	out, _ := cmd.Output()
 	return out
 }
 
@@ -318,7 +320,9 @@ func scanOpen() []scanEntry {
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 	args := append(drivedbArg(), "--scan-open", "--json")
-	out, _ := exec.CommandContext(ctx, smartctlBin(), args...).Output()
+	cmd := exec.CommandContext(ctx, smartctlBin(), args...)
+	ocultaVentana(cmd) // Windows: sin ventana de consola negra
+	out, _ := cmd.Output()
 	var r struct {
 		Devices []scanEntry `json:"devices"`
 	}

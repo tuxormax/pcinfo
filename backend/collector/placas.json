@@ -154,5 +154,9 @@
   {"fabricante":"ECS","modelo":"A68F2P-M4","ranuras":2,"maxGiB":16,"fuente":"https://www.ecs.com.tw/en/Product/Motherboard/A68F2P-M4_V1.1/specification"},
   {"fabricante":"ECS","modelo":"A78F2P-M","ranuras":4,"maxGiB":32,"fuente":"https://www.ecs.com.tw/en/Product/Motherboard/A78F2P-M_V1.0/specification"},
   {"fabricante":"ECS","modelo":"A320AM4-M3","ranuras":2,"maxGiB":32,"fuente":"https://www.ecs.com.tw/en/Product/Motherboard/A320AM4-M3_V1.0A/specification"},
-  {"fabricante":"ECS","modelo":"KBN-I/2100","ranuras":2,"maxGiB":32,"fuente":"https://www.ecs.com.tw/en/Product/Motherboard/KBN-I-2100/specification"}
+  {"fabricante":"ECS","modelo":"KBN-I/2100","ranuras":2,"maxGiB":32,"fuente":"https://www.ecs.com.tw/en/Product/Motherboard/KBN-I-2100/specification"},
+  {"fabricante":"ASUS","modelo":"FX506HC","ranuras":2,"maxGiB":64,"fuente":"https://www.compuram.biz/memory/asus/notebook/tuf-gaming/f15-series/f15-fx506hc/"},
+  {"fabricante":"ASUS","modelo":"FX506HCB","ranuras":2,"maxGiB":64,"fuente":"https://www.compuram.biz/memory/asus/notebook/tuf-gaming/f15-series/f15-fx506hcb/"},
+  {"fabricante":"ASUS","modelo":"FX506HE","ranuras":2,"maxGiB":64,"fuente":"https://www.amazon.com/Tech-FX506HC-FX506HE-FX506HM-PC4-25600/dp/B0CVSBXPGX"},
+  {"fabricante":"ASUS","modelo":"FX506HM","ranuras":2,"maxGiB":64,"fuente":"https://www.amazon.com/Tech-FX506HC-FX506HE-FX506HM-PC4-25600/dp/B0CVSBXPGX"}
 ]

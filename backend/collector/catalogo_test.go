@@ -32,6 +32,50 @@ func TestBuscaPlaca(t *testing.T) {
 	}
 }
 
+// TestMarcaCanonica: el DMI y el catálogo escriben la marca distinto; ambos
+// deben caer en la misma clave o las filas del catálogo nunca se aplican. Caso
+// real: la ASUS TUF FX506HC reporta el fabricante como "ASUSTeK COMPUTER INC."
+// mientras el catálogo lo guarda como "ASUS" (antes nunca coincidían).
+func TestMarcaCanonica(t *testing.T) {
+	pares := [][2]string{
+		{"ASUSTeK COMPUTER INC.", "ASUS"},               // portátiles y placas ASUS
+		{"Micro-Star International Co., Ltd.", "MSI"},   // placas/portátiles MSI
+		{"Elitegroup Computer Systems CO.,LTD.", "ECS"}, // placas ECS
+		{"Hewlett-Packard", "HP"},                       // HP viejo vs corto
+		{"HP", "Hewlett-Packard"},                       // y al revés
+		{"Super Micro Computer, Inc.", "Supermicro"},    // servidores Supermicro
+		{"Hon Hai Precision Ind. Co.,Ltd.", "Foxconn"},  // Foxconn = Hon Hai
+		{"Timi", "Xiaomi"},                              // portátiles Xiaomi reportan "Timi"
+		{"Gigabyte Technology Co., Ltd.", "Gigabyte"},   // ya coincidía (default)
+		{"ASRock", "ASRock"},                            // ya coincidía
+		{"Biostar Group", "Biostar"},                    // ya coincidía
+		{"Dell Inc.", "Dell"},                           // marca no divergente
+		{"LENOVO", "Lenovo"},                            // marca no divergente
+	}
+	for _, p := range pares {
+		dmi := marcaCanonica(normalizaPlaca(p[0]))
+		cat := marcaCanonica(normalizaPlaca(p[1]))
+		if dmi != cat {
+			t.Errorf("marca DMI %q → %q, catálogo %q → %q: no coinciden", p[0], dmi, p[1], cat)
+		}
+	}
+
+	// Microsoft (Surface) NO debe confundirse con MSI: el prefijo es "MICRO STAR",
+	// no "MICRO". Regresión del arreglo original.
+	if m := marcaCanonica(normalizaPlaca("Microsoft Corporation")); m == "MSI" {
+		t.Errorf("Microsoft cayó en MSI (%q): el alias de MSI es demasiado amplio", m)
+	}
+
+	// La FX506HC del taller: firmware infla a 4 ranuras / 128 GiB; el catálogo
+	// la corrige a 2 / 64. Sin la canonización de marca esto no pasaba.
+	out := MemoryInfo{TotalSlots: 4, MaxCapacityBytes: 128 << 30}
+	aplicaCatalogo(&out, BoardInfo{Vendor: "ASUSTeK COMPUTER INC.", Product: "FX506HC"})
+	if out.TotalSlots != 2 || out.MaxCapacityBytes != 64<<30 {
+		t.Errorf("FX506HC = %d ranuras / %d B, quiero 2 / %d B",
+			out.TotalSlots, out.MaxCapacityBytes, int64(64)<<30)
+	}
+}
+
 // TestCatalogoIntegro revisa el placas.json embebido: toda fila debe traer los
 // cuatro datos, valores sensatos y su URL de origen (el catálogo solo admite
 // datos VERIFICADOS contra la hoja de datos del fabricante), y ninguna clave

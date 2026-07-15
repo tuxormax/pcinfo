@@ -1,12 +1,14 @@
 package collector
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jaypipes/ghw"
 )
@@ -111,9 +113,16 @@ type nvRow struct {
 }
 
 func nvidiaSmi() []nvRow {
-	out, err := exec.Command("nvidia-smi",
+	// Timeout duro: en el primer arranque tras instalar el driver, nvidia-smi
+	// puede tardar mientras el runtime NVIDIA inicializa; sin límite, /hardware
+	// se colgaría y la GUI se quedaría "cargando".
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "nvidia-smi",
 		"--query-gpu=name,driver_version,memory.total",
-		"--format=csv,noheader,nounits").Output()
+		"--format=csv,noheader,nounits")
+	ocultaVentana(cmd) // Windows: sin ventana de consola negra
+	out, err := cmd.Output()
 	if err != nil {
 		return nil
 	}
