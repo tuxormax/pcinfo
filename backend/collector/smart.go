@@ -349,23 +349,63 @@ func enrichSmartWindows(disks []DiskInfo) {
 			ok := parseSmartInto(&disks[i], runSmartctl(disks[i].Name, ""))
 			fmt.Fprintf(&log, "respaldo %s: smart=%v\n", disks[i].Name, ok)
 		}
-		writeSmartDebug(log.String())
-		return
+	} else {
+		for _, d := range devs {
+			out := runSmartctl(d.Name, d.Type)
+			var meta smartJSON
+			json.Unmarshal(out, &meta)
+			idx := matchDisk(disks, meta.SerialNumber, meta.ModelName)
+			ok := false
+			if idx >= 0 {
+				ok = parseSmartInto(&disks[idx], out)
+			}
+			fmt.Fprintf(&log, "dev %s (-d %s): serial=%q modelo=%q → disco #%d smart=%v\n",
+				d.Name, d.Type, meta.SerialNumber, meta.ModelName, idx, ok)
+		}
 	}
 
-	for _, d := range devs {
-		out := runSmartctl(d.Name, d.Type)
-		var meta smartJSON
-		json.Unmarshal(out, &meta)
-		idx := matchDisk(disks, meta.SerialNumber, meta.ModelName)
-		ok := false
-		if idx >= 0 {
-			ok = parseSmartInto(&disks[idx], out)
-		}
-		fmt.Fprintf(&log, "dev %s (-d %s): serial=%q modelo=%q → disco #%d smart=%v\n",
-			d.Name, d.Type, meta.SerialNumber, meta.ModelName, idx, ok)
-	}
+	// Pasada USB/UASP: los discos que siguen SIN SMART suelen ser externos en
+	// gabinete (--scan-open no los cubre o los abre con el tipo equivocado). Se
+	// reintenta por su ruta física con los tipos de puente USB (como CrystalDiskInfo).
+	probeSmartUSB(disks, &log)
+
 	writeSmartDebug(log.String())
+}
+
+// tiposSMARTWindowsUSB son los `-d` que smartctl usa para hablar ATA a través de
+// un puente USB/UASP (gabinetes externos). Se prueban en orden hasta que uno
+// responda: "sat" cubre la mayoría de gabinetes UASP modernos (p. ej. ADATA
+// ED600); los usb* son puentes específicos (JMicron, ASMedia, Prolific…).
+var tiposSMARTWindowsUSB = []string{"sat", "usbjmicron", "usbasm1051", "usbprolific", "usbsunplus"}
+
+// probeSmartUSB reintenta el SMART de los discos que quedaron sin él, hablando
+// directo con su ruta física \\.\PHYSICALDRIVEn (no hace falta emparejar por
+// serie: se sondea ESE disco). Un puente USB oculta el modelo/serie reales —ghw
+// solo ve el gabinete ("ADATA ED600 SCSI Disk Device")—, así que al leer el SMART
+// también se corrigen con el modelo/serie verdaderos del disco.
+func probeSmartUSB(disks []DiskInfo, log *strings.Builder) {
+	for i := range disks {
+		if disks[i].SmartAvailable {
+			continue
+		}
+		for _, dt := range tiposSMARTWindowsUSB {
+			out := runSmartctl(disks[i].Name, dt)
+			if !parseSmartInto(&disks[i], out) {
+				continue
+			}
+			var meta smartJSON
+			if json.Unmarshal(out, &meta) == nil {
+				if m := strings.TrimSpace(meta.ModelName); m != "" {
+					disks[i].Model = m
+				}
+				if s := strings.TrimSpace(meta.SerialNumber); s != "" {
+					disks[i].Serial = s
+				}
+			}
+			fmt.Fprintf(log, "usb %s (-d %s): SMART OK modelo=%q\n", disks[i].Name, dt, disks[i].Model)
+			break
+		}
+	}
 }
 
 // matchDisk empareja un resultado de smartctl con un disco de ghw: primero por
