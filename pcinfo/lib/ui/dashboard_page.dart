@@ -557,7 +557,7 @@ class _DashboardPageState extends State<DashboardPage> {
                         const SizedBox(width: 8),
                         _typeBadge(d.type),
                         const SizedBox(width: 8),
-                        _healthBadge(d.healthStatus),
+                        _healthBadge(d),
                       ],
                     ),
                     const SizedBox(height: 3),
@@ -696,7 +696,8 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  Widget _healthBadge(DiskHealth h) {
+  Widget _healthBadge(DiskInfo d) {
+    final h = d.healthStatus;
     late final Color c;
     late final String label;
     late final IconData icon;
@@ -713,7 +714,7 @@ class _DashboardPageState extends State<DashboardPage> {
         break;
       case DiskHealth.fail:
         c = const Color(0xFFF2768D);
-        label = 'FALLA';
+        label = 'PELIGRO';
         icon = Icons.error_rounded;
         break;
       case DiskHealth.unknown:
@@ -722,7 +723,9 @@ class _DashboardPageState extends State<DashboardPage> {
         icon = Icons.help_outline_rounded;
         break;
     }
-    return Container(
+    // Si hay problemas, la etiqueta es clicable y abre el modal explicativo.
+    final clickable = d.issues.isNotEmpty;
+    final badge = Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: c.withValues(alpha: 0.14),
@@ -737,6 +740,193 @@ class _DashboardPageState extends State<DashboardPage> {
           Text(label,
               style: TextStyle(
                   color: c, fontSize: kFont, fontWeight: FontWeight.w600)),
+          if (clickable) ...[
+            const SizedBox(width: 4),
+            Icon(Icons.info_outline_rounded, size: 12, color: c),
+          ],
+        ],
+      ),
+    );
+    if (!clickable) return badge;
+    return Tooltip(
+      message: 'Ver ${d.issues.length} problema(s) detectado(s)',
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(6),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: () => _showDiskIssues(d),
+          child: badge,
+        ),
+      ),
+    );
+  }
+
+  /// Modal con la lista de problemas del disco: cada uno con su severidad, qué
+  /// significa y la consecuencia. Se abre al tocar la etiqueta de salud.
+  void _showDiskIssues(DiskInfo d) {
+    final fail = d.healthStatus == DiskHealth.fail;
+    final headColor =
+        fail ? const Color(0xFFF2768D) : const Color(0xFFE3A84B);
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: AppColors.surface,
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Encabezado.
+              Container(
+                padding: const EdgeInsets.fromLTRB(20, 18, 16, 16),
+                decoration: BoxDecoration(
+                  color: headColor.withValues(alpha: 0.12),
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(14)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                        fail
+                            ? Icons.error_rounded
+                            : Icons.warning_amber_rounded,
+                        color: headColor,
+                        size: 26),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            fail
+                                ? 'Disco en peligro'
+                                : 'Disco con advertencias',
+                            style: TextStyle(
+                                color: headColor,
+                                fontSize: kFont + 3,
+                                fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            d.model,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: AppColors.textMid, fontSize: kFont),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded,
+                          color: AppColors.textMid, size: 20),
+                      onPressed: () => Navigator.of(ctx).pop(),
+                    ),
+                  ],
+                ),
+              ),
+              // Aviso general.
+              if (fail)
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(20, 14, 20, 0),
+                  child: Text(
+                    'Este disco muestra daños. NO es fiable: respalda tus datos '
+                    'y considera reemplazarlo.',
+                    style:
+                        TextStyle(color: AppColors.textHi, fontSize: kFont),
+                  ),
+                ),
+              // Lista de problemas.
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (final iss in d.issues) _issueTile(iss),
+                    ],
+                  ),
+                ),
+              ),
+              // Pie.
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('Cerrar'),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _issueTile(DiskIssue iss) {
+    final danger = iss.severity == 'fail';
+    final c = danger ? const Color(0xFFF2768D) : const Color(0xFFE3A84B);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: c.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+              danger
+                  ? Icons.error_rounded
+                  : Icons.warning_amber_rounded,
+              size: 18,
+              color: c),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(iss.title,
+                          style: TextStyle(
+                              color: AppColors.textHi,
+                              fontSize: kFont,
+                              fontWeight: FontWeight.w700)),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: c.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(5),
+                      ),
+                      child: Text(danger ? 'PELIGRO' : 'ADVERTENCIA',
+                          style: TextStyle(
+                              color: c,
+                              fontSize: kFont - 2,
+                              fontWeight: FontWeight.w700)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(iss.detail,
+                    style: const TextStyle(
+                        color: AppColors.textMid,
+                        fontSize: kFont,
+                        height: 1.35)),
+              ],
+            ),
+          ),
         ],
       ),
     );

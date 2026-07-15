@@ -80,6 +80,12 @@ class DiskInfo {
   final int lifePercentUsed; // SSD: % de vida consumida (-1 si N/A)
   final int reallocatedSectors;
 
+  // Salud derivada de los atributos SMART (no solo del PASSED/FAILED global):
+  // "good" | "warning" | "fail" ("" si no hay SMART). issues = problemas
+  // detectados con su consecuencia (para el modal al tocar la etiqueta).
+  final String healthLevel;
+  final List<DiskIssue> issues;
+
   const DiskInfo({
     required this.name,
     required this.model,
@@ -98,6 +104,8 @@ class DiskInfo {
     this.powerCycles = 0,
     this.lifePercentUsed = -1,
     this.reallocatedSectors = 0,
+    this.healthLevel = '',
+    this.issues = const [],
   });
 
   factory DiskInfo.fromJson(Map<String, dynamic> j) => DiskInfo(
@@ -118,6 +126,11 @@ class DiskInfo {
         powerCycles: (j['powerCycles'] ?? 0) as int,
         lifePercentUsed: (j['lifePercentUsed'] ?? -1) as int,
         reallocatedSectors: (j['reallocatedSectors'] ?? 0) as int,
+        healthLevel: j['healthLevel'] ?? '',
+        issues: (j['issues'] as List?)
+                ?.map((e) => DiskIssue.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            const [],
       );
 
   /// Total del sistema de archivos (ocupado + disponible). 0 si no hay
@@ -136,10 +149,21 @@ class DiskInfo {
       fsTotalBytes > 0 ? availBytes / fsTotalBytes * 100 : 0;
 
   /// Estado de salud legible: saludable / advertencia / falla / desconocido.
+  /// Se prioriza el `healthLevel` que calcula el backend a partir de TODOS los
+  /// atributos SMART; si no viene (backend viejo), se cae a la heurística local.
   DiskHealth get healthStatus {
-    if (!smartAvailable || health.isEmpty) return DiskHealth.unknown;
+    if (!smartAvailable) return DiskHealth.unknown;
+    switch (healthLevel) {
+      case 'fail':
+        return DiskHealth.fail;
+      case 'warning':
+        return DiskHealth.warning;
+      case 'good':
+        return DiskHealth.good;
+    }
+    // Respaldo (backend sin healthLevel).
+    if (health.isEmpty) return DiskHealth.unknown;
     if (health.toUpperCase() != 'PASSED') return DiskHealth.fail;
-    // PASSED pero con señales de desgaste → advertencia.
     if (reallocatedSectors > 0) return DiskHealth.warning;
     if (lifePercentUsed >= 0 && lifePercentUsed >= 80) return DiskHealth.warning;
     return DiskHealth.good;
@@ -147,6 +171,25 @@ class DiskInfo {
 }
 
 enum DiskHealth { good, warning, fail, unknown }
+
+/// Un problema detectado en el disco: severidad, nombre y qué implica.
+class DiskIssue {
+  final String severity; // "warning" | "fail"
+  final String title;
+  final String detail; // qué significa + consecuencia
+
+  const DiskIssue({
+    required this.severity,
+    required this.title,
+    required this.detail,
+  });
+
+  factory DiskIssue.fromJson(Map<String, dynamic> j) => DiskIssue(
+        severity: j['severity'] ?? 'warning',
+        title: j['title'] ?? '',
+        detail: j['detail'] ?? '',
+      );
+}
 
 class CpuInfo {
   final String vendor;

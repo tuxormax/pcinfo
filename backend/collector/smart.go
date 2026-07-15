@@ -107,11 +107,15 @@ type smartJSON struct {
 	LogicalBlockSize int `json:"logical_block_size"`
 
 	NVMeLog *struct {
-		DataUnitsWritten int64 `json:"data_units_written"`
-		DataUnitsRead    int64 `json:"data_units_read"`
-		PowerOnHours     int   `json:"power_on_hours"`
-		PowerCycles      int   `json:"power_cycles"`
-		PercentageUsed   int   `json:"percentage_used"`
+		DataUnitsWritten     int64 `json:"data_units_written"`
+		DataUnitsRead        int64 `json:"data_units_read"`
+		PowerOnHours         int   `json:"power_on_hours"`
+		PowerCycles          int   `json:"power_cycles"`
+		PercentageUsed       int   `json:"percentage_used"`
+		CriticalWarning      int   `json:"critical_warning"`
+		MediaErrors          int64 `json:"media_errors"`
+		AvailableSpare       int   `json:"available_spare"`
+		AvailableSpareThresh int   `json:"available_spare_threshold"`
 	} `json:"nvme_smart_health_information_log"`
 
 	ATA *struct {
@@ -208,7 +212,102 @@ func parseSmartInto(di *DiskInfo, out []byte) bool {
 			}
 		}
 	}
+
+	evalDiskHealth(di, s)
 	return true
+}
+
+// chequeoATA describe un atributo S.M.A.R.T. ATA cuyo valor RAW > 0 señala un
+// problema. Se listan SOLO atributos fiables entre fabricantes; se excluyen a
+// propósito los "ruidosos" (1 Raw_Read_Error_Rate, 7 Seek_Error_Rate) que
+// Seagate/WD codifican con raws enormes en discos sanos → falso positivo.
+type chequeoATA struct {
+	id       int
+	severity string
+	titulo   string
+	detalle  string // qué es + consecuencia
+}
+
+var chequeosATA = []chequeoATA{
+	{197, "fail", "Sectores pendientes de reasignar",
+		"El disco encontró sectores que no puede leer y espera reasignarlos. Consecuencia: pérdida de datos inminente y falla probable; respalda de inmediato."},
+	{198, "fail", "Sectores no corregibles",
+		"Hay sectores dañados que no se pudieron recuperar. Consecuencia: archivos corruptos; el disco ya no es fiable."},
+	{187, "fail", "Errores no corregibles reportados",
+		"El disco reportó errores de lectura/escritura que no pudo corregir. Consecuencia: datos corruptos y deterioro en curso."},
+	{184, "fail", "Error de extremo a extremo",
+		"El disco detectó una inconsistencia en su ruta interna de datos. Consecuencia: los datos pueden guardarse o leerse corruptos."},
+	{5, "warning", "Sectores reasignados",
+		"El disco ya reemplazó sectores dañados por otros de reserva. Consecuencia: desgaste en marcha; si el número crece, el disco fallará."},
+	{196, "warning", "Eventos de reasignación",
+		"El disco intentó mover datos desde sectores dañados a los de reserva. Consecuencia: señal de sectores defectuosos en aumento."},
+	{199, "warning", "Errores CRC UltraDMA",
+		"Fallos de integridad al transferir datos por el bus. Consecuencia: casi siempre es el cable o la conexión USB, no el disco; revisa o cambia el cable/gabinete."},
+	{10, "warning", "Reintentos de giro",
+		"El motor tardó en alcanzar su velocidad (solo discos mecánicos). Consecuencia: desgaste mecánico; posible falla del motor."},
+	{11, "warning", "Reintentos de calibración",
+		"El disco tuvo que recalibrar los cabezales (solo discos mecánicos). Consecuencia: posible problema mecánico."},
+	{188, "warning", "Comandos expirados",
+		"Operaciones que no terminaron a tiempo. Consecuencia: puede indicar problemas de alimentación, cable o del propio disco."},
+}
+
+// evalDiskHealth deriva la salud del disco de los atributos SMART (no solo del
+// PASSED/FAILED global) y arma la lista de problemas con su consecuencia. Un
+// disco con daños ya no es fiable: cualquier señal se marca advertencia o falla.
+func evalDiskHealth(di *DiskInfo, s smartJSON) {
+	var issues []DiskIssue
+
+	// SMART global: el disco mismo se declara fallando.
+	if s.SmartStatus != nil && !s.SmartStatus.Passed {
+		issues = append(issues, DiskIssue{"fail", "SMART reporta fallo inminente",
+			"El propio disco declara que está fallando (estado SMART = FAILED). Consecuencia: falla probable a corto plazo; respalda y reemplázalo."})
+	}
+
+	switch {
+	case s.ATA != nil:
+		raw := map[int]int64{}
+		for _, a := range s.ATA.Table {
+			if _, ok := raw[a.ID]; !ok {
+				raw[a.ID] = a.Raw.Value
+			}
+		}
+		for _, c := range chequeosATA {
+			if v := raw[c.id]; v > 0 {
+				issues = append(issues, DiskIssue{c.severity, c.titulo,
+					fmt.Sprintf("%s (valor: %d).", c.detalle, v)})
+			}
+		}
+	case s.NVMeLog != nil:
+		n := s.NVMeLog
+		if n.CriticalWarning != 0 {
+			issues = append(issues, DiskIssue{"fail", "Advertencia crítica NVMe",
+				"El SSD reporta una condición crítica (temperatura, repuesto agotado o modo solo-lectura). Consecuencia: riesgo alto de pérdida de datos."})
+		}
+		if n.AvailableSpareThresh > 0 && n.AvailableSpare < n.AvailableSpareThresh {
+			issues = append(issues, DiskIssue{"fail", "Bloques de repuesto agotados",
+				fmt.Sprintf("Al SSD le quedan %d%% de celdas de reserva (umbral %d%%). Consecuencia: fin de vida; puede pasar a solo-lectura o perder datos.", n.AvailableSpare, n.AvailableSpareThresh)})
+		}
+		if n.MediaErrors > 0 {
+			issues = append(issues, DiskIssue{"warning", "Errores de medio",
+				fmt.Sprintf("El SSD registró %d error(es) no corregidos en la memoria NAND. Consecuencia: posibles datos corruptos.", n.MediaErrors)})
+		}
+	}
+
+	// Vida útil casi agotada (SSD, tanto ATA como NVMe). Usa el % ya calculado.
+	if di.LifePercentUsed >= 90 {
+		issues = append(issues, DiskIssue{"warning", "Vida útil casi agotada",
+			fmt.Sprintf("El disco ha consumido el %d%% de su vida útil estimada. Consecuencia: cercano al fin de vida; planifica su reemplazo.", di.LifePercentUsed)})
+	}
+
+	di.Issues = issues
+	di.HealthLevel = "good"
+	for _, is := range issues {
+		if is.Severity == "fail" {
+			di.HealthLevel = "fail"
+			return
+		}
+		di.HealthLevel = "warning"
+	}
 }
 
 // reUnit extrae un múltiplo embebido en el nombre del atributo, p. ej.

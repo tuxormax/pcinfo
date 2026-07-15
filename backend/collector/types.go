@@ -85,12 +85,25 @@ type DiskInfo struct {
 	AvailBytes int64 `json:"availBytes"`
 
 	// S.M.A.R.T. (lo llena smartctl). smartAvailable=false si no reporta.
-	SmartAvailable     bool  `json:"smartAvailable"`
+	SmartAvailable     bool   `json:"smartAvailable"`
 	Health             string `json:"health"`
-	WrittenBytes       int64 `json:"writtenBytes"`
-	ReadBytes          int64 `json:"readBytes"`
-	PowerOnHours       int   `json:"powerOnHours"`
-	PowerCycles        int   `json:"powerCycles"`
-	LifePercentUsed    int   `json:"lifePercentUsed"`
-	ReallocatedSectors int   `json:"reallocatedSectors"`
+	WrittenBytes       int64  `json:"writtenBytes"`
+	ReadBytes          int64  `json:"readBytes"`
+	PowerOnHours       int    `json:"powerOnHours"`
+	PowerCycles        int    `json:"powerCycles"`
+	LifePercentUsed    int    `json:"lifePercentUsed"`
+	ReallocatedSectors int    `json:"reallocatedSectors"`
+
+	// Salud derivada de los atributos SMART, no solo del PASSED/FAILED global:
+	// "good" | "warning" | "fail" (vacío si no hay SMART). Issues es la lista de
+	// problemas detectados con su consecuencia, para el modal de la GUI.
+	HealthLevel string      `json:"healthLevel"`
+	Issues      []DiskIssue `json:"issues"`
+}
+
+// DiskIssue es un problema concreto detectado en el disco: qué es y qué implica.
+type DiskIssue struct {
+	Severity string `json:"severity"` // "warning" | "fail"
+	Title    string `json:"title"`    // nombre corto del problema
+	Detail   string `json:"detail"`   // qué significa + consecuencia
 }
