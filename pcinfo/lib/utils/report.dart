@@ -96,6 +96,10 @@ String buildReport(HardwareInfo hw) {
     kv('Módulos', '${m.modules.length}');
   }
   if (m.maxCapacityBytes > 0) kv('Capacidad máx.', formatBytes(m.maxCapacityBytes));
+  if (!m.slotsVerified && !m.soldered && m.totalSlots > 0) {
+    line('    (!) Ranuras y capacidad máx. según el firmware; puede no coincidir '
+        'con la placa (modelo no verificado en el catálogo).');
+  }
   for (final mod in m.modules) {
     final ff = mod.formFactor.isEmpty ? '' : ' · ${mod.formFactor}';
     final spd = mod.speedMhz > 0 ? ' ${mod.speedMhz}MHz' : '';

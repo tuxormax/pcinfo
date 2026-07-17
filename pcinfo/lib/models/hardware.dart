@@ -254,6 +254,7 @@ class MemoryInfo {
   final int totalSlots; // ranuras físicas (DMI Tipo 16). 0 = desconocido.
   final int maxCapacityBytes; // capacidad máxima soportada por la placa
   final bool soldered; // true si la RAM está soldada (no ampliable)
+  final bool slotsVerified; // true = ranuras/máx del catálogo verificado; false = del firmware (puede mentir)
   final List<MemModule> modules; // solo ranuras ocupadas
 
   const MemoryInfo({
@@ -263,6 +264,7 @@ class MemoryInfo {
     this.totalSlots = 0,
     this.maxCapacityBytes = 0,
     this.soldered = false,
+    this.slotsVerified = false,
   });
 
   /// Ranuras libres (si se conoce el total). -1 si se desconoce.
@@ -274,6 +276,7 @@ class MemoryInfo {
         totalSlots: (j['totalSlots'] ?? 0) as int,
         maxCapacityBytes: (j['maxCapacityBytes'] ?? 0) as int,
         soldered: j['soldered'] ?? false,
+        slotsVerified: j['slotsVerified'] ?? false,
         modules: (j['modules'] as List?)
                 ?.map((e) => MemModule.fromJson(e as Map<String, dynamic>))
                 .toList() ??

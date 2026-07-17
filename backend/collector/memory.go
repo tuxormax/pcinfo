@@ -54,13 +54,17 @@ func collectMemory(board BoardInfo) MemoryInfo {
 func aplicaCatalogo(out *MemoryInfo, board BoardInfo) {
 	p, ok := buscaPlaca(board.Vendor, board.Product)
 	if !ok {
-		return
+		return // sin ficha verificada: quedan los datos del firmware (SlotsVerified=false)
 	}
 	if p.Ranuras > 0 {
 		out.TotalSlots = p.Ranuras
 	}
 	if p.MaxGiB > 0 {
 		out.MaxCapacityBytes = int64(p.MaxGiB) << 30
+	}
+	// Marca el dato como verificado solo si el catálogo aportó ranuras o tope.
+	if p.Ranuras > 0 || p.MaxGiB > 0 {
+		out.SlotsVerified = true
 	}
 }
 

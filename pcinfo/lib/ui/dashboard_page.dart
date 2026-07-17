@@ -404,12 +404,50 @@ class _DashboardPageState extends State<DashboardPage> {
     if (m.maxCapacityBytes > 0) {
       rows.add(SpecRow('Capacidad máx.', formatBytes(m.maxCapacityBytes)));
     }
+    // Aviso: cuando ranuras/capacidad NO vienen del catálogo verificado sino del
+    // firmware SMBIOS, que en algunas placas miente (ranuras fantasma). No aplica
+    // a RAM soldada (ahí no hay ranuras que ampliar).
+    final mostrarAviso = !m.slotsVerified && !m.soldered && m.totalSlots > 0;
     return SpecCard(
       icon: Icons.memory_rounded,
       accent: AppColors.ram,
       title: 'Memoria RAM',
       rows: rows,
-      footer: _slotsList(m),
+      footer: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _slotsList(m),
+          if (mostrarAviso) _firmwareCaveat(),
+        ],
+      ),
+    );
+  }
+
+  /// Aviso sutil de que ranuras/capacidad máx. salen del firmware (no del
+  /// catálogo verificado) y por tanto podrían no coincidir con la placa real.
+  Widget _firmwareCaveat() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline_rounded, size: 14, color: AppColors.textLow),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'Ranuras y capacidad máx. según el firmware; puede no coincidir '
+              'con la placa (modelo no verificado en el catálogo).',
+              style: TextStyle(
+                color: AppColors.textLow,
+                fontSize: kFont - 1,
+                fontStyle: FontStyle.italic,
+                height: 1.3,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

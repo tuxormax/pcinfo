@@ -46,7 +46,12 @@ type MemoryInfo struct {
 	TotalSlots       int         `json:"totalSlots"`
 	MaxCapacityBytes int64       `json:"maxCapacityBytes"`
 	Soldered         bool        `json:"soldered"`
-	Modules          []MemModule `json:"modules"`
+	// SlotsVerified indica que ranuras y capacidad máx. vienen del catálogo de
+	// placas verificado (dato de fábrica). Si es false, salen del firmware
+	// SMBIOS, que en algunas placas MIENTE (ranuras fantasma) → la GUI lo marca
+	// con un aviso "según firmware" para no engañar en placas no catalogadas.
+	SlotsVerified bool        `json:"slotsVerified"`
+	Modules       []MemModule `json:"modules"`
 }
 
 type MemModule struct {
