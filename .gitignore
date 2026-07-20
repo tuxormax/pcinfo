@@ -39,3 +39,6 @@ instaladores/*.exe
 
 .claude/
 CLAUDE.md
+
+# Memoria de Claude (solo local, no se sube)
+memoria-claude/
