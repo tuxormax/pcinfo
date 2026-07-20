@@ -33,9 +33,10 @@ Thumbs.db
 backend/pcinfo-backend
 backend/pcinfo-backend.exe
 
-# Instaladores generados (binarios pesados; se reconstruyen con los scripts)
-instaladores/*.deb
-instaladores/*.exe
+# instaladores/ solo contiene los instaladores generados (binarios pesados;
+# se reconstruyen con los scripts de construir/). No se versionan.
+instaladores/*
+!instaladores/.gitkeep
 
 .claude/
 CLAUDE.md

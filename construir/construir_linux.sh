@@ -15,7 +15,8 @@ REVISION="$(grep -oP "appRevision = \K[0-9]+" "$APP_DIR/lib/version.dart")"
 DEB_VERSION="${VERSION}.${REVISION}"            # versión Debian válida (p.ej. 1.1.6)
 BASENAME="pcinfo_v${VERSION}_rev-${REVISION}"   # mismo nombre base que Windows
 BACKEND_DIR="$ROOT/backend"
-OUT_DIR="$ROOT/instaladores"
+OUT_DIR="$ROOT/instaladores"                    # solo instaladores generados
+mkdir -p "$OUT_DIR"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 

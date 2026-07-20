@@ -8,7 +8,7 @@ los scripts que los producen.
 Se construye localmente:
 
 ```bash
-bash instaladores/construir_linux.sh
+bash construir/construir_linux.sh
 # → instaladores/pcinfo_1.1.0_amd64.deb
 ```
 
@@ -51,5 +51,5 @@ cd ..\pcinfo; flutter build windows --release
 cd ..
 iscc /DSourceFlutter="pcinfo\build\windows\x64\runner\Release" `
      /DSourceBackend="backend\pcinfo-backend.exe" `
-     instaladores\instalador_windows.iss
+     construir\instalador_windows.iss
 ```
