@@ -7,6 +7,21 @@ App de **inventario de hardware** multiplataforma (**Linux** y **Windows**): CPU
 
 > **En desarrollo.** Reescritura completa del antiguo *LinuxHWMonitor* (Python + PyQt5) a una arquitectura **Go + Flutter**.
 
+## Descargar e instalar
+
+Los instaladores **no se guardan en el repositorio** (son binarios pesados). Se publican en la sección **[Releases](https://github.com/tuxormax/pcinfo/releases)** — entra ahí, abre la versión más reciente y descarga el archivo de tu sistema:
+
+| Sistema | Archivo | Instalación |
+|---|---|---|
+| Linux (Debian/Ubuntu) | `pcinfo_v<version>_rev-<rev>.deb` | `sudo apt install ./pcinfo_v1.1_rev-25.deb` |
+| Windows 10 u 11 (64 bits) | `pcinfo_v<version>_rev-<rev>.exe` | Doble clic y seguir el asistente |
+
+Notas:
+
+- En Windows el requisito mínimo es **Windows 10**; Windows 7 y 8 no son compatibles.
+- La lectura de salud S.M.A.R.T. de los discos pide permisos de administrador/root; el resto del inventario funciona sin ellos.
+- ¿Prefieres compilarlo tú mismo? Ver **[construir/LEEME.md](construir/LEEME.md)**.
+
 ## Arquitectura
 
 - **`pcinfo/`** — interfaz gráfica en **Flutter** (desktop Linux/Windows). Hoy con datos de ejemplo.
