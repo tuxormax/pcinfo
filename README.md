@@ -7,6 +7,16 @@ App de **inventario de hardware** multiplataforma (**Linux** y **Windows**): CPU
 
 > **En desarrollo.** Reescritura completa del antiguo *LinuxHWMonitor* (Python + PyQt5) a una arquitectura **Go + Flutter**.
 
+## Capturas
+
+![PCInfo — vista general](capturas/pcinfo-general.png)
+
+*Sistema operativo, procesador, tarjeta madre, RAM (ranuras ocupadas y libres) y tarjeta gráfica.*
+
+![PCInfo — almacenamiento](capturas/pcinfo-almacenamiento.png)
+
+*Almacenamiento con estado de salud S.M.A.R.T., uso del disco, vida restante en SSD, horas encendido y sectores reasignados.*
+
 ## Descargar e instalar
 
 Los instaladores **no se guardan en el repositorio** (son binarios pesados). Se publican en la sección **[Releases](https://github.com/tuxormax/pcinfo/releases)** — entra ahí, abre la versión más reciente y descarga el archivo de tu sistema:
