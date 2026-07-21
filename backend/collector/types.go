@@ -11,6 +11,19 @@ type HardwareInfo struct {
 	Memory MemoryInfo `json:"memory"`
 	GPU    GPUInfo    `json:"gpu"`
 	Disks  []DiskInfo `json:"disks"`
+	Diag   DiagInfo   `json:"diag"`
+}
+
+// DiagInfo son diagnósticos del propio recolector para que la GUI dé mensajes
+// ACCIONABLES cuando algo no se pudo leer. Caso clave: en Windows el S.M.A.R.T.
+// necesita que el backend corra ELEVADO y que smartctl.exe esté empaquetado; si
+// falta cualquiera de los dos, todos los discos salen "SIN SMART". Con estos
+// campos la GUI distingue "falta permiso de administrador" (ofrece reintentar
+// elevado) de "falta smartctl.exe" (reinstalar) de una limitación real (USB/RAID).
+type DiagInfo struct {
+	OS            string `json:"os"`            // runtime.GOOS: "windows" | "linux" | ...
+	Elevated      bool   `json:"elevated"`      // ¿corre con token de admin/root?
+	SmartctlFound bool   `json:"smartctlFound"` // ¿se localizó el ejecutable de smartctl?
 }
 
 type SystemInfo struct {

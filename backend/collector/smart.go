@@ -57,17 +57,21 @@ func drivedbArg() []string {
 }
 
 var (
-	smartctlOnce sync.Once
-	smartctlPath = "smartctl" // Linux/PATH; en Windows se resuelve junto al exe.
+	smartctlOnce  sync.Once
+	smartctlPath  = "smartctl" // Linux/PATH; en Windows se resuelve junto al exe.
+	smartctlFound bool         // ¿se localizó el ejecutable? (para el diagnóstico)
 )
 
-// smartctlBin devuelve el ejecutable de smartctl. En Linux/instalación .deb está
-// en el PATH (dependencia smartmontools). En Windows NO hay smartctl en el PATH,
-// así que el instalador lo empaqueta junto al backend; aquí lo buscamos en la
-// carpeta del propio ejecutable (síntoma si falta: "SIN SMART").
-func smartctlBin() string {
+// resolveSmartctl localiza el ejecutable de smartctl una sola vez. En Linux está
+// en el PATH (dependencia smartmontools del .deb). En Windows NO hay smartctl en
+// el PATH, así que el instalador lo empaqueta junto al backend; lo buscamos en la
+// carpeta del propio ejecutable (síntoma si falta: "SIN SMART" en todos los discos).
+func resolveSmartctl() {
 	smartctlOnce.Do(func() {
 		if runtime.GOOS != "windows" {
+			if _, err := exec.LookPath("smartctl"); err == nil {
+				smartctlFound = true
+			}
 			return
 		}
 		exe, err := os.Executable()
@@ -77,9 +81,22 @@ func smartctlBin() string {
 		cand := filepath.Join(filepath.Dir(exe), "smartctl.exe")
 		if _, err := os.Stat(cand); err == nil {
 			smartctlPath = cand
+			smartctlFound = true
 		}
 	})
+}
+
+// smartctlBin devuelve la ruta al ejecutable de smartctl.
+func smartctlBin() string {
+	resolveSmartctl()
 	return smartctlPath
+}
+
+// smartctlAvailable indica si se localizó smartctl (para el diagnóstico de la GUI:
+// si es false, el aviso "SIN SMART" se debe a que falta el ejecutable, no a permisos).
+func smartctlAvailable() bool {
+	resolveSmartctl()
+	return smartctlFound
 }
 
 // ataAttr es una fila de la tabla de atributos S.M.A.R.T. ATA.

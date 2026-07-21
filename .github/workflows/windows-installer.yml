@@ -62,6 +62,7 @@ jobs:
           Copy-Item "$bin\smartctl.exe" "backend\smartctl.exe" -Force
           Copy-Item "$bin\drivedb.h"    "backend\drivedb.h"    -Force
           if (-not (Test-Path "backend\smartctl.exe")) { throw "smartctl.exe no encontrado" }
+          if (-not (Test-Path "backend\drivedb.h"))    { throw "drivedb.h no encontrado" }
 
       - name: Compilar GUI Flutter (Windows release)
         working-directory: pcinfo

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import '../version.dart';
 import '../models/hardware.dart';
+import '../services/backend_launcher.dart';
 import '../services/hardware_service.dart';
 import '../theme.dart';
 import '../utils/format.dart';
@@ -10,7 +11,13 @@ import 'widgets/spec_card.dart';
 
 class DashboardPage extends StatefulWidget {
   final HardwareService service;
-  const DashboardPage({super.key, required this.service});
+
+  /// Launcher del backend. Solo se usa para "Reintentar como administrador"
+  /// (Windows) cuando el SMART salió vacío por falta de elevación. Puede ser null
+  /// (p. ej. en pruebas con el mock).
+  final BackendLauncher? launcher;
+
+  const DashboardPage({super.key, required this.service, this.launcher});
 
   @override
   State<DashboardPage> createState() => _DashboardPageState();
@@ -18,6 +25,9 @@ class DashboardPage extends StatefulWidget {
 
 class _DashboardPageState extends State<DashboardPage> {
   late Future<HardwareInfo> _future;
+
+  /// true mientras se reintenta elevar el backend (UAC en curso).
+  bool _elevating = false;
 
   @override
   void initState() {
@@ -27,6 +37,29 @@ class _DashboardPageState extends State<DashboardPage> {
 
   void _refresh() {
     setState(() => _future = widget.service.load());
+  }
+
+  /// Relanza el backend elevado (UAC) y, si lo logra, recarga el hardware para
+  /// que aparezca la salud/desgaste de los discos. Si el usuario cancela el UAC,
+  /// avisa sin bloquear la app.
+  Future<void> _retryElevated() async {
+    final launcher = widget.launcher;
+    if (launcher == null || _elevating) return;
+    setState(() => _elevating = true);
+    final ok = await launcher.retryElevated();
+    if (!mounted) return;
+    setState(() => _elevating = false);
+    if (ok) {
+      _refresh();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        backgroundColor: AppColors.surfaceAlt,
+        content: Text(
+          'No se pudo obtener permisos de administrador (¿se canceló el aviso de Windows?). Inténtalo de nuevo.',
+          style: TextStyle(color: Color(0xFFF2768D), fontSize: kFont),
+        ),
+      ));
+    }
   }
 
   // Estado cuando el backend no responde: NO se muestran datos de ejemplo, sino
@@ -164,7 +197,7 @@ class _DashboardPageState extends State<DashboardPage> {
                         gc,
                       ],
                       const SizedBox(height: gap),
-                      _disksCard(hw.disks),
+                      _disksCard(hw),
                     ],
                   );
                 }
@@ -190,7 +223,7 @@ class _DashboardPageState extends State<DashboardPage> {
                       itemBuilder: (context, i) => cards[i],
                     ),
                     const SizedBox(height: gap),
-                    _disksCard(hw.disks),
+                    _disksCard(hw),
                   ],
                 );
               },
@@ -510,7 +543,9 @@ class _DashboardPageState extends State<DashboardPage> {
     return integrada ? 'Integrada' : 'Dedicada';
   }
 
-  Widget _disksCard(List<DiskInfo> disks) {
+  Widget _disksCard(HardwareInfo hw) {
+    final disks = hw.disks;
+    final warning = _smartWarning(hw);
     return Container(
       decoration: BoxDecoration(
         color: AppColors.surface,
@@ -546,11 +581,128 @@ class _DashboardPageState extends State<DashboardPage> {
             ],
           ),
           const SizedBox(height: 14),
+          if (warning != null) ...[
+            warning,
+            const SizedBox(height: 14),
+          ],
           if (disks.isEmpty)
             const Text('No se detectaron discos',
                 style: TextStyle(color: AppColors.textMid, fontSize: kFont))
           else
             ...disks.map(_diskRow),
+        ],
+      ),
+    );
+  }
+
+  /// Aviso accionable cuando hay discos SIN SMART. Distingue la causa con el
+  /// diagnóstico del backend:
+  ///   - falta smartctl.exe  → reinstalar (rojo).
+  ///   - sin permisos admin  → botón "Reintentar como administrador" (ámbar).
+  ///   - elevado y con smartctl pero igual sin SMART → limitación real (gris):
+  ///     puente USB o controladora RAID que no traducen los comandos.
+  /// Devuelve null si no hay nada que avisar (todos con SMART, o Linux con root).
+  Widget? _smartWarning(HardwareInfo hw) {
+    final anyMissing = hw.disks.any((d) => !d.smartAvailable);
+    if (!anyMissing) return null;
+    final diag = hw.diag;
+
+    if (!diag.smartctlFound) {
+      return _warnBox(
+        color: const Color(0xFFF2768D),
+        icon: Icons.report_gmailerrorred_rounded,
+        title: 'Falta el componente para leer discos (smartctl)',
+        detail:
+            'La salud de los discos no se puede leer porque no se encontró smartctl. '
+            'Reinstala PCInfo desde el instalador oficial para restaurarlo.',
+      );
+    }
+
+    // Sin elevación → requiere admin/root. En Windows la GUI puede relanzar el
+    // backend elevado con UAC (botón); en Linux el backend va como servicio root,
+    // así que solo se informa cómo restaurarlo.
+    if (!diag.elevated) {
+      final canRetry = diag.isWindows && widget.launcher != null;
+      return _warnBox(
+        color: const Color(0xFFE3A84B),
+        icon: Icons.admin_panel_settings_rounded,
+        title: diag.isWindows
+            ? 'La salud de los discos requiere permisos de administrador'
+            : 'La salud de los discos requiere ejecutarse como root',
+        detail: diag.isWindows
+            ? 'Para leer el estado y el desgaste (S.M.A.R.T.) de los discos, PCInfo '
+                'necesita ejecutarse como administrador. Windows pedirá confirmación.'
+            : 'El servicio de PCInfo debe correr como root para leer el S.M.A.R.T. '
+                'de los discos. Reinstala el paquete o inicia el servicio con privilegios.',
+        action: !canRetry
+            ? null
+            : FilledButton.icon(
+                onPressed: _elevating ? null : _retryElevated,
+                icon: _elevating
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.shield_rounded, size: 16),
+                label: Text(_elevating
+                    ? 'Solicitando permiso…'
+                    : 'Reintentar como administrador'),
+              ),
+      );
+    }
+
+    // Elevado y con smartctl, pero algún disco sigue sin SMART: limitación real.
+    return _warnBox(
+      color: AppColors.textMid,
+      icon: Icons.info_outline_rounded,
+      title: 'Algunos discos no exponen S.M.A.R.T.',
+      detail:
+          'Suele pasar con discos en gabinetes USB o tras una controladora RAID, '
+          'que no dejan pasar los comandos de estado. El resto de datos es correcto.',
+    );
+  }
+
+  Widget _warnBox({
+    required Color color,
+    required IconData icon,
+    required String title,
+    required String detail,
+    Widget? action,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 20, color: color),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: TextStyle(
+                        color: color,
+                        fontSize: kFont,
+                        fontWeight: FontWeight.w700)),
+                const SizedBox(height: 4),
+                Text(detail,
+                    style: const TextStyle(
+                        color: AppColors.textMid, fontSize: kFont, height: 1.35)),
+                if (action != null) ...[
+                  const SizedBox(height: 12),
+                  action,
+                ],
+              ],
+            ),
+          ),
         ],
       ),
     );

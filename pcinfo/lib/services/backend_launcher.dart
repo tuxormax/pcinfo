@@ -60,6 +60,35 @@ class BackendLauncher {
     return _waitHealthy(25);
   }
 
+  /// Reintenta dejar el backend corriendo ELEVADO (Windows). Se usa cuando el
+  /// arranque cayó a modo no elevado (UAC cancelado) y el usuario pulsa
+  /// "Reintentar como administrador" en la ficha de discos. Primero MATA el
+  /// backend no elevado que lanzamos como respaldo (ocupa el puerto 51247),
+  /// espera a que el puerto se libere y relanza con UAC. Devuelve true si el
+  /// backend elevado quedó respondiendo. Idempotente: si ya está elevado y sano,
+  /// el llamador simplemente refresca.
+  Future<bool> retryElevated() async {
+    if (!Platform.isWindows) return false;
+    final bin = _locateBinary();
+    if (bin == null) return false;
+    final args = <String>['--addr', '$host:$port', '--parent-pid', '$pid'];
+    stop(); // mata el backend no elevado (si lo lanzamos nosotros)
+    await _waitUnhealthy(25); // dar tiempo a que el puerto quede libre
+    if (!await _startElevated(bin, args)) return false; // UAC cancelado / error
+    return _waitHealthy(60); // el UAC puede tardar en aceptarse
+  }
+
+  /// Sondea hasta que /healthz DEJE de responder (puerto liberado) o se agoten
+  /// los intentos. Necesario antes de relanzar: el nuevo backend no puede
+  /// enlazar el puerto si el anterior sigue vivo.
+  Future<bool> _waitUnhealthy(int maxTries) async {
+    for (var i = 0; i < maxTries; i++) {
+      if (!await _healthy()) return true;
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
+    return false;
+  }
+
   /// Lanza el backend ELEVADO en Windows vía `Start-Process -Verb RunAs` (UAC).
   /// Devuelve true si PowerShell reportó que lo lanzó (exit 0); false si el
   /// usuario canceló el UAC o hubo error → el llamador cae al lanzamiento normal.

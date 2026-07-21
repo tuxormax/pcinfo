@@ -53,7 +53,7 @@ class _PcInfoAppState extends State<PcInfoApp> with WidgetsBindingObserver {
       title: 'PCInfo',
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
-      home: DashboardPage(service: service),
+      home: DashboardPage(service: service, launcher: widget.launcher),
     );
   }
 }

@@ -8,6 +8,7 @@ class HardwareInfo {
   final MemoryInfo memory;
   final GpuInfo gpu;
   final List<DiskInfo> disks;
+  final DiagInfo diag;
 
   const HardwareInfo({
     required this.system,
@@ -16,6 +17,7 @@ class HardwareInfo {
     required this.memory,
     required this.gpu,
     required this.disks,
+    this.diag = const DiagInfo(),
   });
 
   factory HardwareInfo.fromJson(Map<String, dynamic> j) => HardwareInfo(
@@ -28,7 +30,33 @@ class HardwareInfo {
                 ?.map((e) => DiskInfo.fromJson(e as Map<String, dynamic>))
                 .toList() ??
             const [],
+        diag: DiagInfo.fromJson(j['diag'] ?? const {}),
       );
+}
+
+/// Diagnósticos del recolector (espejo de backend/collector DiagInfo). La GUI los
+/// usa para explicar por qué un disco salió "SIN SMART" y ofrecer solución: en
+/// Windows el SMART requiere que el backend corra ELEVADO y que smartctl.exe esté
+/// empaquetado. Con esto se distingue "falta admin" de "falta smartctl" de una
+/// limitación real (puente USB / controladora RAID).
+class DiagInfo {
+  final String os; // "windows" | "linux" | ...
+  final bool elevated; // ¿corre como admin/root?
+  final bool smartctlFound; // ¿se localizó el ejecutable de smartctl?
+
+  const DiagInfo({
+    this.os = '',
+    this.elevated = false,
+    this.smartctlFound = false,
+  });
+
+  factory DiagInfo.fromJson(Map<String, dynamic> j) => DiagInfo(
+        os: j['os'] ?? '',
+        elevated: j['elevated'] ?? false,
+        smartctlFound: j['smartctlFound'] ?? false,
+      );
+
+  bool get isWindows => os == 'windows';
 }
 
 class SystemInfo {

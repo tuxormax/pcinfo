@@ -1,6 +1,9 @@
 package collector
 
-import "log"
+import (
+	"log"
+	"runtime"
+)
 
 // Collect arma el inventario completo. Cada sub-colector degrada con elegancia:
 // si una fuente falla (sin permisos, herramienta ausente, VM) devuelve lo que
@@ -19,6 +22,17 @@ func Collect() HardwareInfo {
 		Memory: safe("memory", func() MemoryInfo { return collectMemory(board) }),
 		GPU:    safe("gpu", collectGPU),
 		Disks:  safe("disks", collectDisks),
+		Diag:   safe("diag", collectDiag),
+	}
+}
+
+// collectDiag reúne los diagnósticos del recolector (elevación, smartctl). Sirve
+// a la GUI para explicar por qué un disco salió "SIN SMART" y ofrecer solución.
+func collectDiag() DiagInfo {
+	return DiagInfo{
+		OS:            runtime.GOOS,
+		Elevated:      isElevated(),
+		SmartctlFound: smartctlAvailable(),
 	}
 }
 
