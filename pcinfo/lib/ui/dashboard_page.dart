@@ -1,23 +1,35 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import '../version.dart';
+import '../models/errores.dart';
 import '../models/hardware.dart';
 import '../services/backend_launcher.dart';
+import '../services/errores_service.dart';
 import '../services/hardware_service.dart';
 import '../theme.dart';
 import '../utils/format.dart';
 import '../utils/report.dart';
+import 'errores_page.dart';
 import 'widgets/spec_card.dart';
 
 class DashboardPage extends StatefulWidget {
   final HardwareService service;
+
+  /// Fuente del "Historial de Errores" (GET /errores). Si es null, esa pestaña
+  /// avisa que no hay datos (p. ej. en pruebas con el mock de hardware).
+  final ErroresService? erroresService;
 
   /// Launcher del backend. Solo se usa para "Reintentar como administrador"
   /// (Windows) cuando el SMART salió vacío por falta de elevación. Puede ser null
   /// (p. ej. en pruebas con el mock).
   final BackendLauncher? launcher;
 
-  const DashboardPage({super.key, required this.service, this.launcher});
+  const DashboardPage({
+    super.key,
+    required this.service,
+    this.erroresService,
+    this.launcher,
+  });
 
   @override
   State<DashboardPage> createState() => _DashboardPageState();
@@ -26,17 +38,62 @@ class DashboardPage extends StatefulWidget {
 class _DashboardPageState extends State<DashboardPage> {
   late Future<HardwareInfo> _future;
 
+  /// Pestaña activa: 0 = Hardware, 1 = Historial de Errores.
+  int _tab = 0;
+
+  /// El historial de errores se pide SOLO al abrir su pestaña: en Windows
+  /// recorre 30 días de registro de eventos y analiza los volcados, así que
+  /// cargarlo al inicio retrasaría el arranque de la app.
+  Future<ErroresInfo>? _erroresFuture;
+
+  /// Últimos datos cargados de cada pestaña (para el botón Guardar y para la
+  /// barra superior, que se dibuja fuera del FutureBuilder).
+  HardwareInfo? _hw;
+  ErroresInfo? _errores;
+
   /// true mientras se reintenta elevar el backend (UAC en curso).
   bool _elevating = false;
 
   @override
   void initState() {
     super.initState();
-    _future = widget.service.load();
+    _cargaHardware();
   }
 
+  void _cargaHardware() {
+    final f = widget.service.load();
+    _future = f;
+    f.then((v) {
+      if (mounted) setState(() => _hw = v);
+    }).catchError((Object _) {});
+  }
+
+  void _cargaErrores() {
+    final svc = widget.erroresService;
+    if (svc == null) return;
+    final f = svc.load();
+    _erroresFuture = f;
+    f.then((v) {
+      if (mounted) setState(() => _errores = v);
+    }).catchError((Object _) {});
+  }
+
+  /// Refresca SOLO la pestaña visible (recargar el historial de errores es caro).
   void _refresh() {
-    setState(() => _future = widget.service.load());
+    setState(() {
+      if (_tab == 0) {
+        _cargaHardware();
+      } else {
+        _cargaErrores();
+      }
+    });
+  }
+
+  void _cambiaTab(int i) {
+    setState(() {
+      _tab = i;
+      if (i == 1 && _erroresFuture == null) _cargaErrores();
+    });
   }
 
   /// Relanza el backend elevado (UAC) y, si lo logra, recarga el hardware para
@@ -50,7 +107,12 @@ class _DashboardPageState extends State<DashboardPage> {
     if (!mounted) return;
     setState(() => _elevating = false);
     if (ok) {
-      _refresh();
+      // Al elevarse cambian AMBAS pestañas (SMART de los discos y los registros
+      // protegidos), así que se recarga lo que ya estuviera cargado.
+      setState(() {
+        _cargaHardware();
+        if (_erroresFuture != null) _cargaErrores();
+      });
     } else {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         backgroundColor: AppColors.surfaceAlt,
@@ -105,22 +167,176 @@ class _DashboardPageState extends State<DashboardPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: FutureBuilder<HardwareInfo>(
-          future: _future,
-          builder: (context, snap) {
-            if (snap.connectionState != ConnectionState.done) {
-              return const Center(
-                child: CircularProgressIndicator(color: AppColors.accent),
-              );
-            }
-            if (snap.hasError) {
-              return _errorState();
-            }
-            return _content(snap.data!);
-          },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _topBar(),
+            _tabsBar(),
+            Expanded(child: _tab == 0 ? _tabHardware() : _tabErrores()),
+          ],
         ),
       ),
       bottomNavigationBar: _footer(),
+    );
+  }
+
+  Widget _tabHardware() {
+    return FutureBuilder<HardwareInfo>(
+      future: _future,
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return const Center(
+            child: CircularProgressIndicator(color: AppColors.accent),
+          );
+        }
+        if (snap.hasError) return _errorState();
+        return _content(snap.data!);
+      },
+    );
+  }
+
+  Widget _tabErrores() {
+    if (widget.erroresService == null) {
+      return _mensajeCentrado(
+        Icons.help_outline_rounded,
+        'Historial de errores no disponible',
+        'Esta ventana se abrió sin conexión al servicio de PCInfo.',
+      );
+    }
+    return FutureBuilder<ErroresInfo>(
+      future: _erroresFuture,
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return const Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(color: AppColors.accent),
+                SizedBox(height: 16),
+                Text(
+                  'Leyendo los registros del sistema…\n'
+                  'La primera vez puede tardar un poco.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppColors.textMid, fontSize: kFont),
+                ),
+              ],
+            ),
+          );
+        }
+        if (snap.hasError) {
+          return _mensajeCentrado(
+            Icons.error_outline,
+            'No se pudo leer el historial de errores',
+            'El servicio de PCInfo no respondió.\nUsa "Refrescar" para intentarlo de nuevo.',
+          );
+        }
+        final data = snap.data!;
+        // En Windows, si el backend no está elevado se ofrece relanzarlo con
+        // permisos de administrador (mismo botón que usa la ficha de discos).
+        final puedeElevar =
+            data.isWindows && !data.elevated && widget.launcher != null;
+        return ErroresPage(
+          data: data,
+          avisoAccion: !puedeElevar
+              ? null
+              : FilledButton.icon(
+                  onPressed: _elevating ? null : _retryElevated,
+                  icon: _elevating
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.shield_rounded, size: 16),
+                  label: Text(_elevating
+                      ? 'Solicitando permiso…'
+                      : 'Reintentar como administrador'),
+                ),
+        );
+      },
+    );
+  }
+
+  Widget _mensajeCentrado(IconData icono, String titulo, String detalle) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icono, color: AppColors.textMid, size: 48),
+            const SizedBox(height: 16),
+            Text(titulo,
+                style: const TextStyle(
+                  color: AppColors.textHi,
+                  fontSize: kFont + 2,
+                  fontWeight: FontWeight.w600,
+                )),
+            const SizedBox(height: 8),
+            Text(detalle,
+                textAlign: TextAlign.center,
+                style:
+                    const TextStyle(color: AppColors.textMid, fontSize: kFont)),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: _refresh,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Reintentar'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Barra de pestañas: Hardware | Historial de Errores.
+  Widget _tabsBar() {
+    return Container(
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: AppColors.border)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        children: [
+          _tabBoton(0, Icons.memory_rounded, 'Hardware'),
+          _tabBoton(1, Icons.rule_folder_rounded, 'Historial de Errores'),
+        ],
+      ),
+    );
+  }
+
+  Widget _tabBoton(int indice, IconData icono, String texto) {
+    final activo = _tab == indice;
+    final color = activo ? AppColors.accent : AppColors.textMid;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _cambiaTab(indice),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: activo ? AppColors.accent : Colors.transparent,
+                width: 2,
+              ),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icono, size: 16, color: color),
+              const SizedBox(width: 7),
+              Text(texto,
+                  style: TextStyle(
+                      color: color,
+                      fontSize: kFont,
+                      fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -166,14 +382,9 @@ class _DashboardPageState extends State<DashboardPage> {
       );
 
   Widget _content(HardwareInfo hw) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _topBar(hw),
-        Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-            child: LayoutBuilder(
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+      child: LayoutBuilder(
               builder: (context, c) {
                 const gap = 18.0;
                 // 2 columnas si hay espacio; si no, 1.
@@ -226,15 +437,12 @@ class _DashboardPageState extends State<DashboardPage> {
                     _disksCard(hw),
                   ],
                 );
-              },
-            ),
-          ),
-        ),
-      ],
+        },
+      ),
     );
   }
 
-  Widget _topBar(HardwareInfo hw) {
+  Widget _topBar() {
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 18, 18, 16),
       decoration: const BoxDecoration(
@@ -257,14 +465,18 @@ class _DashboardPageState extends State<DashboardPage> {
           Expanded(
             child: Row(
               children: [
-                Flexible(child: _chip(Icons.dns_rounded, hw.system.hostname)),
+                Flexible(
+                    child: _chip(
+                        Icons.dns_rounded, _hw?.system.hostname ?? '—')),
                 const SizedBox(width: 8),
-                Flexible(child: _chip(Icons.terminal_rounded, hw.system.distro)),
+                Flexible(
+                    child: _chip(
+                        Icons.terminal_rounded, _hw?.system.distro ?? '—')),
               ],
             ),
           ),
           const SizedBox(width: 12),
-          _saveButton(hw),
+          _saveButton(),
           const SizedBox(width: 8),
           _refreshButton(),
         ],
@@ -272,23 +484,28 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  Widget _saveButton(HardwareInfo hw) {
+  /// Guardar: exporta a .txt lo que se está viendo — el inventario de hardware
+  /// o el historial de errores, según la pestaña activa.
+  Widget _saveButton() {
+    final habilitado = _tab == 0 ? _hw != null : _errores != null;
     return Material(
       color: AppColors.surfaceAlt,
       borderRadius: BorderRadius.circular(9),
       child: InkWell(
         borderRadius: BorderRadius.circular(9),
-        onTap: () => _onSave(hw),
-        child: const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        onTap: habilitado ? _onSave : null,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.save_alt_rounded, size: 16, color: AppColors.textMid),
-              SizedBox(width: 6),
+              Icon(Icons.save_alt_rounded,
+                  size: 16,
+                  color: habilitado ? AppColors.textMid : AppColors.textLow),
+              const SizedBox(width: 6),
               Text('Guardar',
                   style: TextStyle(
-                      color: AppColors.textMid,
+                      color: habilitado ? AppColors.textMid : AppColors.textLow,
                       fontSize: kFont,
                       fontWeight: FontWeight.w600)),
             ],
@@ -298,9 +515,11 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  Future<void> _onSave(HardwareInfo hw) async {
+  Future<void> _onSave() async {
     try {
-      final path = await saveReport(hw);
+      final path = _tab == 0
+          ? await saveReport(_hw!)
+          : await saveErroresReport(_errores!, _hw?.system.hostname ?? '');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         backgroundColor: AppColors.surfaceAlt,

@@ -5,6 +5,8 @@
 
 App de **inventario de hardware** multiplataforma (**Linux** y **Windows**): CPU, tarjeta madre, RAM, GPU, almacenamiento y sistema operativo. Sin temperaturas — solo información del equipo.
 
+Incluye además la pestaña **Historial de Errores**: lee lo que registró el sistema operativo (pantallazos azules y registro de eventos en Windows; journald y mensajes del kernel en Linux) y lo explica en español — qué pasó, qué lo provocó (incluido el **driver culpable** deducido del volcado de memoria en los BSOD) y cómo resolverlo.
+
 > **En desarrollo.** Reescritura completa del antiguo *LinuxHWMonitor* (Python + PyQt5) a una arquitectura **Go + Flutter**.
 
 ## Capturas
@@ -34,8 +36,8 @@ Notas:
 
 ## Arquitectura
 
-- **`pcinfo/`** — interfaz gráfica en **Flutter** (desktop Linux/Windows). Hoy con datos de ejemplo.
-- **`backend/`** *(pendiente)* — recolector en **Go** que expone la info del hardware por HTTP local (JSON), usando `ghw` (inventario), `smartctl` (salud S.M.A.R.T. de discos) y `nvidia-smi` (GPU).
+- **`pcinfo/`** — interfaz gráfica en **Flutter** (desktop Linux/Windows), con dos pestañas: *Hardware* e *Historial de Errores*.
+- **`backend/`** — recolector en **Go** que expone por HTTP local (JSON) el inventario (`GET /hardware`) y el historial de errores (`GET /errores`), usando `ghw` (inventario), `smartctl` (salud S.M.A.R.T. de discos), `nvidia-smi` (GPU), el registro de eventos de Windows y journald en Linux.
 
 La GUI consume el JSON del backend; la misma base de código sirve para Linux y Windows.
 

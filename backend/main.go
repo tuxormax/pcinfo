@@ -33,6 +33,7 @@ func main() {
 func runServer(addr string) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/hardware", handleHardware)
+	mux.HandleFunc("/errores", handleErrores)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("ok"))
 	})
@@ -59,14 +60,23 @@ func defaultAddr() string {
 }
 
 func handleHardware(w http.ResponseWriter, _ *http.Request) {
-	hw := collector.Collect()
+	responde(w, "/hardware", collector.Collect())
+}
 
+// handleErrores sirve el "Historial de Errores": pantallazos azules y registro de
+// eventos en Windows, journald/kernel en Linux, ya interpretados. Va aparte de
+// /hardware porque es más lento y la GUI solo lo pide al abrir esa pestaña.
+func handleErrores(w http.ResponseWriter, _ *http.Request) {
+	responde(w, "/errores", collector.CollectErrors())
+}
+
+func responde(w http.ResponseWriter, ruta string, dato any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	if err := enc.Encode(hw); err != nil {
-		log.Printf("error serializando /hardware: %v", err)
+	if err := enc.Encode(dato); err != nil {
+		log.Printf("error serializando %s: %v", ruta, err)
 		http.Error(w, "error interno", http.StatusInternalServerError)
 	}
 }

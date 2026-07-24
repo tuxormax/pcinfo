@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import '../models/errores.dart';
 import '../models/hardware.dart';
 import '../version.dart';
 import 'format.dart';
@@ -12,6 +13,19 @@ Future<String> saveReport(HardwareInfo hw) async {
   final dir = _reportDir();
   final host = _safe(hw.system.hostname.isEmpty ? 'equipo' : hw.system.hostname);
   final path = '$dir${Platform.pathSeparator}PCInfo_${host}_${_fileStamp()}.txt';
+  await File(path).writeAsString(text);
+  return path;
+}
+
+/// Guarda el "Historial de Errores" en un .txt (equivalente al C:\bluescreen.txt
+/// del script de Windows, pero con TODO lo que muestra la pestaña y en ambos
+/// sistemas). Devuelve la ruta del archivo escrito.
+Future<String> saveErroresReport(ErroresInfo err, String equipo) async {
+  final text = buildErroresReport(err, equipo);
+  final dir = _reportDir();
+  final host = _safe(equipo.isEmpty ? 'equipo' : equipo);
+  final path =
+      '$dir${Platform.pathSeparator}PCInfo_Errores_${host}_${_fileStamp()}.txt';
   await File(path).writeAsString(text);
   return path;
 }
@@ -166,6 +180,108 @@ String buildReport(HardwareInfo hw) {
   line('=' * 60);
   line('$appCopyright · $appEmail · Licencia $appLicense');
   return b.toString();
+}
+
+/// Construye el texto del historial de errores, espejo de la pestaña
+/// "Historial de Errores". Si se agrega o quita un dato en `errores_page.dart`,
+/// reflejarlo aquí (misma regla de concordancia que el reporte de hardware).
+String buildErroresReport(ErroresInfo err, String equipo) {
+  final b = StringBuffer();
+  void line([String s = '']) => b.writeln(s);
+
+  line('$appName v$appVersion Rev $appRevision');
+  line('Historial de errores del sistema · generado: ${_humanStamp()}');
+  if (equipo.isNotEmpty) line('Equipo: $equipo');
+  line('Sistema: ${err.os}   ·   Fuente: ${err.source}');
+  line('Periodo analizado: últimos ${err.scanDays} días');
+  line('Administrador/root: ${err.elevated ? "sí" : "no"}');
+  if (err.reason.isNotEmpty) line('Aviso: ${err.reason}');
+  line('=' * 78);
+
+  if (err.items.isEmpty) {
+    line();
+    line(err.available
+        ? 'No se registraron errores en el periodo analizado.'
+        : 'No hay información disponible (ver el aviso de arriba).');
+  }
+
+  for (final (i, e) in err.items.indexed) {
+    line();
+    line('-' * 78);
+    line('#${i + 1}  [${_sevTexto(e.severity)}] [${_tipoTexto(e.kind)}]  ${e.title}');
+    line('-' * 78);
+    line('Cuándo      : ${e.when}'
+        '${e.repetido ? "   (${e.count} veces, desde ${e.firstWhen})" : ""}');
+    line('Origen      : ${e.source}');
+    if (e.code.isNotEmpty) {
+      line('Código      : ${e.code}${e.codeName.isNotEmpty ? "  ${e.codeName}" : ""}');
+    }
+    if (e.culprit.isNotEmpty) {
+      line('Causante    : ${e.culprit}'
+          '${e.confidence.isNotEmpty ? "   (confianza ${e.confidence})" : ""}');
+      if (e.culpritInfo.isNotEmpty) line('              ${e.culpritInfo}');
+    }
+    for (final s in e.suspects.skip(1)) {
+      line('Sospechoso  : $s');
+    }
+    if (e.cause.isNotEmpty) line('Qué pasó    : ${e.cause}');
+    if (e.fix.isNotEmpty) line('Solución    : ${e.fix}');
+    if (e.detail.isNotEmpty) {
+      line();
+      line('--- Mensaje original del sistema ---');
+      for (final l in e.detail.split('\n')) {
+        line(l.trimRight());
+      }
+    }
+  }
+
+  if (err.dumps.isNotEmpty) {
+    line();
+    line('=' * 78);
+    line('Volcados de memoria presentes en el disco');
+    for (final d in err.dumps) {
+      line('  ${d.when}   ${formatBytes(d.sizeBytes).padLeft(10)}   ${d.path}');
+    }
+  }
+
+  line();
+  line('=' * 78);
+  line('$appCopyright · $appEmail · Licencia $appLicense');
+  return b.toString();
+}
+
+String _sevTexto(String sev) {
+  switch (sev) {
+    case 'critico':
+      return 'CRÍTICO';
+    case 'aviso':
+      return 'AVISO';
+    default:
+      return 'ERROR';
+  }
+}
+
+String _tipoTexto(String kind) {
+  switch (kind) {
+    case 'pantallazo':
+      return 'PANTALLAZO';
+    case 'apagado':
+      return 'APAGÓN';
+    case 'hardware':
+      return 'HARDWARE';
+    case 'disco':
+      return 'DISCO';
+    case 'grafica':
+      return 'GRÁFICOS';
+    case 'servicio':
+      return 'SERVICIO';
+    case 'aplicacion':
+      return 'PROGRAMA';
+    case 'memoria':
+      return 'MEMORIA';
+    default:
+      return 'SISTEMA';
+  }
 }
 
 String _healthLabel(DiskHealth h) {

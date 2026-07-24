@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'services/backend_launcher.dart';
+import 'services/errores_service.dart';
 import 'services/hardware_service.dart';
 import 'theme.dart';
 import 'ui/dashboard_page.dart';
@@ -53,7 +54,11 @@ class _PcInfoAppState extends State<PcInfoApp> with WidgetsBindingObserver {
       title: 'PCInfo',
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
-      home: DashboardPage(service: service, launcher: widget.launcher),
+      home: DashboardPage(
+        service: service,
+        erroresService: HttpErroresService(),
+        launcher: widget.launcher,
+      ),
     );
   }
 }
