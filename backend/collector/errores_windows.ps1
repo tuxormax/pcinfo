@@ -547,11 +547,13 @@ foreach ($b in ($bsod | Sort-Object Cuando -Descending)) {
 # Se agrupan por proveedor + Id: 40 veces el mismo error de disco es UN problema.
 $grupos = @{}
 $orden = New-Object System.Collections.ArrayList
-$eventos = @()
-$eventos += Get-Eventos @{ LogName = 'System'; Level = 1, 2; StartTime = $desde } $MaxEventos
-$eventos += Get-Eventos @{ LogName = 'Application'; Level = 1, 2; StartTime = $desde } $MaxEventos
+# OJO: no llamar a esta variable $eventos — PowerShell NO distingue mayusculas y
+# pisaria el catalogo $EVENTOS, dejando a Info-Evento sin ContainsKey.
+$registros = @()
+$registros += Get-Eventos @{ LogName = 'System'; Level = 1, 2; StartTime = $desde } $MaxEventos
+$registros += Get-Eventos @{ LogName = 'Application'; Level = 1, 2; StartTime = $desde } $MaxEventos
 
-foreach ($e in $eventos) {
+foreach ($e in $registros) {
     $prov = "$($e.ProviderName)"
     $id = [int]$e.Id
     # Los pantallazos ya se procesaron arriba con su análisis de volcado.
