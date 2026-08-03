@@ -5,6 +5,9 @@ import '../models/errores.dart';
 import '../theme.dart';
 import '../utils/format.dart';
 
+/// Ámbar de "ojo con esto" (mismo tono que los avisos de la página).
+const _ambar = Color(0xFFE3A84B);
+
 /// Pestaña "Historial de Errores": muestra lo que el sistema operativo registró
 /// (pantallazos azules y registro de eventos en Windows; journald y kernel en
 /// Linux) ya traducido a "qué pasó · por qué · cómo se resuelve".
@@ -18,7 +21,16 @@ class ErroresPage extends StatefulWidget {
   /// administrador" en Windows cuando el backend no está elevado).
   final Widget? avisoAccion;
 
-  const ErroresPage({super.key, required this.data, this.avisoAccion});
+  /// Se llama al elegir otra instalación de Windows en el selector de unidad
+  /// (recibe su raíz, "D:\\Windows"; vacío = el sistema en ejecución).
+  final void Function(String raiz)? onInstalacion;
+
+  const ErroresPage({
+    super.key,
+    required this.data,
+    this.avisoAccion,
+    this.onInstalacion,
+  });
 
   @override
   State<ErroresPage> createState() => _ErroresPageState();
@@ -49,6 +61,10 @@ class _ErroresPageState extends State<ErroresPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (d.puedeElegirInstalacion || d.offline) ...[
+            _selectorInstalacion(d),
+            const SizedBox(height: 14),
+          ],
           _resumen(d),
           if (d.reason.isNotEmpty) ...[
             const SizedBox(height: 14),
@@ -68,6 +84,105 @@ class _ErroresPageState extends State<ErroresPage> {
             _volcados(d),
           ],
         ],
+      ),
+    );
+  }
+
+  // ---- Selector de instalación ----
+
+  /// Elige QUÉ Windows se analiza. Solo aparece cuando hay más de uno a la vista,
+  /// que es el caso de un equipo arrancado con un medio de rescate (Hiren's
+  /// BootCD, WinPE): ahí el Windows averiado es otra unidad y es justo el que se
+  /// quiere revisar, porque el historial dice por qué dejó de arrancar.
+  Widget _selectorInstalacion(ErroresInfo d) {
+    final borde = d.offline ? _ambar : AppColors.border;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: borde),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            d.offline ? Icons.storage_rounded : Icons.desktop_windows_rounded,
+            size: 18,
+            color: d.offline ? _ambar : AppColors.textMid,
+          ),
+          const SizedBox(width: 10),
+          const Text(
+            'Analizando el Windows de:',
+            style: TextStyle(color: AppColors.textMid, fontSize: kFont),
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: _dropdownInstalacion(d)),
+        ],
+      ),
+    );
+  }
+
+  Widget _dropdownInstalacion(ErroresInfo d) {
+    // El valor es la RAÍZ ("D:\Windows"): es lo que espera el backend y lo que
+    // distingue dos instalaciones aunque compartan etiqueta de volumen.
+    final actual = d.installs.any((i) => i.root == d.target)
+        ? d.target
+        : (d.installs.isEmpty ? '' : d.installs.first.root);
+    if (d.installs.isEmpty) {
+      return Text(
+        d.targetLabel.isEmpty ? d.target : d.targetLabel,
+        style: const TextStyle(color: AppColors.textHi, fontSize: kFont),
+      );
+    }
+    return DropdownButtonHideUnderline(
+      child: DropdownButton<String>(
+        value: actual.isEmpty ? null : actual,
+        isExpanded: true,
+        isDense: true,
+        dropdownColor: AppColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(10),
+        icon: const Icon(Icons.expand_more_rounded,
+            color: AppColors.textMid, size: 20),
+        style: const TextStyle(color: AppColors.textHi, fontSize: kFont),
+        items: d.installs
+            .map((i) => DropdownMenuItem<String>(
+                  value: i.root,
+                  child: Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          i.titulo,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: AppColors.textHi,
+                            fontSize: kFont,
+                            fontWeight:
+                                i.current ? FontWeight.w400 : FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      if (i.version.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        Text(
+                          i.version,
+                          style: const TextStyle(
+                              color: AppColors.textLow, fontSize: kFont - 1),
+                        ),
+                      ],
+                    ],
+                  ),
+                ))
+            .toList(),
+        onChanged: widget.onInstalacion == null
+            ? null
+            : (v) {
+                if (v == null) return;
+                // Al sistema en ejecución se vuelve con raíz vacía: así el
+                // backend no depende de la letra de unidad del medio de rescate.
+                final esActual =
+                    d.installs.any((i) => i.root == v && i.current);
+                widget.onInstalacion!(esActual ? '' : v);
+              },
       ),
     );
   }

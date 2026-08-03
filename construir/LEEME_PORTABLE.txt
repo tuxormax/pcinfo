@@ -1,0 +1,36 @@
+PCInfo — version PORTABLE (no requiere instalacion)
+====================================================
+
+Que es
+------
+La misma aplicacion que el instalador, pero lista para correr desde una memoria
+USB o desde el disco RAM de un medio de rescate. No escribe en el registro ni
+deja nada en el equipo.
+
+Como se usa
+-----------
+1. Copia esta carpeta completa (PCInfo) a la memoria USB.
+2. Abre "pcinfo.exe". No muevas los archivos de sitio: pcinfo-backend.exe y
+   smartctl.exe tienen que quedar JUNTO al ejecutable.
+3. Si Windows pide permisos de administrador, aceptalos: sin ellos no se lee el
+   S.M.A.R.T. de los discos ni algunos registros protegidos.
+
+Diagnosticar un equipo que YA NO ARRANCA
+----------------------------------------
+1. Arranca el equipo con Hiren's BootCD PE (o cualquier WinPE) en modo live.
+2. Abre PCInfo desde la USB.
+3. Ve a la pestana "Historial de Errores".
+4. Arriba aparece el selector "Analizando el Windows de:". Elige la unidad del
+   Windows averiado (normalmente C: o D:, NO la X: del medio de rescate).
+   PCInfo leera SUS registros de eventos y SUS volcados de pantallazo azul,
+   aunque ese Windows no pueda arrancar, y explicara que paso y como resolverlo.
+5. Con "Guardar" queda un .txt con todo el diagnostico para llevarselo.
+
+Notas
+-----
+- Al analizar una instalacion apagada se revisan los ultimos 180 dias (en lugar
+  de 30), porque un equipo averiado puede llevar semanas sin usarse.
+- El texto original de algunos eventos puede verse incompleto: lo aporta el
+  Windows apagado. El diagnostico (que paso, causa y solucion) si es correcto.
+- La pestana Hardware sigue funcionando: muestra el hardware REAL del equipo,
+  aunque el sistema operativo que reporte sea el del medio de rescate.

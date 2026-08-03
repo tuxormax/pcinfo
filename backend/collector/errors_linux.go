@@ -36,14 +36,18 @@ import (
 // colgar el endpoint /errores.
 const timeoutLog = 20 * time.Second
 
-func collectErrors() ErrorsReport {
+// El parámetro raiz (analizar otra instalación desde un medio de rescate) es
+// solo de Windows: en Linux journald del sistema arrancado es la única fuente.
+func collectErrors(_ string) ErrorsReport {
 	rep := ErrorsReport{
-		OS:       runtime.GOOS,
-		Elevated: isElevated(),
-		ScanDays: diasAnalisis,
-		Source:   "journald (registros del sistema y del kernel)",
-		Items:    []SystemError{},
-		Dumps:    []DumpFile{},
+		OS:          runtime.GOOS,
+		Elevated:    isElevated(),
+		ScanDays:    diasAnalisis,
+		Source:      "journald (registros del sistema y del kernel)",
+		TargetLabel: "Este equipo",
+		Items:       []SystemError{},
+		Dumps:       []DumpFile{},
+		Installs:    []Install{},
 	}
 	desde := time.Now().AddDate(0, 0, -diasAnalisis)
 

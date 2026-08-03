@@ -192,6 +192,13 @@ String buildErroresReport(ErroresInfo err, String equipo) {
   line('$appName v$appVersion Rev $appRevision');
   line('Historial de errores del sistema · generado: ${_humanStamp()}');
   if (equipo.isNotEmpty) line('Equipo: $equipo');
+  // Qué instalación se leyó: sin esto, un reporte hecho desde un medio de
+  // rescate parecería del propio medio y no del equipo averiado.
+  if (err.target.isNotEmpty) {
+    line('Instalación analizada: ${err.targetLabel.isEmpty ? err.target : err.targetLabel}'
+        '   (${err.target})'
+        '${err.offline ? "   [NO estaba en ejecución]" : ""}');
+  }
   line('Sistema: ${err.os}   ·   Fuente: ${err.source}');
   line('Periodo analizado: últimos ${err.scanDays} días');
   line('Administrador/root: ${err.elevated ? "sí" : "no"}');

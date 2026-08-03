@@ -98,6 +98,26 @@ jobs:
           if (-not (Test-Path "$rel\vcruntime140.dll")) { throw "vcruntime140.dll no se copió" }
           Get-ChildItem "$rel\*.dll" | Where-Object { $_.Name -match '^(vcruntime|msvcp|concrt|vccorlib)' } | Format-Table Name -AutoSize
 
+      # Paquete PORTABLE (.zip): la misma carpeta Release + el backend y smartctl,
+      # sin instalar nada. Es lo que se lleva en el USB para diagnosticar un equipo
+      # que ya no arranca desde Hiren's BootCD / WinPE: se descomprime y se abre
+      # pcinfo.exe, y en la pestaña Historial de Errores se elige la unidad del
+      # Windows averiado.
+      - name: Armar paquete portable (.zip)
+        shell: pwsh
+        run: |
+          $dest = "portable\PCInfo"
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          Copy-Item "pcinfo\build\windows\x64\runner\Release\*" $dest -Recurse -Force
+          Copy-Item "backend\pcinfo-backend.exe" $dest -Force
+          Copy-Item "backend\smartctl.exe"       $dest -Force
+          Copy-Item "backend\drivedb.h"          $dest -Force
+          Copy-Item "construir\LEEME_PORTABLE.txt" "$dest\LEEME.txt" -Force
+          if (-not (Test-Path "$dest\pcinfo.exe"))         { throw "falta pcinfo.exe en el portable" }
+          if (-not (Test-Path "$dest\pcinfo-backend.exe")) { throw "falta el backend en el portable" }
+          New-Item -ItemType Directory -Force -Path instaladores | Out-Null
+          Compress-Archive -Path $dest -DestinationPath "instaladores\$env:PCINFO_NAME`_portable.zip" -Force
+
       - name: Descargar VC++ Redistributable
         run: Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "construir\vc_redist.x64.exe"
 
@@ -122,7 +142,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="win-v${VERSION}-rev${REVISION}"
-          gh release create "$TAG" "instaladores/${PCINFO_NAME}.exe" \
+          gh release create "$TAG" \
+            "instaladores/${PCINFO_NAME}.exe" \
+            "instaladores/${PCINFO_NAME}_portable.zip" \
             --title "PCInfo v${VERSION} Rev ${REVISION} (Windows)" \
-            --notes "Instalador Windows generado por CI." \
-            || gh release upload "$TAG" "instaladores/${PCINFO_NAME}.exe" --clobber
+            --notes "Instalador Windows y paquete portable (.zip, para USB/Hiren's) generados por CI." \
+            || gh release upload "$TAG" \
+                 "instaladores/${PCINFO_NAME}.exe" \
+                 "instaladores/${PCINFO_NAME}_portable.zip" --clobber

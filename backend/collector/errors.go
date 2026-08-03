@@ -75,23 +75,58 @@ type DumpFile struct {
 	SizeBytes int64  `json:"sizeBytes"`
 }
 
+// Install es una instalación de Windows encontrada en los discos del equipo.
+// Sirve para el selector de la pestaña de errores: arrancando desde un medio de
+// rescate (Hiren's BootCD, WinPE, un USB) se puede analizar el Windows AVERIADO
+// que vive en otra unidad, que es justo cuando más falta hace el historial.
+type Install struct {
+	Root    string `json:"root"`    // raíz de Windows: "D:\\Windows"
+	Drive   string `json:"drive"`   // unidad: "D:"
+	Label   string `json:"label"`   // etiqueta del volumen, si tiene
+	Version string `json:"version"` // versión leída del propio disco, si se pudo
+	Current bool   `json:"current"` // ¿es el Windows que está corriendo ahora?
+}
+
+// Nombre para mostrar en el selector de la GUI.
+func (i Install) Titulo() string {
+	if i.Current {
+		return "Este equipo (" + i.Drive + ")"
+	}
+	s := "Windows en " + i.Drive
+	if i.Label != "" {
+		s += " · " + i.Label
+	}
+	return s
+}
+
 // ErrorsReport es la raíz del JSON de GET /errores.
 type ErrorsReport struct {
-	OS        string        `json:"os"`        // "windows" | "linux"
-	Elevated  bool          `json:"elevated"`  // ¿el backend corre como admin/root?
-	Source    string        `json:"source"`    // fuente consultada (para mostrar)
-	Available bool          `json:"available"` // ¿se pudo leer alguna fuente?
-	Reason    string        `json:"reason"`    // si no, por qué (accionable)
-	ScanDays  int           `json:"scanDays"`  // días de historial analizados
-	Items     []SystemError `json:"items"`
-	Dumps     []DumpFile    `json:"dumps"`
+	OS        string `json:"os"`        // "windows" | "linux"
+	Elevated  bool   `json:"elevated"`  // ¿el backend corre como admin/root?
+	Source    string `json:"source"`    // fuente consultada (para mostrar)
+	Available bool   `json:"available"` // ¿se pudo leer alguna fuente?
+	Reason    string `json:"reason"`    // si no, por qué (accionable)
+	ScanDays  int    `json:"scanDays"`  // días de historial analizados
+
+	// Instalación analizada. Target vacío = el sistema que está corriendo.
+	Target      string    `json:"target"`      // raíz analizada ("D:\\Windows")
+	TargetLabel string    `json:"targetLabel"` // cómo llamarla en pantalla
+	Offline     bool      `json:"offline"`     // se analizó un Windows que NO está corriendo
+	Installs    []Install `json:"installs"`    // opciones para el selector
+
+	Items []SystemError `json:"items"`
+	Dumps []DumpFile    `json:"dumps"`
 }
 
 // CollectErrors arma el reporte de errores del sistema. Igual que Collect(), va
 // envuelto en safe(): si la lectura de registros entra en pánico devuelve un
 // reporte vacío en vez de tumbar el endpoint.
-func CollectErrors() ErrorsReport {
-	rep := safe("errores", collectErrors)
+//
+// raiz: carpeta de Windows a analizar ("D:\\Windows"). Vacío = el sistema que
+// está corriendo, que es el caso normal. Se usa desde un medio de rescate para
+// leer los errores del Windows dañado de otro disco (en Linux se ignora).
+func CollectErrors(raiz string) ErrorsReport {
+	rep := safe("errores", func() ErrorsReport { return collectErrors(raiz) })
 	if rep.OS == "" {
 		rep.OS = runtime.GOOS
 	}
@@ -103,6 +138,9 @@ func CollectErrors() ErrorsReport {
 	}
 	if rep.Dumps == nil {
 		rep.Dumps = []DumpFile{}
+	}
+	if rep.Installs == nil {
+		rep.Installs = []Install{}
 	}
 	ordenaErrores(rep.Items)
 	if len(rep.Items) > maxErrores {

@@ -68,14 +68,29 @@ class _DashboardPageState extends State<DashboardPage> {
     }).catchError((Object _) {});
   }
 
+  /// Instalación de Windows cuyo historial se está viendo. Vacío = la del
+  /// sistema en ejecución. Se llena al elegir otra unidad en el selector de la
+  /// pestaña de errores (equipo que no arranca, visto desde un medio de rescate).
+  String _raizErrores = '';
+
   void _cargaErrores() {
     final svc = widget.erroresService;
     if (svc == null) return;
-    final f = svc.load();
+    final f = svc.load(raiz: _raizErrores);
     _erroresFuture = f;
     f.then((v) {
       if (mounted) setState(() => _errores = v);
     }).catchError((Object _) {});
+  }
+
+  /// Cambia la instalación analizada y recarga el historial.
+  void _cambiaInstalacion(String raiz) {
+    if (raiz == _raizErrores) return;
+    setState(() {
+      _raizErrores = raiz;
+      _errores = null;
+      _cargaErrores();
+    });
   }
 
   /// Refresca SOLO la pestaña visible (recargar el historial de errores es caro).
@@ -237,6 +252,7 @@ class _DashboardPageState extends State<DashboardPage> {
             data.isWindows && !data.elevated && widget.launcher != null;
         return ErroresPage(
           data: data,
+          onInstalacion: _cambiaInstalacion,
           avisoAccion: !puedeElevar
               ? null
               : FilledButton.icon(

@@ -8,8 +8,14 @@
       - Evento 1001 Microsoft-Windows-WER-SystemErrorReporting  → pantallazo azul (BSOD)
       - Evento 41   Microsoft-Windows-Kernel-Power (con BugcheckCode) → BSOD sin WER
       - Evento 6008 EventLog → apagado inesperado
-      - C:\Windows\Minidump\*.dmp y C:\Windows\MEMORY.DMP → análisis del culpable
+      - <Raiz>\Minidump\*.dmp y <Raiz>\MEMORY.DMP → análisis del culpable
       - Registro System y Application, niveles Crítico(1) y Error(2) → resto de fallos
+
+    -Raiz: carpeta de Windows a analizar. Por omisión la del sistema en ejecución.
+    Si se pasa la de OTRA unidad (D:\Windows), el modo pasa a ser OFFLINE: los
+    eventos ya no se piden al servicio de registro (ese Windows no está corriendo),
+    sino que se leen DIRECTAMENTE de sus archivos .evtx. Sirve para diagnosticar
+    desde un medio de rescate (Hiren's BootCD PE, WinPE) un equipo que ya no arranca.
 
     Portado de www/windows/bluescreen.ps1 (catálogo de STOP codes, guía en español y
     deducción del driver culpable a partir del volcado, sin herramientas externas).
@@ -19,11 +25,21 @@
 param(
     [Parameter(Mandatory = $true)][string]$Salida,
     [int]$Dias = 30,
-    [int]$MaxEventos = 400
+    [int]$MaxEventos = 400,
+    [string]$Raiz = ''
 )
 
 $ErrorActionPreference = 'Stop'
 $desde = (Get-Date).AddDays(-$Dias)
+
+# ==============================================================================
+#  Instalación a analizar (la del sistema vivo o la de otra unidad)
+# ==============================================================================
+if ([string]::IsNullOrWhiteSpace($Raiz)) { $Raiz = $env:SystemRoot }
+$Raiz = $Raiz.TrimEnd('\')
+# OFFLINE = la carpeta pedida no es la del Windows que está corriendo.
+$OFFLINE = -not ($Raiz -ieq ("$env:SystemRoot").TrimEnd('\'))
+$LOGS = Join-Path $Raiz 'System32\winevt\Logs'
 
 # ==============================================================================
 #  Catálogo de STOP codes (nombre + causa/solución en español)
@@ -187,7 +203,9 @@ $CLASE_HINTS = @{
 # ==============================================================================
 
 function Get-DriverInfo([string]$nombre) {
-    $dirs = @("$env:SystemRoot\System32\drivers", "$env:SystemRoot\System32", "$env:SystemRoot\SysWOW64", "$env:SystemRoot")
+    # Los drivers se buscan en la instalación ANALIZADA: en modo offline lo que
+    # interesa es el driver del equipo averiado, no el del medio de rescate.
+    $dirs = @("$Raiz\System32\drivers", "$Raiz\System32", "$Raiz\SysWOW64", "$Raiz")
     foreach ($d in $dirs) {
         if ([string]::IsNullOrWhiteSpace($d)) { continue }
         $p = Join-Path $d $nombre
@@ -288,7 +306,7 @@ function Analiza-Dump($archivoDump, $stopEvento) {
 
 function Get-Minidumps {
     $dumps = @()
-    foreach ($r in @("$env:SystemRoot\Minidump", "$env:SystemRoot")) {
+    foreach ($r in @("$Raiz\Minidump", "$Raiz")) {
         if (Test-Path $r) {
             try {
                 $dumps += Get-ChildItem -Path $r -Filter '*.dmp' -File -ErrorAction SilentlyContinue |
@@ -300,6 +318,12 @@ function Get-Minidumps {
 }
 
 function Buscar-Dump($cuando, $rutaDump, $dumps) {
+    # La ruta que anoto Windows es la SUYA ("C:\Windows\Minidump\...", con la
+    # letra que tenia al fallar). Vista desde el medio de rescate esa unidad puede
+    # ser otra letra, asi que se traduce a la raiz que se esta analizando.
+    if ($rutaDump -and $OFFLINE -and ($rutaDump -match '(?i)^[A-Z]:\\Windows\\(.+)$')) {
+        $rutaDump = Join-Path $Raiz $Matches[1]
+    }
     if ($rutaDump -and (Test-Path $rutaDump)) { return Get-Item $rutaDump }
     if (-not $dumps -or $dumps.Count -eq 0) { return $null }
     $best = $null; $bestDiff = [double]::MaxValue
@@ -455,9 +479,70 @@ function Info-Evento($proveedor, $id, $nivel) {
 #  Lectura de eventos
 # ==============================================================================
 
+# En modo OFFLINE no se puede preguntar al servicio de registro de eventos (el
+# Windows analizado esta apagado): se leen sus archivos .evtx directamente.
+# LogName 'System' -> <Raiz>\System32\winevt\Logs\System.evtx
 function Get-Eventos($filtro, $max) {
-    try { return @(Get-WinEvent -FilterHashtable $filtro -MaxEvents $max -ErrorAction Stop) }
-    catch { return @() }
+    if (-not $OFFLINE) {
+        try { return @(Get-WinEvent -FilterHashtable $filtro -MaxEvents $max -ErrorAction Stop) }
+        catch { return @() }
+    }
+    $archivo = Join-Path $LOGS ("$($filtro['LogName']).evtx")
+    if (-not (Test-Path $archivo)) { return @() }
+    # Get-WinEvent tambien sabe leer un .evtx suelto (clave Path del filtro).
+    $f = @{ Path = $archivo }
+    foreach ($k in $filtro.Keys) { if ($k -ne 'LogName') { $f[$k] = $filtro[$k] } }
+    try { return @(Get-WinEvent -FilterHashtable $f -MaxEvents $max -ErrorAction Stop) }
+    catch { return (Lee-Evtx $archivo $filtro $max) }
+}
+
+# Respaldo para entornos recortados (WinPE / Hiren's) donde Get-WinEvent puede no
+# estar disponible: la misma lectura con la API .NET de eventos y una consulta
+# XPath equivalente al filtro.
+function Xpath-Filtro($filtro) {
+    $cond = @()
+    if ($filtro['ProviderName']) { $cond += "Provider[@Name='$($filtro['ProviderName'])']" }
+    if ($filtro['Id']) { $cond += "(EventID=$($filtro['Id']))" }
+    if ($filtro['Level']) { $cond += '(' + ((@($filtro['Level']) | ForEach-Object { "Level=$_" }) -join ' or ') + ')' }
+    $cond += "TimeCreated[timediff(@SystemTime) <= $([int64]$Dias * 86400000)]"
+    return '*[System[' + ($cond -join ' and ') + ']]'
+}
+
+function Lee-Evtx([string]$archivo, $filtro, [int]$max) {
+    $res = @()
+    $lector = $null
+    try {
+        $consulta = New-Object System.Diagnostics.Eventing.Reader.EventLogQuery(
+            $archivo, [System.Diagnostics.Eventing.Reader.PathType]::FilePath, (Xpath-Filtro $filtro))
+        $consulta.ReverseDirection = $true   # del mas reciente al mas viejo
+        $lector = New-Object System.Diagnostics.Eventing.Reader.EventLogReader($consulta)
+        while ($res.Count -lt $max) {
+            $ev = $lector.ReadEvent()
+            if ($null -eq $ev) { break }
+            $res += $ev
+        }
+    } catch { return @() }
+    finally { if ($lector) { try { $lector.Dispose() } catch { } } }
+    return @($res)
+}
+
+# El texto de un evento lo arma el proveedor que lo emitio. Analizando un Windows
+# apagado esos textos pueden no resolverse (las DLL de mensajes son las del
+# sistema vivo): en ese caso se cae al contenido crudo del evento, que basta
+# porque el diagnostico sale del catalogo por proveedor+Id, no del mensaje.
+function Mensaje($e) {
+    try { if ($e.Message) { return "$($e.Message)" } } catch { }
+    try { if ($e.FormatDescription()) { return "$($e.FormatDescription())" } } catch { }
+    try {
+        $xml = [xml]$e.ToXml()
+        $partes = @()
+        foreach ($d in $xml.Event.EventData.Data) {
+            $n = "$($d.Name)"; $v = "$($d.'#text')"
+            if ($v) { if ($n) { $partes += "${n}: $v" } else { $partes += $v } }
+        }
+        if ($partes.Count -gt 0) { return "(Sin texto descriptivo: el sistema analizado no esta en ejecucion)`r`n" + ($partes -join "`r`n") }
+    } catch { }
+    return '(El evento no trae texto descriptivo)'
 }
 
 # Acepta cualquier valor (algunos registros llegan sin fecha) para no reventar
@@ -473,7 +558,14 @@ $dumps = Get-Minidumps
 # ---- 1) Pantallazos azules ---------------------------------------------------
 $bsod = @()
 foreach ($e in (Get-Eventos @{ LogName = 'System'; ProviderName = 'Microsoft-Windows-WER-SystemErrorReporting'; Id = 1001; StartTime = $desde } 60)) {
-    $msg = $e.Message; $stop = ''; $params = ''; $rutaDump = ''
+    $msg = Mensaje $e
+    # Analizando un sistema apagado el texto puede no resolverse; el parametro
+    # crudo del evento 1001 ("0x0000007e (0x...,...)") lleva el mismo STOP code.
+    try {
+        $crudo = @($e.Properties | ForEach-Object { "$($_.Value)" }) -join ' '
+        if ($crudo -and ($msg -notmatch '0x[0-9A-Fa-f]{8}')) { $msg = "$msg`r`n$crudo" }
+    } catch { }
+    $stop = ''; $params = ''; $rutaDump = ''
     if ($msg -match '(0x[0-9A-Fa-f]{8,16})\s*\(0x[0-9A-Fa-f]+,\s*0x[0-9A-Fa-f]+,\s*0x[0-9A-Fa-f]+,\s*0x[0-9A-Fa-f]+\)') { $stop = $Matches[1] }
     if ($msg -match '\((0x[0-9A-Fa-f]+,\s*0x[0-9A-Fa-f]+,\s*0x[0-9A-Fa-f]+,\s*0x[0-9A-Fa-f]+)\)') { $params = $Matches[1] }
     if ($msg -match '([A-Za-z]:\\[^\r\n]+\.(?:dmp|DMP))') { $rutaDump = $Matches[1] }
@@ -491,7 +583,7 @@ foreach ($e in (Get-Eventos @{ LogName = 'System'; ProviderName = 'Microsoft-Win
         }
     } catch { }
     if (-not $stop) { continue }  # 41 sin bugcheck = corte de energia: va al catalogo de eventos
-    $bsod += [pscustomobject]@{ Cuando = $e.TimeCreated; Id = "bsod-41-$($e.RecordId)"; Fuente = "Evento 41 Kernel-Power"; Stop = $stop; Params = ''; Dump = ''; Mensaje = "$($e.Message)`r`n$extra" }
+    $bsod += [pscustomobject]@{ Cuando = $e.TimeCreated; Id = "bsod-41-$($e.RecordId)"; Fuente = "Evento 41 Kernel-Power"; Stop = $stop; Params = ''; Dump = ''; Mensaje = "$(Mensaje $e)`r`n$extra" }
 }
 
 # Analizar un volcado cuesta segundos (se leen decenas de MB y se buscan modulos),
@@ -593,7 +685,7 @@ foreach ($e in $registros) {
         code = "$id"; codeName = ''
         culprit = ''; culpritInfo = ''; confidence = ''; suspects = @()
         cause = $info.causa; fix = $info.fix
-        detail = "$($e.Message)"
+        detail = (Mensaje $e)
     }
     $grupos[$clave] = $item
     [void]$orden.Add($clave)
@@ -609,7 +701,7 @@ $listaDumps = New-Object System.Collections.ArrayList
 foreach ($d in ($dumps | Select-Object -First 30)) {
     [void]$listaDumps.Add([ordered]@{ path = $d.FullName; when = (Fecha $d.LastWriteTime); sizeBytes = [int64]$d.Length })
 }
-$memdmp = Join-Path $env:SystemRoot 'MEMORY.DMP'
+$memdmp = Join-Path $Raiz 'MEMORY.DMP'
 if (Test-Path $memdmp) {
     $mi = Get-Item $memdmp
     if (-not ($listaDumps | Where-Object { $_.path -eq $mi.FullName })) {

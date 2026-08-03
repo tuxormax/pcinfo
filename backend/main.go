@@ -66,8 +66,12 @@ func handleHardware(w http.ResponseWriter, _ *http.Request) {
 // handleErrores sirve el "Historial de Errores": pantallazos azules y registro de
 // eventos en Windows, journald/kernel en Linux, ya interpretados. Va aparte de
 // /hardware porque es más lento y la GUI solo lo pide al abrir esa pestaña.
-func handleErrores(w http.ResponseWriter, _ *http.Request) {
-	responde(w, "/errores", collector.CollectErrors())
+//
+// Parámetro opcional ?raiz=D:\Windows (Windows): analiza esa instalación en vez
+// de la que está corriendo. Es lo que usa el selector de unidad de la GUI para
+// leer los errores de un equipo que ya no arranca desde un medio de rescate.
+func handleErrores(w http.ResponseWriter, r *http.Request) {
+	responde(w, "/errores", collector.CollectErrors(r.URL.Query().Get("raiz")))
 }
 
 func responde(w http.ResponseWriter, ruta string, dato any) {
