@@ -27,6 +27,7 @@ Los instaladores **no se guardan en el repositorio** (son binarios pesados). Se 
 |---|---|---|
 | Linux (Debian/Ubuntu) | `pcinfo_v<version>_rev-<rev>.deb` | `sudo apt install ./pcinfo_v1.1_rev-25.deb` |
 | Windows 10 u 11 (64 bits) | `pcinfo_v<version>_rev-<rev>.exe` | Doble clic y seguir el asistente |
+| Windows — versión portable | `pcinfo_v<version>_rev-<rev>_portable.zip` | Descomprimir y abrir `pcinfo.exe` (no instala nada) |
 
 Notas:
 
@@ -34,10 +35,22 @@ Notas:
 - La lectura de salud S.M.A.R.T. de los discos pide permisos de administrador/root; el resto del inventario funciona sin ellos.
 - ¿Prefieres compilarlo tú mismo? Ver **[construir/LEEME.md](construir/LEEME.md)**.
 
+## Diagnosticar un equipo que ya no arranca
+
+La versión **portable** cabe en una memoria USB y sirve para revisar un equipo que no entra a Windows:
+
+1. Arranca el equipo con un medio de rescate en modo live (**Hiren's BootCD PE** o cualquier WinPE).
+2. Abre `pcinfo.exe` desde la USB.
+3. En la pestaña **Historial de Errores**, el selector *«Analizando el Windows de:»* lista las instalaciones encontradas en los discos. Elige la del Windows averiado — normalmente `C:` o `D:`, no la unidad del medio de rescate.
+
+PCInfo lee entonces **sus** registros de eventos y **sus** volcados de pantallazo azul aunque ese Windows no pueda arrancar, deduce el driver culpable a partir del volcado y explica qué pasó y cómo resolverlo. Al analizar una instalación apagada se revisan los últimos **180 días** en lugar de 30, porque un equipo averiado suele llevar semanas sin usarse. Con **Guardar** queda un `.txt` con todo el diagnóstico.
+
+La pestaña *Hardware* sigue funcionando en ese escenario y muestra el hardware real del equipo (el sistema operativo que reporta es el del medio de rescate).
+
 ## Arquitectura
 
 - **`pcinfo/`** — interfaz gráfica en **Flutter** (desktop Linux/Windows), con dos pestañas: *Hardware* e *Historial de Errores*.
-- **`backend/`** — recolector en **Go** que expone por HTTP local (JSON) el inventario (`GET /hardware`) y el historial de errores (`GET /errores`), usando `ghw` (inventario), `smartctl` (salud S.M.A.R.T. de discos), `nvidia-smi` (GPU), el registro de eventos de Windows y journald en Linux.
+- **`backend/`** — recolector en **Go** que expone por HTTP local (JSON) el inventario (`GET /hardware`) y el historial de errores (`GET /errores`, con `?raiz=D:\Windows` para analizar otra instalación), usando `ghw` (inventario), `smartctl` (salud S.M.A.R.T. de discos), `nvidia-smi` (GPU), el registro de eventos de Windows y journald en Linux.
 
 La GUI consume el JSON del backend; la misma base de código sirve para Linux y Windows.
 
