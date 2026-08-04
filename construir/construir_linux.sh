@@ -23,7 +23,11 @@ trap 'rm -rf "$STAGE"' EXIT
 export PATH="$HOME/go-sdk/go/bin:$HOME/flutter/bin:$PATH"
 
 echo ">> Compilando backend Go (linux/amd64)..."
-( cd "$BACKEND_DIR" && GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o "$STAGE/pcinfo-backend" . )
+# -X main.build* = versión/revisión dentro del backend: /healthz la publica y la
+# GUI detecta así un backend viejo ocupando el puerto tras actualizar.
+( cd "$BACKEND_DIR" && GOOS=linux GOARCH=amd64 go build \
+    -ldflags="-s -w -X main.buildVersion=$VERSION -X main.buildRevision=$REVISION" \
+    -o "$STAGE/pcinfo-backend" . )
 
 echo ">> Compilando GUI Flutter (release)..."
 ( cd "$APP_DIR" && flutter build linux --release )

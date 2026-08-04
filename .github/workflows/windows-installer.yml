@@ -49,7 +49,9 @@ jobs:
         working-directory: backend
         # -H windowsgui = subsistema GUI: el backend NO abre ventana de consola
         # (antes se veía el cmd negro "PCInfo backend escuchando..." al iniciar).
-        run: go build -ldflags "-s -w -H windowsgui" -o pcinfo-backend.exe .
+        # -X main.build* = versión/revisión dentro del backend: /healthz la
+        # publica y la GUI detecta así un backend viejo ocupando el puerto.
+        run: go build -ldflags "-s -w -H windowsgui -X main.buildVersion=${{ env.VERSION }} -X main.buildRevision=${{ env.REVISION }}" -o pcinfo-backend.exe .
 
       - name: Empaquetar smartctl (smartmontools) para el backend
         shell: pwsh

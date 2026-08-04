@@ -5,12 +5,26 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"runtime/debug"
 	"time"
 
 	"pcinfo-backend/collector"
+)
+
+// Versión con la que se compiló el backend. La inyectan los scripts de
+// construcción desde pcinfo/lib/version.dart (única fuente de verdad):
+//
+//	go build -ldflags "-X main.buildVersion=1.2 -X main.buildRevision=31"
+//
+// En una compilación suelta (desarrollo) queda "dev", y la GUI lo respeta tal
+// cual en vez de intentar reemplazar el backend.
+var (
+	buildVersion  = "dev"
+	buildRevision = "0"
 )
 
 func main() {
@@ -32,11 +46,9 @@ func main() {
 // runServer levanta el servidor HTTP y bloquea.
 func runServer(addr string) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/hardware", handleHardware)
-	mux.HandleFunc("/errores", handleErrores)
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte("ok"))
-	})
+	mux.HandleFunc("/hardware", protege("/hardware", handleHardware))
+	mux.HandleFunc("/errores", protege("/errores", handleErrores))
+	mux.HandleFunc("/healthz", handleHealth)
 
 	srv := &http.Server{
 		Addr:              addr,
@@ -57,6 +69,50 @@ func defaultAddr() string {
 		return v
 	}
 	return "127.0.0.1:51247"
+}
+
+// handleHealth identifica al backend que está contestando: con qué versión se
+// compiló, desde qué ejecutable corre y con qué PID. La GUI lo compara con SU
+// propia versión: si el puerto lo ocupa un backend VIEJO que quedó vivo (pasa al
+// instalar una versión nueva encima sin cerrar la anterior), la app lo sustituye
+// en vez de hablar con él — si no, la versión nueva seguiría mostrando fallos ya
+// corregidos, porque quien responde es el binario anterior.
+func handleHealth(w http.ResponseWriter, _ *http.Request) {
+	exe, _ := os.Executable()
+	responde(w, "/healthz", map[string]any{
+		"ok":       true,
+		"version":  buildVersion,
+		"revision": buildRevision,
+		"exe":      exe,
+		"pid":      os.Getpid(),
+	})
+}
+
+// protege devuelve el error EN LA RESPUESTA si el colector se rompe. Sin esto un
+// panic corta la conexión y la GUI solo puede decir "el servicio no responde",
+// que es indistinguible de un backend caído y no deja diagnosticar nada en un
+// equipo ajeno. Ahora la app recibe el mensaje y la traza, y puede mostrarlos
+// para copiarlos.
+func protege(ruta string, h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			p := recover()
+			if p == nil {
+				return
+			}
+			traza := string(debug.Stack())
+			log.Printf("fallo interno en %s: %v\n%s", ruta, p, traza)
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"ok":    false,
+				"ruta":  ruta,
+				"error": fmt.Sprintf("%v", p),
+				"stack": traza,
+			})
+		}()
+		h(w, r)
+	}
 }
 
 func handleHardware(w http.ResponseWriter, _ *http.Request) {

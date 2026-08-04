@@ -1,5 +1,40 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+
+import '../version.dart';
+
+/// Identidad del backend que está contestando en el puerto. La publica /healthz
+/// desde la Rev 31; un backend anterior responde sólo "ok" y queda [identificado]
+/// en false, que ya es señal de que es viejo.
+class BackendInfo {
+  const BackendInfo({
+    this.vivo = false,
+    this.version = '',
+    this.revision = '',
+    this.exe = '',
+    this.pid = 0,
+  });
+
+  final bool vivo;
+  final String version;
+  final String revision;
+  final String exe;
+  final int pid;
+
+  bool get identificado => version.isNotEmpty;
+
+  /// Backend compilado a mano (sin los -ldflags de los scripts de construcción).
+  /// No se toca: es el flujo de desarrollo.
+  bool get esDesarrollo => version == 'dev';
+
+  /// Coincide con la versión de ESTA app.
+  bool get coincide => version == appVersion && revision == '$appRevision';
+
+  String get etiqueta => identificado
+      ? 'v$version Rev $revision'
+      : 'una versión anterior a la Rev 31';
+}
 
 /// Arranca el backend Go (pcinfo-backend) como proceso HIJO mientras la app está
 /// abierta (estilo HWiNFO: NO hay servicio en 2º plano). Primero sondea /healthz
@@ -23,14 +58,43 @@ class BackendLauncher {
 
   Process? _proc;
 
-  /// Garantiza que haya un backend respondiendo. Devuelve true si al terminar
-  /// /healthz responde (sea el que ya estaba o el que se acaba de lanzar).
-  /// Nunca lanza excepción: si algo falla, la GUI muestra el estado de error.
-  Future<bool> ensureRunning() async {
-    if (await _healthy()) return true; // ya corre (otra ventana, o servicio en Linux)
+  /// Backend que quedó contestando tras [ensureRunning]. Si [desfasado] es true,
+  /// es de OTRA versión y no se pudo reemplazar: la GUI lo avisa, porque explica
+  /// que sigan apareciendo fallos ya corregidos en la versión instalada.
+  BackendInfo info = const BackendInfo();
+  bool desfasado = false;
 
+  /// Garantiza que haya un backend respondiendo Y que sea el de ESTA versión.
+  /// Devuelve true si al terminar /healthz responde (el que ya estaba, o el que
+  /// se acaba de lanzar). Nunca lanza excepción: si algo falla, la GUI muestra
+  /// el estado de error.
+  ///
+  /// El puerto es fijo (51247), así que un backend VIEJO que siguiera vivo tras
+  /// actualizar (típico: instalar encima sin cerrar la app) se quedaría con él y
+  /// la versión nueva hablaría con el binario anterior. Por eso aquí no basta
+  /// con que "algo responda": se comprueba QUIÉN responde y, si no es el nuestro,
+  /// se intenta reemplazar. Si no se puede (corre elevado, o es el servicio root
+  /// de Linux), se usa igual y se marca [desfasado] en vez de dejar la app sin
+  /// datos.
+  Future<bool> ensureRunning() async {
     final bin = _locateBinary();
-    if (bin == null) return false; // sin binario empaquetado (p. ej. dev sin build)
+    info = await _estado();
+    if (info.vivo && _esNuestro(info)) return true;
+
+    if (bin == null) {
+      // Sin binario propio (dev sin build): usar lo que haya, si hay algo.
+      desfasado = info.vivo;
+      return info.vivo;
+    }
+
+    if (info.vivo) {
+      // Backend de otra versión ocupando el puerto: quitarlo de en medio.
+      await _mataAjeno(info);
+      if (!await _waitUnhealthy(25)) {
+        desfasado = true;
+        return true; // no se pudo: mejor datos de la versión vieja que nada
+      }
+    }
 
     // Argumentos comunes: dirección + PID de esta GUI (para que el backend se
     // cierre solo cuando la app se cierre, incluso si corre elevado).
@@ -40,7 +104,8 @@ class BackendLauncher {
     // no elevado. En Linux/otros, lanzar normal (el servicio ya da privilegios).
     if (Platform.isWindows) {
       if (await _startElevated(bin, args)) {
-        if (await _waitHealthy(60)) return true; // el UAC puede tardar en aceptarse
+        // el UAC puede tardar en aceptarse
+        if (await _waitHealthy(60)) return _confirma();
       }
       // Respaldo: sin elevación (la app abre, el disco sale sin salud).
     }
@@ -57,7 +122,45 @@ class BackendLauncher {
     } catch (_) {
       return false;
     }
-    return _waitHealthy(25);
+    if (!await _waitHealthy(25)) return false;
+    return _confirma();
+  }
+
+  /// Relee /healthz tras lanzar el backend para dejar [info]/[desfasado] al día.
+  Future<bool> _confirma() async {
+    info = await _estado();
+    desfasado = info.vivo && !_esNuestro(info);
+    return info.vivo;
+  }
+
+  /// ¿El backend que contesta es el de esta versión?
+  ///  - sin identificar → es anterior a la Rev 31 (no publica su versión);
+  ///  - "dev" → compilado a mano: se respeta (flujo de desarrollo);
+  ///  - si no, tiene que coincidir versión + revisión con la app.
+  bool _esNuestro(BackendInfo h) {
+    if (!h.identificado) return false;
+    if (h.esDesarrollo) return true;
+    return h.coincide;
+  }
+
+  /// Termina el backend de otra versión que ocupa el puerto.
+  /// En Windows por nombre de imagen (si corre ELEVADO y la GUI no lo está, el
+  /// taskkill falla: el llamador lo detecta porque el puerto sigue ocupado).
+  /// En Linux NO se toca: ahí el backend es el servicio root del paquete, que se
+  /// actualiza con el .deb; matarlo desde la GUI ni se puede ni corresponde.
+  Future<void> _mataAjeno(BackendInfo h) async {
+    stop(); // por si fue uno lanzado por esta misma app
+    if (!Platform.isWindows) return;
+    // Por PID si /healthz lo dijo (preciso); si no, por nombre de imagen (el
+    // backend anterior a la Rev 31 no publica su PID).
+    final args = h.pid > 0
+        ? <String>['/F', '/PID', '${h.pid}']
+        : <String>['/F', '/IM', 'pcinfo-backend.exe'];
+    try {
+      await Process.run('taskkill', args);
+    } catch (_) {
+      // sin permisos o sin taskkill: se sigue con el que hay
+    }
   }
 
   /// Reintenta dejar el backend corriendo ELEVADO (Windows). Se usa cuando el
@@ -75,7 +178,8 @@ class BackendLauncher {
     stop(); // mata el backend no elevado (si lo lanzamos nosotros)
     await _waitUnhealthy(25); // dar tiempo a que el puerto quede libre
     if (!await _startElevated(bin, args)) return false; // UAC cancelado / error
-    return _waitHealthy(60); // el UAC puede tardar en aceptarse
+    if (!await _waitHealthy(60)) return false; // el UAC puede tardar en aceptarse
+    return _confirma();
   }
 
   /// Sondea hasta que /healthz DEJE de responder (puerto liberado) o se agoten
@@ -129,15 +233,32 @@ class BackendLauncher {
     _proc = null;
   }
 
-  Future<bool> _healthy() async {
+  Future<bool> _healthy() async => (await _estado()).vivo;
+
+  /// Pregunta a /healthz QUIÉN está contestando. Un backend anterior a la Rev 31
+  /// responde el texto "ok" (sin identificarse): eso deja [BackendInfo.vivo] en
+  /// true e [identificado] en false, que es justo lo que hay que detectar.
+  Future<BackendInfo> _estado() async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 1);
     try {
       final req = await client.getUrl(Uri.parse('http://$host:$port/healthz'));
       final resp = await req.close().timeout(const Duration(seconds: 2));
-      await resp.drain<void>();
-      return resp.statusCode == 200;
+      final cuerpo = await resp.transform(utf8.decoder).join();
+      if (resp.statusCode != 200) return const BackendInfo();
+      try {
+        final j = jsonDecode(cuerpo) as Map<String, dynamic>;
+        return BackendInfo(
+          vivo: true,
+          version: '${j['version'] ?? ''}',
+          revision: '${j['revision'] ?? ''}',
+          exe: '${j['exe'] ?? ''}',
+          pid: (j['pid'] as num?)?.toInt() ?? 0,
+        );
+      } catch (_) {
+        return const BackendInfo(vivo: true); // backend viejo: solo dice "ok"
+      }
     } catch (_) {
-      return false;
+      return const BackendInfo();
     } finally {
       client.close(force: true);
     }

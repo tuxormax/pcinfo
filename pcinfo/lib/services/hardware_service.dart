@@ -1,7 +1,5 @@
-import 'dart:convert';
-import 'dart:io';
-
 import '../models/hardware.dart';
+import 'backend_http.dart';
 
 /// Fuente de datos de hardware.
 /// MockHardwareService: datos de ejemplo. HttpHardwareService: backend Go real.
@@ -22,23 +20,18 @@ class HttpHardwareService implements HardwareService {
 
   @override
   Future<HardwareInfo> load() async {
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 5);
     try {
-      final req = await client.getUrl(endpoint);
       // Margen amplio: el primer arranque en frío del colector (WMI + smartctl
       // por disco) puede tardar varios segundos en algunas máquinas.
-      final resp = await req.close().timeout(const Duration(seconds: 30));
-      if (resp.statusCode != 200) {
-        throw HttpException('HTTP ${resp.statusCode}', uri: endpoint);
-      }
-      final body = await resp.transform(utf8.decoder).join();
-      return HardwareInfo.fromJson(jsonDecode(body) as Map<String, dynamic>);
+      final json = await pideJson(
+        endpoint,
+        espera: const Duration(seconds: 30),
+        que: 'al leer el hardware',
+      );
+      return HardwareInfo.fromJson(json);
     } catch (e) {
       if (fallback != null) return fallback!.load();
       rethrow;
-    } finally {
-      client.close(force: true);
     }
   }
 }

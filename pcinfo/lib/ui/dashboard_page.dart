@@ -1,8 +1,12 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import '../version.dart';
 import '../models/errores.dart';
 import '../models/hardware.dart';
+import '../services/backend_http.dart';
 import '../services/backend_launcher.dart';
 import '../services/errores_service.dart';
 import '../services/hardware_service.dart';
@@ -139,43 +143,111 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
-  // Estado cuando el backend no responde: NO se muestran datos de ejemplo, sino
-  // un aviso claro con "Reintentar". El backend corre como servicio; si no está,
-  // este mensaje evita confundir datos falsos con los del equipo.
-  Widget _errorState() {
+  // Estado cuando la lectura falla: NO se muestran datos de ejemplo, sino la
+  // CAUSA concreta (backend caído, tardanza, o el error interno con su traza) y
+  // un botón para copiarla. Antes todo terminaba en "el servicio no responde",
+  // que es indistinguible entre un backend que no arrancó y uno que se rompió
+  // leyendo el equipo, y deja sin nada que reportar.
+  Widget _estadoFallo(String titulo, Object? error) {
+    final err = error is BackendError
+        ? error
+        : BackendError(
+            'El servicio de PCInfo no está respondiendo.',
+            detalle: error == null ? '' : '$error',
+          );
     return Center(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             const Icon(Icons.error_outline, color: AppColors.textMid, size: 48),
             const SizedBox(height: 16),
-            const Text(
-              'No se pudo leer el hardware',
-              style: TextStyle(
+            Text(
+              titulo,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
                 color: AppColors.textHi,
                 fontSize: kFont + 2,
                 fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(height: 8),
-            const Text(
-              'El servicio de PCInfo no está respondiendo.\n'
-              'Verifica que el servicio "PCInfoBackend" esté en ejecución.',
+            Text(
+              err.mensaje,
               textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.textMid, fontSize: kFont),
+              style: const TextStyle(color: AppColors.textMid, fontSize: kFont),
             ),
+            if (err.detalle.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 720, maxHeight: 220),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceAlt,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: SingleChildScrollView(
+                    child: SelectableText(
+                      err.detalle,
+                      style: const TextStyle(
+                        color: AppColors.textMid,
+                        fontSize: kFont - 1,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 20),
-            FilledButton.icon(
-              onPressed: _refresh,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Reintentar'),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                FilledButton.icon(
+                  onPressed: _refresh,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Reintentar'),
+                ),
+                if (err.detalle.isNotEmpty) ...[
+                  const SizedBox(width: 12),
+                  OutlinedButton.icon(
+                    onPressed: () => _copiaFallo(titulo, err),
+                    icon: const Icon(Icons.copy_rounded, size: 16),
+                    label: const Text('Copiar detalles'),
+                  ),
+                ],
+              ],
             ),
           ],
         ),
       ),
     );
+  }
+
+  /// Copia el fallo con la versión de la app y del backend: sin eso un reporte
+  /// no dice contra qué versión ocurrió.
+  Future<void> _copiaFallo(String titulo, BackendError err) async {
+    final info = widget.launcher?.info;
+    final texto = StringBuffer()
+      ..writeln('[PCInfo] $titulo')
+      ..writeln(err.mensaje)
+      ..writeln()
+      ..writeln('App: $appName v$appVersion Rev $appRevision')
+      ..writeln('Backend: ${info == null || !info.vivo ? 'no responde' : info.etiqueta}')
+      ..writeln('Sistema: ${Platform.operatingSystemVersion}')
+      ..writeln()
+      ..writeln(err.detalle);
+    await Clipboard.setData(ClipboardData(text: texto.toString()));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      backgroundColor: AppColors.surfaceAlt,
+      content: Text('Detalles copiados al portapapeles',
+          style: TextStyle(color: AppColors.textHi, fontSize: kFont)),
+    ));
   }
 
   @override
@@ -187,6 +259,7 @@ class _DashboardPageState extends State<DashboardPage> {
           children: [
             _topBar(),
             _tabsBar(),
+            _avisoBackendViejo(),
             Expanded(child: _tab == 0 ? _tabHardware() : _tabErrores()),
           ],
         ),
@@ -204,7 +277,9 @@ class _DashboardPageState extends State<DashboardPage> {
             child: CircularProgressIndicator(color: AppColors.accent),
           );
         }
-        if (snap.hasError) return _errorState();
+        if (snap.hasError) {
+          return _estadoFallo('No se pudo leer el hardware', snap.error);
+        }
         return _content(snap.data!);
       },
     );
@@ -239,11 +314,8 @@ class _DashboardPageState extends State<DashboardPage> {
           );
         }
         if (snap.hasError) {
-          return _mensajeCentrado(
-            Icons.error_outline,
-            'No se pudo leer el historial de errores',
-            'El servicio de PCInfo no respondió.\nUsa "Refrescar" para intentarlo de nuevo.',
-          );
+          return _estadoFallo(
+              'No se pudo leer el historial de errores', snap.error);
         }
         final data = snap.data!;
         // En Windows, si el backend no está elevado se ofrece relanzarlo con
@@ -302,6 +374,36 @@ class _DashboardPageState extends State<DashboardPage> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Aviso cuando quien contesta en el puerto es un backend de OTRA versión que
+  /// no se pudo reemplazar (quedó vivo de una instalación anterior y corre con
+  /// permisos que esta ventana no puede tocar). Importa porque, sin saberlo, la
+  /// app nueva muestra los resultados del binario viejo: siguen apareciendo
+  /// fallos ya corregidos y da la impresión de que la actualización no sirvió.
+  Widget _avisoBackendViejo() {
+    final l = widget.launcher;
+    if (l == null || !l.desfasado) return const SizedBox.shrink();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      color: const Color(0x33E0A33A),
+      child: Row(
+        children: [
+          const Icon(Icons.warning_amber_rounded,
+              size: 18, color: Color(0xFFE0A33A)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Los datos los está entregando ${l.info.etiqueta} de PCInfo, no la '
+              'versión instalada (v$appVersion Rev $appRevision). Cierra todas las '
+              'ventanas de PCInfo y vuelve a abrir para que se use la nueva.',
+              style: const TextStyle(color: AppColors.textHi, fontSize: kFont),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -1,7 +1,5 @@
-import 'dart:convert';
-import 'dart:io';
-
 import '../models/errores.dart';
+import 'backend_http.dart';
 
 /// Fuente del "Historial de Errores". Va aparte de HardwareService porque el
 /// backend lo expone en otro endpoint (/errores) y es bastante más lento: la GUI
@@ -24,20 +22,13 @@ class HttpErroresService implements ErroresService {
     final uri = raiz.isEmpty
         ? endpoint
         : endpoint.replace(queryParameters: {'raiz': raiz});
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 5);
-    try {
-      final req = await client.getUrl(uri);
-      // Margen amplio: en Windows se recorren 30 días de registro de eventos y
-      // se analizan los volcados de memoria (.dmp) de cada pantallazo azul.
-      final resp = await req.close().timeout(const Duration(minutes: 3));
-      if (resp.statusCode != 200) {
-        throw HttpException('HTTP ${resp.statusCode}', uri: endpoint);
-      }
-      final body = await resp.transform(utf8.decoder).join();
-      return ErroresInfo.fromJson(jsonDecode(body) as Map<String, dynamic>);
-    } finally {
-      client.close(force: true);
-    }
+    // Margen amplio: en Windows se recorren 30 días de registro de eventos y se
+    // analizan los volcados de memoria (.dmp) de cada pantallazo azul.
+    final json = await pideJson(
+      uri,
+      espera: const Duration(minutes: 3),
+      que: 'al leer el historial de errores',
+    );
+    return ErroresInfo.fromJson(json);
   }
 }
