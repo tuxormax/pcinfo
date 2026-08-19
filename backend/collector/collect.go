@@ -11,7 +11,22 @@ import (
 // corre envuelto en `safe()`: si entra en pánico (p. ej. una llamada WMI/COM en
 // Windows) se recupera y devuelve el valor cero de esa sección, en vez de tumbar
 // toda la respuesta /hardware (lo que haría que la GUI cayera al mock).
-func Collect() HardwareInfo {
+func Collect() HardwareInfo { return collect(true) }
+
+// CollectSinSmart devuelve el inventario OMITIENDO la salud de los discos
+// (S.M.A.R.T.), que es lo único lento: consultar un disco que no contesta —un
+// lector de tarjetas, un gabinete USB— puede llevarse segundos por cada tipo de
+// conexión que se prueba. La GUI lo usa para abrir de inmediato y pide la salud
+// después, con /discos, actualizando la ficha cuando llega.
+func CollectSinSmart() HardwareInfo { return collect(false) }
+
+// CollectDiscos devuelve SOLO los discos, ya con S.M.A.R.T. Es la segunda parte
+// del arranque en dos tiempos.
+func CollectDiscos() []DiskInfo {
+	return safe("disks", func() []DiskInfo { return collectDisks(true) })
+}
+
+func collect(conSmart bool) HardwareInfo {
 	// La placa se recoge primero: la memoria la necesita para consultar el
 	// catálogo de placas (ranuras y capacidad máxima verificadas).
 	board := safe("board", collectBoard)
@@ -21,7 +36,7 @@ func Collect() HardwareInfo {
 		Board:  board,
 		Memory: safe("memory", func() MemoryInfo { return collectMemory(board) }),
 		GPU:    safe("gpu", collectGPU),
-		Disks:  safe("disks", collectDisks),
+		Disks:  safe("disks", func() []DiskInfo { return collectDisks(conSmart) }),
 		Diag:   safe("diag", collectDiag),
 	}
 }

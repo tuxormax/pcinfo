@@ -86,18 +86,51 @@ class _DashboardPageState extends State<DashboardPage> {
   /// true mientras se reintenta elevar el backend (UAC en curso).
   bool _elevating = false;
 
+  /// true mientras está en camino la segunda fase del arranque: la salud
+  /// (S.M.A.R.T.) de los discos. El resto del hardware ya está pintado; la ficha
+  /// de Almacenamiento avisa que la salud sigue leyéndose.
+  bool _discosCargando = false;
+
   @override
   void initState() {
     super.initState();
     _cargaHardware();
   }
 
+  /// Arranque en DOS tiempos: primero el inventario sin la salud de los discos
+  /// (responde de inmediato) y enseguida, en segundo plano, los discos con
+  /// S.M.A.R.T. Consultar un disco que no contesta —un lector de tarjetas o un
+  /// gabinete USB— se lleva varios segundos, y antes eso retrasaba TODA la
+  /// pantalla hasta pasarse de la espera máxima ("tardó demasiado").
   void _cargaHardware() {
     final f = widget.service.load();
     _future = f;
+    _discosCargando = true;
     f.then((v) {
       if (mounted) setState(() => _hw = v);
-    }).catchError((Object _) {});
+      _cargaDiscos(f);
+    }).catchError((Object _) {
+      if (mounted) setState(() => _discosCargando = false);
+    });
+  }
+
+  /// Segunda fase. [origen] es el future del inventario que la disparó: si
+  /// mientras tanto se refrescó (o se relanzó el backend elevado), estos discos
+  /// ya son de una carga vieja y se descartan.
+  void _cargaDiscos(Future<HardwareInfo> origen) {
+    widget.service.loadDiscos().then((discos) {
+      if (!mounted || _future != origen) return;
+      setState(() {
+        _discosCargando = false;
+        final hw = _hw;
+        if (hw != null) _hw = hw.conDiscos(discos);
+      });
+    }).catchError((Object _) {
+      // Si falla, se quedan los discos sin salud y el aviso de siempre.
+      if (mounted && _future == origen) {
+        setState(() => _discosCargando = false);
+      }
+    });
   }
 
   /// Instalación de Windows cuyo historial se está viendo. Vacío = la del
@@ -352,7 +385,9 @@ class _DashboardPageState extends State<DashboardPage> {
         if (snap.hasError) {
           return _estadoFallo('No se pudo leer el hardware', snap.error);
         }
-        return _content(snap.data!);
+        // _hw, no snap.data: es el que se actualiza cuando llega la salud de
+        // los discos (segunda fase).
+        return _content(_hw ?? snap.data!);
       },
     );
   }
@@ -778,7 +813,9 @@ class _DashboardPageState extends State<DashboardPage> {
       _tabErroresIdx => _errores != null,
       _tabSoftwareIdx => _software != null,
       _tabControladoresIdx => _controladores != null,
-      _ => _hw != null,
+      // Hardware: hasta que llegue la salud de los discos el reporte saldría
+      // sin S.M.A.R.T. y parecería que el equipo no la reporta.
+      _ => _hw != null && !_discosCargando,
     };
     return Material(
       color: AppColors.surfaceAlt,
@@ -1061,7 +1098,10 @@ class _DashboardPageState extends State<DashboardPage> {
 
   Widget _disksCard(HardwareInfo hw) {
     final disks = hw.disks;
-    final warning = _smartWarning(hw);
+    // Mientras llega la segunda fase no se puede saber todavía si un disco
+    // reporta salud o no: se avisa que se está leyendo, en vez de mostrar el
+    // aviso de "SIN SMART" (que aparecería siempre y sería falso).
+    final warning = _discosCargando ? _leyendoSaludBox() : _smartWarning(hw);
     return Container(
       decoration: BoxDecoration(
         color: AppColors.surface,
@@ -1402,7 +1442,48 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
+  /// Aviso mientras se lee la salud de los discos (segunda fase del arranque).
+  Widget _leyendoSaludBox() => _warnBox(
+        color: AppColors.textLow,
+        icon: Icons.hourglass_top_rounded,
+        title: 'Leyendo la salud de los discos (S.M.A.R.T.)…',
+        detail:
+            'El resto del inventario ya está listo. Esta parte puede tardar unos '
+            'segundos más si hay memorias USB, lectores de tarjetas o discos '
+            'externos conectados, porque hay que preguntarle a cada uno.',
+      );
+
+  /// Etiqueta de estado del disco. [extra] agrega el iconito de "ver detalles".
+  Widget _badgeSimple(Color c, String label, IconData icon,
+          {bool extra = false}) =>
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: c.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: c.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 13, color: c),
+            const SizedBox(width: 4),
+            Text(label,
+                style: TextStyle(
+                    color: c, fontSize: kFont, fontWeight: FontWeight.w600)),
+            if (extra) ...[
+              const SizedBox(width: 4),
+              Icon(Icons.info_outline_rounded, size: 12, color: c),
+            ],
+          ],
+        ),
+      );
+
   Widget _healthBadge(DiskInfo d) {
+    if (_discosCargando && !d.smartAvailable) {
+      return _badgeSimple(
+          AppColors.textLow, 'LEYENDO…', Icons.hourglass_top_rounded);
+    }
     final h = d.healthStatus;
     late final Color c;
     late final String label;
@@ -1431,28 +1512,7 @@ class _DashboardPageState extends State<DashboardPage> {
     }
     // Si hay problemas, la etiqueta es clicable y abre el modal explicativo.
     final clickable = d.issues.isNotEmpty;
-    final badge = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: c.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: c.withValues(alpha: 0.35)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 13, color: c),
-          const SizedBox(width: 4),
-          Text(label,
-              style: TextStyle(
-                  color: c, fontSize: kFont, fontWeight: FontWeight.w600)),
-          if (clickable) ...[
-            const SizedBox(width: 4),
-            Icon(Icons.info_outline_rounded, size: 12, color: c),
-          ],
-        ],
-      ),
-    );
+    final badge = _badgeSimple(c, label, icon, extra: clickable);
     if (!clickable) return badge;
     return Tooltip(
       message: 'Ver ${d.issues.length} problema(s) detectado(s)',

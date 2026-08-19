@@ -48,6 +48,7 @@ func main() {
 func runServer(addr string) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/hardware", protege("/hardware", handleHardware))
+	mux.HandleFunc("/discos", protege("/discos", handleDiscos))
 	mux.HandleFunc("/errores", protege("/errores", handleErrores))
 	mux.HandleFunc("/software", protege("/software", handleSoftware))
 	mux.HandleFunc("/controladores", protege("/controladores", handleControladores))
@@ -122,8 +123,27 @@ func protege(ruta string, h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func handleHardware(w http.ResponseWriter, _ *http.Request) {
+// handleHardware sirve el inventario. Con ?smart=0 se OMITE la salud de los
+// discos (S.M.A.R.T.), que es lo único lento del recorrido: un disco que no
+// contesta —lector de tarjetas, gabinete USB— se lleva segundos por cada tipo de
+// conexión que smartctl prueba, y la GUI corta la espera a los 30 s. Así la app
+// abre de inmediato y pide la salud aparte con /discos. Sin el parámetro se
+// responde completo, como siempre (una GUI anterior sigue funcionando igual).
+func handleHardware(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("smart") == "0" {
+		responde(w, "/hardware", collector.CollectSinSmart())
+		return
+	}
 	responde(w, "/hardware", collector.Collect())
+}
+
+// handleDiscos sirve SOLO los discos, ya con S.M.A.R.T. Es la segunda parte del
+// arranque en dos tiempos: la GUI lo pide en segundo plano y actualiza la ficha
+// de Almacenamiento cuando llega.
+func handleDiscos(w http.ResponseWriter, _ *http.Request) {
+	// Se envuelve en un objeto (no un arreglo suelto) porque la GUI decodifica
+	// todas las respuestas como JSON de objeto.
+	responde(w, "/discos", map[string]any{"discos": collector.CollectDiscos()})
 }
 
 // handleErrores sirve el "Historial de Errores": pantallazos azules y registro de

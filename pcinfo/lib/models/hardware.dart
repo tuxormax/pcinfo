@@ -20,6 +20,19 @@ class HardwareInfo {
     this.diag = const DiagInfo(),
   });
 
+  /// Copia con otros discos. La GUI la usa cuando llega la segunda fase del
+  /// arranque (los discos ya con S.M.A.R.T.) para reemplazar los provisionales
+  /// sin volver a pedir todo el inventario.
+  HardwareInfo conDiscos(List<DiskInfo> discos) => HardwareInfo(
+        system: system,
+        cpu: cpu,
+        board: board,
+        memory: memory,
+        gpu: gpu,
+        disks: discos,
+        diag: diag,
+      );
+
   factory HardwareInfo.fromJson(Map<String, dynamic> j) => HardwareInfo(
         system: SystemInfo.fromJson(j['system'] ?? const {}),
         cpu: CpuInfo.fromJson(j['cpu'] ?? const {}),

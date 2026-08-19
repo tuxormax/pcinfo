@@ -8,7 +8,12 @@ import (
 	"github.com/jaypipes/ghw"
 )
 
-func collectDisks() []DiskInfo {
+// collectDisks arma la lista de discos. [conSmart]=false devuelve solo lo
+// inmediato (modelo, tamaño, uso) SIN consultar smartctl: es lo que pide la GUI
+// en el primer arranque para pintar la pantalla al instante, y luego pide la
+// salud aparte con CollectDiscos (ver /discos en main.go). Leer S.M.A.R.T. es lo
+// único lento del inventario y depende de discos que pueden no contestar.
+func collectDisks(conSmart bool) []DiskInfo {
 	disks := []DiskInfo{}
 
 	info, err := ghw.Block()
@@ -45,6 +50,10 @@ func collectDisks() []DiskInfo {
 			}
 		}
 		disks = append(disks, di)
+	}
+
+	if !conSmart {
+		return disks
 	}
 
 	// Enriquecer con S.M.A.R.T. En Windows se descubre el dispositivo correcto vía

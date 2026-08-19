@@ -143,13 +143,25 @@ type smartJSON struct {
 // 1 "data unit" NVMe = 1000 sectores de 512 B = 512000 bytes.
 const nvmeDataUnit = 1000 * 512
 
+// Esperas de smartctl. La consulta normal conserva 8 s (un disco tras ciertos
+// controladores tarda en contestar). Los REINTENTOS por puente USB llevan menos
+// (4 s): ahí se prueban varios tipos a ver cuál responde y el equivocado falla
+// enseguida — sin recortarlo, un lector de tarjetas vacío se comía 5×8 s él
+// solo y /hardware se pasaba de los 30 s que espera la GUI. presupuestoUSB es
+// el tope de TODA la pasada de reintentos, pase lo que pase.
+const (
+	timeoutSmart    = 8 * time.Second
+	timeoutSmartUSB = 4 * time.Second
+	presupuestoUSB  = 20 * time.Second
+)
+
 // runSmartctl ejecuta `smartctl --json -a <device>` (con `-d <type>` si se
 // indica) y devuelve stdout. Timeout duro: en algunos discos (USB, NVMe/SATA
 // tras ciertos controladores) smartctl puede tardar o colgarse; sin límite,
 // /hardware excedería el timeout de la GUI. smartctl sale con código ≠0 aunque
 // el JSON sea válido (flags), por eso ignoramos el error del proceso.
-func runSmartctl(device, dtype string) []byte {
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+func runSmartctl(device, dtype string, espera time.Duration) []byte {
+	ctx, cancel := context.WithTimeout(context.Background(), espera)
 	defer cancel()
 	args := drivedbArg()
 	if dtype != "" {
@@ -165,7 +177,7 @@ func runSmartctl(device, dtype string) []byte {
 // readSmart llena los campos S.M.A.R.T. de di consultando smartctl con su
 // nombre de dispositivo (Linux: /dev/sdX). En Windows se usa enrichSmartWindows.
 func readSmart(di *DiskInfo) {
-	parseSmartInto(di, runSmartctl(di.Name, ""))
+	parseSmartInto(di, runSmartctl(di.Name, "", timeoutSmart))
 }
 
 // parseSmartInto parsea la salida JSON de smartctl y llena los campos S.M.A.R.T.
@@ -433,7 +445,7 @@ type scanEntry struct {
 // esto es más fiable que construir "\\.\PHYSICALDRIVEn": smartctl da el nombre y
 // el `-d` correctos (cubre NVMe y varios controladores).
 func scanOpen() []scanEntry {
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), timeoutSmart)
 	defer cancel()
 	args := append(drivedbArg(), "--scan-open", "--json")
 	cmd := exec.CommandContext(ctx, smartctlBin(), args...)
@@ -461,13 +473,19 @@ func enrichSmartWindows(disks []DiskInfo) {
 
 	if len(devs) == 0 {
 		// Respaldo: intentar con los nombres nativos de ghw.
+		salidas := smartctlParalelo(len(disks), func(i int) []byte {
+			return runSmartctl(disks[i].Name, "", timeoutSmart)
+		})
 		for i := range disks {
-			ok := parseSmartInto(&disks[i], runSmartctl(disks[i].Name, ""))
+			ok := parseSmartInto(&disks[i], salidas[i])
 			fmt.Fprintf(&log, "respaldo %s: smart=%v\n", disks[i].Name, ok)
 		}
 	} else {
-		for _, d := range devs {
-			out := runSmartctl(d.Name, d.Type)
+		salidas := smartctlParalelo(len(devs), func(i int) []byte {
+			return runSmartctl(devs[i].Name, devs[i].Type, timeoutSmart)
+		})
+		for i, d := range devs {
+			out := salidas[i]
 			var meta smartJSON
 			json.Unmarshal(out, &meta)
 			idx := matchDisk(disks, meta.SerialNumber, meta.ModelName)
@@ -488,6 +506,26 @@ func enrichSmartWindows(disks []DiskInfo) {
 	writeSmartDebug(log.String())
 }
 
+// smartctlParalelo lanza n consultas de smartctl A LA VEZ y devuelve sus salidas
+// en el mismo orden. Antes se hacían una tras otra: con 8 s de tope por consulta,
+// tres discos lentos ya sumaban 24 s y la GUI cortaba la espera. Solo se
+// paraleliza la EJECUCIÓN (lo lento); el parseo y el emparejamiento con los
+// discos quedan fuera, en serie, para no escribir el arreglo desde varias
+// goroutines a la vez.
+func smartctlParalelo(n int, corre func(i int) []byte) [][]byte {
+	salidas := make([][]byte, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			salidas[i] = corre(i)
+		}(i)
+	}
+	wg.Wait()
+	return salidas
+}
+
 // tiposSMARTWindowsUSB son los `-d` que smartctl usa para hablar ATA a través de
 // un puente USB/UASP (gabinetes externos). Se prueban en orden hasta que uno
 // responda: "sat" cubre la mayoría de gabinetes UASP modernos (p. ej. ADATA
@@ -500,28 +538,56 @@ var tiposSMARTWindowsUSB = []string{"sat", "usbjmicron", "usbasm1051", "usbproli
 // solo ve el gabinete ("ADATA ED600 SCSI Disk Device")—, así que al leer el SMART
 // también se corrigen con el modelo/serie verdaderos del disco.
 func probeSmartUSB(disks []DiskInfo, log *strings.Builder) {
+	limite := time.Now().Add(presupuestoUSB)
+	var mu sync.Mutex // el log lo escriben varias goroutines
+	var wg sync.WaitGroup
 	for i := range disks {
-		if disks[i].SmartAvailable {
+		if disks[i].SmartAvailable || !puedeSerPuenteUSB(disks[i]) {
 			continue
 		}
-		for _, dt := range tiposSMARTWindowsUSB {
-			out := runSmartctl(disks[i].Name, dt)
-			if !parseSmartInto(&disks[i], out) {
-				continue
-			}
-			var meta smartJSON
-			if json.Unmarshal(out, &meta) == nil {
-				if m := strings.TrimSpace(meta.ModelName); m != "" {
-					disks[i].Model = m
+		wg.Add(1)
+		go func(d *DiskInfo) { // cada goroutine toca SOLO su disco
+			defer wg.Done()
+			var linea strings.Builder
+			for _, dt := range tiposSMARTWindowsUSB {
+				if time.Now().After(limite) {
+					fmt.Fprintf(&linea, "usb %s: presupuesto agotado (%s), no se probaron más tipos\n",
+						d.Name, presupuestoUSB)
+					break
 				}
-				if s := strings.TrimSpace(meta.SerialNumber); s != "" {
-					disks[i].Serial = s
+				out := runSmartctl(d.Name, dt, timeoutSmartUSB)
+				if !parseSmartInto(d, out) {
+					continue
 				}
+				var meta smartJSON
+				if json.Unmarshal(out, &meta) == nil {
+					if m := strings.TrimSpace(meta.ModelName); m != "" {
+						d.Model = m
+					}
+					if s := strings.TrimSpace(meta.SerialNumber); s != "" {
+						d.Serial = s
+					}
+				}
+				fmt.Fprintf(&linea, "usb %s (-d %s): SMART OK modelo=%q\n", d.Name, dt, d.Model)
+				break
 			}
-			fmt.Fprintf(log, "usb %s (-d %s): SMART OK modelo=%q\n", disks[i].Name, dt, disks[i].Model)
-			break
-		}
+			if linea.Len() > 0 {
+				mu.Lock()
+				log.WriteString(linea.String())
+				mu.Unlock()
+			}
+		}(&disks[i])
 	}
+	wg.Wait()
+}
+
+// puedeSerPuenteUSB descarta los discos donde sondear tipos de puente USB es
+// tiempo tirado: un NVMe cuelga del PCIe, nunca de un gabinete USB, así que
+// probarle los 5 tipos solo servía para gastar segundos.
+func puedeSerPuenteUSB(d DiskInfo) bool {
+	bus := strings.ToLower(d.Bus)
+	tipo := strings.ToLower(d.Type)
+	return !strings.Contains(bus, "nvme") && !strings.Contains(tipo, "nvme")
 }
 
 // matchDisk empareja un resultado de smartctl con un disco de ghw: primero por

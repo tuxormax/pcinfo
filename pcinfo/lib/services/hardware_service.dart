@@ -4,7 +4,15 @@ import 'backend_http.dart';
 /// Fuente de datos de hardware.
 /// MockHardwareService: datos de ejemplo. HttpHardwareService: backend Go real.
 abstract class HardwareService {
+  /// Primera fase: todo el inventario MENOS la salud de los discos. Es lo que
+  /// se pinta al abrir la app.
   Future<HardwareInfo> load();
+
+  /// Segunda fase: los discos ya con S.M.A.R.T. Se pide en segundo plano
+  /// porque es lo único lento del inventario (un disco que no contesta —lector
+  /// de tarjetas, gabinete USB— se lleva segundos por cada tipo de conexión que
+  /// se prueba) y antes hacía que la app se pasara de los 30 s de espera.
+  Future<List<DiskInfo>> loadDiscos();
 }
 
 /// Consume el backend Go (GET /hardware en localhost). Si no responde y se
@@ -18,13 +26,18 @@ class HttpHardwareService implements HardwareService {
     this.fallback,
   }) : endpoint = Uri.parse(url);
 
+  /// Endpoint de la segunda fase (los discos con S.M.A.R.T.).
+  Uri get _endpointDiscos => endpoint.replace(path: '/discos');
+
   @override
   Future<HardwareInfo> load() async {
     try {
-      // Margen amplio: el primer arranque en frío del colector (WMI + smartctl
-      // por disco) puede tardar varios segundos en algunas máquinas.
+      // ?smart=0 → el backend responde sin consultar los discos, que es lo
+      // único lento; la salud llega después por loadDiscos(). Margen amplio de
+      // todos modos: el primer arranque en frío del colector (WMI) tarda unos
+      // segundos en algunas máquinas.
       final json = await pideJson(
-        endpoint,
+        endpoint.replace(queryParameters: const {'smart': '0'}),
         espera: const Duration(seconds: 30),
         que: 'al leer el hardware',
       );
@@ -34,9 +47,33 @@ class HttpHardwareService implements HardwareService {
       rethrow;
     }
   }
+
+  @override
+  Future<List<DiskInfo>> loadDiscos() async {
+    try {
+      // Espera larga a propósito: aquí ya no hay nadie mirando una pantalla en
+      // blanco —el resto del hardware está pintado— y el backend acota por su
+      // cuenta cuánto sondea los discos que no contestan.
+      final json = await pideJson(
+        _endpointDiscos,
+        espera: const Duration(seconds: 120),
+        que: 'al leer la salud de los discos',
+      );
+      return (json['discos'] as List?)
+              ?.map((e) => DiskInfo.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const [];
+    } catch (e) {
+      if (fallback != null) return fallback!.loadDiscos();
+      rethrow;
+    }
+  }
 }
 
 class MockHardwareService implements HardwareService {
+  @override
+  Future<List<DiskInfo>> loadDiscos() async => (await load()).disks;
+
   @override
   Future<HardwareInfo> load() async {
     // Simula la latencia de leer el hardware.
