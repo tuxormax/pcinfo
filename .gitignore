@@ -33,10 +33,10 @@ Thumbs.db
 backend/pcinfo-backend
 backend/pcinfo-backend.exe
 
-# instaladores/ solo contiene los instaladores generados (binarios pesados;
-# se reconstruyen con los scripts de construir/). No se versionan.
-instaladores/*
-!instaladores/.gitkeep
+# instaladores/ es solo una carpeta LOCAL de salida de los scripts de construir/.
+# Los instaladores publicados viven en GitHub Releases (y ahi se quedan, no se
+# borran). Nada de esta carpeta va al repositorio.
+instaladores/
 
 .claude/
 CLAUDE.md

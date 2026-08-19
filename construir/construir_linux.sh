@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # Construye el instalador .deb de PCInfo (GUI Flutter + backend Go).
-# Uso: ./construir_linux.sh    (desde cualquier ruta)
-# Requiere: flutter (desktop linux), go, dpkg-deb.
+# Uso: ./construir_linux.sh [--sin-publicar]   (desde cualquier ruta)
+# Requiere: flutter (desktop linux), go, dpkg-deb. Para publicar, ademas: gh.
+#
+# Al terminar sube el .deb al GitHub Release "v<ver>-rev<rev>" (el mismo donde el
+# CI deja el .exe y el .zip portable): los instaladores NO viven en el repo, solo
+# en Releases, y ahi se quedan. Con --sin-publicar solo lo deja en instaladores/.
 set -euo pipefail
 
 ARCH="amd64"
@@ -15,7 +19,9 @@ REVISION="$(grep -oP "appRevision = \K[0-9]+" "$APP_DIR/lib/version.dart")"
 DEB_VERSION="${VERSION}.${REVISION}"            # versión Debian válida (p.ej. 1.1.6)
 BASENAME="pcinfo_v${VERSION}_rev-${REVISION}"   # mismo nombre base que Windows
 BACKEND_DIR="$ROOT/backend"
-OUT_DIR="$ROOT/instaladores"                    # solo instaladores generados
+OUT_DIR="$ROOT/instaladores"                    # carpeta LOCAL de salida (ignorada por git)
+PUBLICAR=1
+[ "${1:-}" = "--sin-publicar" ] && PUBLICAR=0
 mkdir -p "$OUT_DIR"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
@@ -129,3 +135,24 @@ DEB="$OUT_DIR/${BASENAME}.deb"
 echo ">> Generando $DEB ..."
 dpkg-deb --build --root-owner-group "$PKG" "$DEB"
 echo ">> Listo: $DEB"
+
+# Publicar en el Release de esta revision (mismo tag que el instalador Windows).
+# Si el release aun no existe (todavia no corrio el CI de Windows) se crea aqui;
+# el CI despues sube el .exe/.zip al mismo tag. Los releases NO se borran.
+TAG="v${VERSION}-rev${REVISION}"
+if [ "$PUBLICAR" = "1" ]; then
+  if ! command -v gh >/dev/null 2>&1; then
+    echo "!! gh no esta instalado: el .deb NO se publico. Subelo con:"
+    echo "   gh release upload $TAG \"$DEB\" --clobber"
+  else
+    echo ">> Publicando en el release $TAG ..."
+    gh release create "$TAG" "$DEB" \
+      --title "PCInfo v${VERSION} Rev ${REVISION}" \
+      --notes "Instalador .deb de Linux. El .exe y el .zip portable de Windows los sube el CI a este mismo release." \
+      2>/dev/null \
+      || gh release upload "$TAG" "$DEB" --clobber
+    echo ">> Publicado: https://github.com/tuxormax/pcinfo/releases/tag/$TAG"
+  fi
+else
+  echo ">> (--sin-publicar) el .deb se quedo solo en $OUT_DIR"
+fi

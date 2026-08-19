@@ -21,7 +21,7 @@ Incluye además la pestaña **Historial de Errores**: lee lo que registró el si
 
 ## Descargar e instalar
 
-Los instaladores **no se guardan en el repositorio** (son binarios pesados). Se publican en la sección **[Releases](https://github.com/tuxormax/pcinfo/releases)** — entra ahí, abre la versión más reciente y descarga el archivo de tu sistema:
+Los instaladores **no se guardan en el repositorio** (son binarios pesados). Se publican en la sección **[Releases](https://github.com/tuxormax/pcinfo/releases)**, un release por revisión y sin borrar los anteriores — entra ahí, abre la versión más reciente y descarga el archivo de tu sistema:
 
 | Sistema | Archivo | Instalación |
 |---|---|---|

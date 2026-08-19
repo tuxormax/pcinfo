@@ -6,6 +6,11 @@ name: Instalador Windows
 # falla si se fija), Inno Setup ya viene en el runner, se empaqueta el VC++
 # Redistributable y se publica como GitHub Release (no artifact: la cuota de
 # artifacts se llena con los builds históricos).
+#
+# Los releases NO se borran: son el único lugar de descarga de los instaladores
+# (el repo ya no lleva carpeta instaladores/). El release de cada revisión queda
+# publicado como histórico. El .deb de Linux se sube al MISMO release desde
+# construir/construir_linux.sh, por eso el tag no es "win-*" sino v<ver>-rev<rev>.
 
 on:
   # SOLO disparo manual (como SIGARN): el instalador NUNCA se publica solo en
@@ -137,18 +142,20 @@ jobs:
             "${{ github.workspace }}\construir\instalador_windows.iss"
 
       # Publicar en GitHub Release (NO artifact): los release assets no consumen
-      # la cuota de almacenamiento de Actions.
+      # la cuota de almacenamiento de Actions. El release se conserva: NO se
+      # borra después de descargar. Mismo tag que usa el .deb de Linux, para que
+      # una revisión tenga los tres archivos juntos.
       - name: Publicar instalador (Release)
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="win-v${VERSION}-rev${REVISION}"
+          TAG="v${VERSION}-rev${REVISION}"
           gh release create "$TAG" \
             "instaladores/${PCINFO_NAME}.exe" \
             "instaladores/${PCINFO_NAME}_portable.zip" \
-            --title "PCInfo v${VERSION} Rev ${REVISION} (Windows)" \
-            --notes "Instalador Windows y paquete portable (.zip, para USB/Hiren's) generados por CI." \
+            --title "PCInfo v${VERSION} Rev ${REVISION}" \
+            --notes "Instalador de Windows y paquete portable (.zip, para USB/Hiren's). El .deb de Linux se sube a este mismo release al construirlo." \
             || gh release upload "$TAG" \
                  "instaladores/${PCINFO_NAME}.exe" \
                  "instaladores/${PCINFO_NAME}_portable.zip" --clobber

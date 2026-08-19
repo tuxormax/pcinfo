@@ -1,16 +1,26 @@
 # Instaladores de PCInfo
 
-Salida de empaquetado de PCInfo (GUI Flutter + backend Go). Los binarios
-generados (`*.deb`, `*.exe`) **no se versionan** (ver `.gitignore`); aquí viven
-los scripts que los producen.
+Aquí viven los scripts que empaquetan PCInfo (GUI Flutter + backend Go). Los
+binarios generados (`*.deb`, `*.exe`, `*.zip`) **nunca se versionan**: el repo no
+tiene carpeta de instaladores. El único lugar de descarga es
+**[Releases](https://github.com/tuxormax/pcinfo/releases)**, un release por
+revisión (`v<ver>-rev<rev>`) con los tres archivos, y **los releases no se
+borran** — quedan como histórico.
+
+Al construir, cada script deja su binario en `instaladores/` (carpeta local,
+ignorada por git) y lo sube al release de esa revisión.
 
 ## Linux (`.deb`)
 Se construye localmente:
 
 ```bash
-bash construir/construir_linux.sh
-# → instaladores/pcinfo_1.1.0_amd64.deb
+bash construir/construir_linux.sh                 # construye y publica en el release
+bash construir/construir_linux.sh --sin-publicar  # solo construye
+# → instaladores/pcinfo_v1.2_rev-31.deb  +  release v1.2-rev31
 ```
+
+Publicar requiere `gh` autenticado; si falta, el script avisa e imprime el
+`gh release upload` para hacerlo a mano.
 
 Requiere `flutter` (desktop Linux), `go` y `dpkg-deb`. El paquete:
 - instala la GUI en `/opt/pcinfo/app` + lanzador `/usr/bin/pcinfo` + entrada de menú;
@@ -21,7 +31,7 @@ Requiere `flutter` (desktop Linux), `go` y `dpkg-deb`. El paquete:
 
 Instalar / desinstalar:
 ```bash
-sudo apt install ./instaladores/pcinfo_1.1.0_amd64.deb
+sudo apt install ./instaladores/pcinfo_v1.2_rev-31.deb
 sudo apt remove pcinfo
 ```
 
@@ -38,10 +48,12 @@ Visual Studio). Se genera en CI (patrón replicado de SIGARN):
   versión**: al fijarla, Flutter no detecta Visual Studio y CMake cae a su
   generador viejo ("Visual Studio 16 2019") → falla.
 - Se publica como **Release** (no artifact): los release assets no consumen la
-  cuota de almacenamiento de Actions.
+  cuota de almacenamiento de Actions. El release **no se borra** tras descargar;
+  es la única fuente de descarga.
 - Se dispara con push a `main` (cambios en `pcinfo/`, `backend/` o el `.iss`) o
   manual en **Actions → Run workflow** (inputs versión/revisión → nombre del
-  `.exe`). Tag del release: `win-v<ver>-rev<rev>`.
+  `.exe`). Tag del release: `v<ver>-rev<rev>` — el mismo al que el script de
+  Linux sube su `.deb`, para que una revisión tenga los tres archivos juntos.
 
 ### Compilar el instalador Windows a mano (en una máquina Windows)
 Requiere Flutter + Visual Studio (Desktop C++) + Inno Setup 6:
