@@ -4,16 +4,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import '../version.dart';
+import '../models/controladores.dart';
 import '../models/errores.dart';
 import '../models/hardware.dart';
+import '../models/software.dart';
 import '../services/backend_http.dart';
 import '../services/backend_launcher.dart';
+import '../services/controladores_service.dart';
 import '../services/errores_service.dart';
 import '../services/hardware_service.dart';
+import '../services/software_service.dart';
 import '../theme.dart';
 import '../utils/format.dart';
 import '../utils/report.dart';
+import 'controladores_page.dart';
 import 'errores_page.dart';
+import 'software_page.dart';
 import 'widgets/spec_card.dart';
 
 class DashboardPage extends StatefulWidget {
@@ -22,6 +28,12 @@ class DashboardPage extends StatefulWidget {
   /// Fuente del "Historial de Errores" (GET /errores). Si es null, esa pestaña
   /// avisa que no hay datos (p. ej. en pruebas con el mock de hardware).
   final ErroresService? erroresService;
+
+  /// Fuente del "Software instalado" (GET /software). Null = pestaña sin datos.
+  final SoftwareService? softwareService;
+
+  /// Fuente de la pestaña "Controladores" (GET/POST /controladores).
+  final ControladoresService? controladoresService;
 
   /// Launcher del backend. Solo se usa para "Reintentar como administrador"
   /// (Windows) cuando el SMART salió vacío por falta de elevación. Puede ser null
@@ -32,6 +44,8 @@ class DashboardPage extends StatefulWidget {
     super.key,
     required this.service,
     this.erroresService,
+    this.softwareService,
+    this.controladoresService,
     this.launcher,
   });
 
@@ -42,18 +56,32 @@ class DashboardPage extends StatefulWidget {
 class _DashboardPageState extends State<DashboardPage> {
   late Future<HardwareInfo> _future;
 
-  /// Pestaña activa: 0 = Hardware, 1 = Historial de Errores.
+  /// Pestaña activa: 0 = Hardware, 1 = Historial de Errores, 2 = Software,
+  /// 3 = Controladores.
   int _tab = 0;
+
+  static const _tabHardwareIdx = 0;
+  static const _tabErroresIdx = 1;
+  static const _tabSoftwareIdx = 2;
+  static const _tabControladoresIdx = 3;
 
   /// El historial de errores se pide SOLO al abrir su pestaña: en Windows
   /// recorre 30 días de registro de eventos y analiza los volcados, así que
   /// cargarlo al inicio retrasaría el arranque de la app.
   Future<ErroresInfo>? _erroresFuture;
 
+  /// Igual que el historial: el software y los controladores se piden SOLO al
+  /// abrir su pestaña. Recorrer el registro de programas y consultar las apps de
+  /// la Tienda tarda segundos, y listar los controladores lanza PowerShell.
+  Future<SoftwareInfo>? _softwareFuture;
+  Future<ControladoresInfo>? _controladoresFuture;
+
   /// Últimos datos cargados de cada pestaña (para el botón Guardar y para la
   /// barra superior, que se dibuja fuera del FutureBuilder).
   HardwareInfo? _hw;
   ErroresInfo? _errores;
+  SoftwareInfo? _software;
+  ControladoresInfo? _controladores;
 
   /// true mientras se reintenta elevar el backend (UAC en curso).
   bool _elevating = false;
@@ -87,6 +115,26 @@ class _DashboardPageState extends State<DashboardPage> {
     }).catchError((Object _) {});
   }
 
+  void _cargaSoftware() {
+    final svc = widget.softwareService;
+    if (svc == null) return;
+    final f = svc.load();
+    _softwareFuture = f;
+    f.then((v) {
+      if (mounted) setState(() => _software = v);
+    }).catchError((Object _) {});
+  }
+
+  void _cargaControladores() {
+    final svc = widget.controladoresService;
+    if (svc == null) return;
+    final f = svc.load();
+    _controladoresFuture = f;
+    f.then((v) {
+      if (mounted) setState(() => _controladores = v);
+    }).catchError((Object _) {});
+  }
+
   /// Cambia la instalación analizada y recarga el historial.
   void _cambiaInstalacion(String raiz) {
     if (raiz == _raizErrores) return;
@@ -100,10 +148,17 @@ class _DashboardPageState extends State<DashboardPage> {
   /// Refresca SOLO la pestaña visible (recargar el historial de errores es caro).
   void _refresh() {
     setState(() {
-      if (_tab == 0) {
-        _cargaHardware();
-      } else {
-        _cargaErrores();
+      switch (_tab) {
+        case _tabErroresIdx:
+          _cargaErrores();
+        case _tabSoftwareIdx:
+          _software = null;
+          _cargaSoftware();
+        case _tabControladoresIdx:
+          _controladores = null;
+          _cargaControladores();
+        default:
+          _cargaHardware();
       }
     });
   }
@@ -111,7 +166,14 @@ class _DashboardPageState extends State<DashboardPage> {
   void _cambiaTab(int i) {
     setState(() {
       _tab = i;
-      if (i == 1 && _erroresFuture == null) _cargaErrores();
+      switch (i) {
+        case _tabErroresIdx:
+          if (_erroresFuture == null) _cargaErrores();
+        case _tabSoftwareIdx:
+          if (_softwareFuture == null) _cargaSoftware();
+        case _tabControladoresIdx:
+          if (_controladoresFuture == null) _cargaControladores();
+      }
     });
   }
 
@@ -131,6 +193,9 @@ class _DashboardPageState extends State<DashboardPage> {
       setState(() {
         _cargaHardware();
         if (_erroresFuture != null) _cargaErrores();
+        // Los controladores no se pueden ni LISTAR sin administrador: tras
+        // elevar hay que volver a pedirlos o la pestaña seguiría vacía.
+        if (_controladoresFuture != null) _cargaControladores();
       });
     } else {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -260,13 +325,20 @@ class _DashboardPageState extends State<DashboardPage> {
             _topBar(),
             _tabsBar(),
             _avisoBackendViejo(),
-            Expanded(child: _tab == 0 ? _tabHardware() : _tabErrores()),
+            Expanded(child: _cuerpo()),
           ],
         ),
       ),
       bottomNavigationBar: _footer(),
     );
   }
+
+  Widget _cuerpo() => switch (_tab) {
+        _tabErroresIdx => _tabErrores(),
+        _tabSoftwareIdx => _tabSoftware(),
+        _tabControladoresIdx => _tabControladores(),
+        _ => _tabHardware(),
+      };
 
   Widget _tabHardware() {
     return FutureBuilder<HardwareInfo>(
@@ -346,6 +418,97 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
+  Widget _tabSoftware() {
+    if (widget.softwareService == null) {
+      return _mensajeCentrado(
+        Icons.help_outline_rounded,
+        'Software instalado no disponible',
+        'Esta ventana se abrió sin conexión al servicio de PCInfo.',
+      );
+    }
+    return FutureBuilder<SoftwareInfo>(
+      future: _softwareFuture,
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return _cargando('Leyendo los programas instalados…');
+        }
+        if (snap.hasError) {
+          return _estadoFallo(
+              'No se pudo leer el software instalado', snap.error);
+        }
+        return SoftwarePage(data: snap.data!);
+      },
+    );
+  }
+
+  Widget _tabControladores() {
+    final svc = widget.controladoresService;
+    if (svc == null) {
+      return _mensajeCentrado(
+        Icons.help_outline_rounded,
+        'Controladores no disponible',
+        'Esta ventana se abrió sin conexión al servicio de PCInfo.',
+      );
+    }
+    return FutureBuilder<ControladoresInfo>(
+      future: _controladoresFuture,
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return _cargando('Leyendo los controladores y las redes guardadas…');
+        }
+        if (snap.hasError) {
+          return _estadoFallo(
+              'No se pudo leer los controladores', snap.error);
+        }
+        final data = snap.data!;
+        return ControladoresPage(
+          data: data,
+          service: svc,
+          onRecargar: () => setState(_cargaControladores),
+          avisoAccion: _botonElevar(data.supported && !data.elevated),
+        );
+      },
+    );
+  }
+
+  /// Botón "Reintentar como administrador" (solo Windows y solo si hay launcher).
+  /// Todo el módulo de controladores escribe en el equipo y necesita elevación,
+  /// así que sin este botón la pestaña sería un callejón sin salida.
+  Widget? _botonElevar(bool haceFalta) {
+    if (!haceFalta || !Platform.isWindows || widget.launcher == null) {
+      return null;
+    }
+    return FilledButton.icon(
+      onPressed: _elevating ? null : _retryElevated,
+      icon: _elevating
+          ? const SizedBox(
+              width: 14,
+              height: 14,
+              child:
+                  CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+            )
+          : const Icon(Icons.shield_rounded, size: 16),
+      label: Text(_elevating
+          ? 'Solicitando permiso…'
+          : 'Reintentar como administrador'),
+    );
+  }
+
+  Widget _cargando(String texto) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const CircularProgressIndicator(color: AppColors.accent),
+          const SizedBox(height: 16),
+          Text(texto,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: AppColors.textMid, fontSize: kFont)),
+        ],
+      ),
+    );
+  }
+
   Widget _mensajeCentrado(IconData icono, String titulo, String detalle) {
     return Center(
       child: Padding(
@@ -408,7 +571,8 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  /// Barra de pestañas: Hardware | Historial de Errores.
+  /// Barra de pestañas: Hardware | Historial de Errores | Software |
+  /// Controladores.
   Widget _tabsBar() {
     return Container(
       decoration: const BoxDecoration(
@@ -417,8 +581,12 @@ class _DashboardPageState extends State<DashboardPage> {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
-          _tabBoton(0, Icons.memory_rounded, 'Hardware'),
-          _tabBoton(1, Icons.rule_folder_rounded, 'Historial de Errores'),
+          _tabBoton(_tabHardwareIdx, Icons.memory_rounded, 'Hardware'),
+          _tabBoton(
+              _tabErroresIdx, Icons.rule_folder_rounded, 'Historial de Errores'),
+          _tabBoton(_tabSoftwareIdx, Icons.apps_rounded, 'Software'),
+          _tabBoton(_tabControladoresIdx, Icons.settings_input_component_rounded,
+              'Controladores'),
         ],
       ),
     );
@@ -602,10 +770,16 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  /// Guardar: exporta a .txt lo que se está viendo — el inventario de hardware
-  /// o el historial de errores, según la pestaña activa.
+  /// Guardar: exporta lo que se está viendo, según la pestaña activa. Hardware e
+  /// historial de errores salen en .txt; software y controladores en .md, porque
+  /// son tablas largas que se pegan en un informe o un ticket.
   Widget _saveButton() {
-    final habilitado = _tab == 0 ? _hw != null : _errores != null;
+    final habilitado = switch (_tab) {
+      _tabErroresIdx => _errores != null,
+      _tabSoftwareIdx => _software != null,
+      _tabControladoresIdx => _controladores != null,
+      _ => _hw != null,
+    };
     return Material(
       color: AppColors.surfaceAlt,
       borderRadius: BorderRadius.circular(9),
@@ -635,9 +809,14 @@ class _DashboardPageState extends State<DashboardPage> {
 
   Future<void> _onSave() async {
     try {
-      final path = _tab == 0
-          ? await saveReport(_hw!)
-          : await saveErroresReport(_errores!, _hw?.system.hostname ?? '');
+      final equipo = _hw?.system.hostname ?? '';
+      final path = switch (_tab) {
+        _tabErroresIdx => await saveErroresReport(_errores!, equipo),
+        _tabSoftwareIdx => await saveSoftwareReport(_software!, equipo),
+        _tabControladoresIdx =>
+          await saveControladoresReport(_controladores!, equipo),
+        _ => await saveReport(_hw!),
+      };
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         backgroundColor: AppColors.surfaceAlt,

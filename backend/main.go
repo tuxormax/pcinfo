@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -48,6 +49,12 @@ func runServer(addr string) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/hardware", protege("/hardware", handleHardware))
 	mux.HandleFunc("/errores", protege("/errores", handleErrores))
+	mux.HandleFunc("/software", protege("/software", handleSoftware))
+	mux.HandleFunc("/controladores", protege("/controladores", handleControladores))
+	mux.HandleFunc("/controladores/tarea", protege("/controladores/tarea", handleTarea))
+	mux.HandleFunc("/controladores/respaldar", protege("/controladores/respaldar", handleRespaldar))
+	mux.HandleFunc("/controladores/restaurar", protege("/controladores/restaurar", handleRestaurar))
+	mux.HandleFunc("/controladores/cancelar", protege("/controladores/cancelar", handleCancelar))
 	mux.HandleFunc("/healthz", handleHealth)
 
 	srv := &http.Server{
@@ -128,6 +135,74 @@ func handleHardware(w http.ResponseWriter, _ *http.Request) {
 // leer los errores de un equipo que ya no arranca desde un medio de rescate.
 func handleErrores(w http.ResponseWriter, r *http.Request) {
 	responde(w, "/errores", collector.CollectErrors(r.URL.Query().Get("raiz")))
+}
+
+// handleSoftware sirve el "Software instalado". Va aparte de /hardware porque
+// recorrer el registro y consultar las apps de la Tienda tarda unos segundos y
+// la GUI solo lo pide al abrir esa pestaña.
+func handleSoftware(w http.ResponseWriter, _ *http.Request) {
+	responde(w, "/software", collector.CollectSoftware())
+}
+
+// handleControladores sirve el inventario de controladores de terceros y redes
+// WiFi guardadas (pestaña "Controladores"). Solo Windows: en Linux responde con
+// Supported=false y el motivo.
+func handleControladores(w http.ResponseWriter, _ *http.Request) {
+	responde(w, "/controladores", collector.CollectDrivers())
+}
+
+// handleTarea informa del avance de la tarea de respaldo/restauración en curso
+// (o de la última que terminó). La GUI lo consulta cada segundo mientras corre.
+func handleTarea(w http.ResponseWriter, _ *http.Request) {
+	responde(w, "/controladores/tarea", collector.EstadoTarea())
+}
+
+// handleRespaldar y handleRestaurar arrancan la tarea y devuelven su estado
+// inicial. Son los ÚNICOS endpoints de PCInfo que modifican el equipo, así que
+// exigen POST: un GET podría dispararse desde el navegador o desde un
+// precargado, y restaurar controladores no es algo que deba pasar por accidente.
+func handleRespaldar(w http.ResponseWriter, r *http.Request) {
+	arrancaTarea(w, r, collector.TareaRespaldar)
+}
+
+func handleRestaurar(w http.ResponseWriter, r *http.Request) {
+	arrancaTarea(w, r, collector.TareaRestaurar)
+}
+
+func arrancaTarea(w http.ResponseWriter, r *http.Request, kind string) {
+	if r.Method != http.MethodPost {
+		fallo(w, http.StatusMethodNotAllowed, "esta operación necesita POST")
+		return
+	}
+	var p collector.PeticionTarea
+	if err := json.NewDecoder(io.LimitReader(r.Body, 64*1024)).Decode(&p); err != nil {
+		fallo(w, http.StatusBadRequest, "no se entendió la petición: "+err.Error())
+		return
+	}
+	info, err := collector.IniciaTarea(kind, p)
+	if err != nil {
+		fallo(w, http.StatusConflict, err.Error())
+		return
+	}
+	responde(w, "/controladores/"+kind, info)
+}
+
+// handleCancelar aborta la tarea en curso.
+func handleCancelar(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		fallo(w, http.StatusMethodNotAllowed, "esta operación necesita POST")
+		return
+	}
+	responde(w, "/controladores/cancelar", map[string]any{"ok": collector.CancelaTarea()})
+}
+
+// fallo responde un error de negocio en el MISMO formato que usa protege() para
+// los pánicos, para que la GUI lo muestre siempre igual y sea copiable.
+func fallo(w http.ResponseWriter, codigo int, mensaje string) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.WriteHeader(codigo)
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": mensaje})
 }
 
 func responde(w http.ResponseWriter, ruta string, dato any) {

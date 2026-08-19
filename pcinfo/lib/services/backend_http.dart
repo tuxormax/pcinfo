@@ -26,31 +26,60 @@ Future<Map<String, dynamic>> pideJson(
   Uri uri, {
   required Duration espera,
   required String que,
+}) =>
+    _llama(uri, espera: espera, que: que);
+
+/// POST al backend con [cuerpo] en JSON, devolviendo el JSON de respuesta ya
+/// decodificado. Solo lo usan las operaciones que ESCRIBEN en el sistema
+/// (respaldar y restaurar controladores y redes WiFi): el backend las exige por
+/// POST justamente para que no se disparen por accidente con un GET.
+Future<Map<String, dynamic>> enviaJson(
+  Uri uri,
+  Map<String, dynamic> cuerpo, {
+  required Duration espera,
+  required String que,
+}) =>
+    _llama(uri, espera: espera, que: que, cuerpo: cuerpo);
+
+Future<Map<String, dynamic>> _llama(
+  Uri uri, {
+  required Duration espera,
+  required String que,
+  Map<String, dynamic>? cuerpo,
 }) async {
+  final metodo = cuerpo == null ? 'GET' : 'POST';
   final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
   try {
-    final req = await client.getUrl(uri);
+    final req = cuerpo == null
+        ? await client.getUrl(uri)
+        : await client.postUrl(uri);
+    if (cuerpo != null) {
+      req.headers.contentType = ContentType.json;
+      req.write(jsonEncode(cuerpo));
+    }
     final resp = await req.close().timeout(espera);
-    final cuerpo = await resp.transform(utf8.decoder).join();
+    final cuerpoResp = await resp.transform(utf8.decoder).join();
     if (resp.statusCode != 200) {
       throw BackendError(
-        'El servicio de PCInfo falló $que (HTTP ${resp.statusCode}).',
-        detalle: _detalle(uri, 'HTTP ${resp.statusCode}', cuerpo),
+        _mensajeServidor(cuerpoResp) ??
+            'El servicio de PCInfo falló $que (HTTP ${resp.statusCode}).',
+        detalle: _detalle(metodo, uri, 'HTTP ${resp.statusCode}', cuerpoResp),
       );
     }
-    return jsonDecode(cuerpo) as Map<String, dynamic>;
+    return jsonDecode(cuerpoResp) as Map<String, dynamic>;
   } on BackendError {
     rethrow;
   } on TimeoutException {
     throw BackendError(
       'El servicio de PCInfo tardó demasiado $que '
       '(más de ${espera.inSeconds} s) y se canceló la espera.',
-      detalle: _detalle(uri, 'Tiempo de espera agotado (${espera.inSeconds} s)', ''),
+      detalle: _detalle(metodo, uri, 'Tiempo de espera agotado (${espera.inSeconds} s)', ''),
     );
   } on SocketException catch (e) {
     throw BackendError(
       'No se pudo conectar con el servicio de PCInfo.',
       detalle: _detalle(
+        metodo,
         uri,
         e.osError == null ? e.message : '${e.message} (${e.osError})',
         '',
@@ -59,19 +88,37 @@ Future<Map<String, dynamic>> pideJson(
   } catch (e) {
     throw BackendError(
       'Fallo inesperado $que.',
-      detalle: _detalle(uri, '$e', ''),
+      detalle: _detalle(metodo, uri, '$e', ''),
     );
   } finally {
     client.close(force: true);
   }
 }
 
+/// Mensaje de negocio del backend, si lo hay. Un 409 de "ya hay una tarea en
+/// curso" o un 400 de "falta la carpeta" traen el motivo REDACTADO para el
+/// usuario: mostrarlo tal cual es mucho más útil que el código HTTP.
+String? _mensajeServidor(String cuerpo) {
+  if (cuerpo.trim().isEmpty) return null;
+  try {
+    final j = jsonDecode(cuerpo) as Map<String, dynamic>;
+    if (j['ok'] == false) {
+      final msg = '${j['error'] ?? ''}'.trim();
+      // Si trae traza es un fallo interno, no un mensaje pensado para leerse.
+      if (msg.isNotEmpty && '${j['stack'] ?? ''}'.isEmpty) return msg;
+    }
+  } catch (_) {
+    // no era JSON
+  }
+  return null;
+}
+
 /// Arma el bloque copiable. Si el cuerpo es el JSON de error del backend
 /// (`{ok:false, error, stack}`), se despliega error y traza; si no, se copia el
 /// cuerpo crudo recortado.
-String _detalle(Uri uri, String causa, String cuerpo) {
+String _detalle(String metodo, Uri uri, String causa, String cuerpo) {
   final b = StringBuffer()
-    ..writeln('GET $uri')
+    ..writeln('$metodo $uri')
     ..writeln('Causa: $causa');
   if (cuerpo.trim().isEmpty) return b.toString().trimRight();
   try {

@@ -1,7 +1,9 @@
 import 'dart:io';
 
+import '../models/controladores.dart';
 import '../models/errores.dart';
 import '../models/hardware.dart';
+import '../models/software.dart';
 import '../version.dart';
 import 'format.dart';
 
@@ -325,3 +327,200 @@ String _gpuKind(GpuCard card) {
       p.contains('hawk point');
   return integrada ? 'Integrada' : 'Dedicada';
 }
+
+// ---------------------------------------------------------------------------
+// Exportación del "Software instalado" y de la pestaña "Controladores".
+//
+// Estos dos reportes salen en MARKDOWN (.md) y no en .txt como los de hardware
+// y errores: la lista de software es una tabla larga, y en .md se puede pegar
+// en un ticket, un informe o un repositorio y sigue leyéndose ordenada.
+// ---------------------------------------------------------------------------
+
+/// Guarda el inventario de software en un .md agrupado por quién instaló cada
+/// programa. Devuelve la ruta del archivo escrito.
+Future<String> saveSoftwareReport(SoftwareInfo sw, String equipo) async {
+  final text = buildSoftwareMarkdown(sw, equipo);
+  final dir = _reportDir();
+  final host = _safe(equipo.isEmpty ? 'equipo' : equipo);
+  final path =
+      '$dir${Platform.pathSeparator}PCInfo_Software_${host}_${_fileStamp()}.md';
+  await File(path).writeAsString(text);
+  return path;
+}
+
+/// Guarda el inventario de controladores y redes WiFi en un .md.
+Future<String> saveControladoresReport(
+    ControladoresInfo ctl, String equipo) async {
+  final text = buildControladoresMarkdown(ctl, equipo);
+  final dir = _reportDir();
+  final host = _safe(equipo.isEmpty ? 'equipo' : equipo);
+  final path =
+      '$dir${Platform.pathSeparator}PCInfo_Controladores_${host}_${_fileStamp()}.md';
+  await File(path).writeAsString(text);
+  return path;
+}
+
+/// Construye el .md del software instalado.
+///
+/// La organización es la que pidió el uso real: PRIMERO lo que instaló el
+/// usuario —que es lo que distingue a este equipo y lo que hay que reponer si se
+/// formatea— y después lo que vino con el sistema operativo. Dentro de cada
+/// grupo se separa por tipo (programas, apps de la Tienda, componentes,
+/// actualizaciones) para que la tabla no mezcle un antivirus con un parche.
+String buildSoftwareMarkdown(SoftwareInfo sw, String equipo) {
+  final b = StringBuffer();
+  final nombre = equipo.isEmpty ? 'este equipo' : equipo;
+
+  b
+    ..writeln('# Software instalado — $nombre')
+    ..writeln()
+    ..writeln('Generado por $appName v$appVersion Rev $appRevision '
+        'el ${_humanStamp()}.')
+    ..writeln();
+  if (sw.source.isNotEmpty) b.writeln('- **Fuentes:** ${sw.source}');
+  b
+    ..writeln('- **Total:** ${sw.items.length} elementos '
+        '(${sw.delUsuario.length} · ${sw.tituloUsuario.toLowerCase()}, '
+        '${sw.delSistema.length} · ${sw.tituloSistema.toLowerCase()})')
+    ..writeln();
+  if (sw.reason.isNotEmpty) {
+    b
+      ..writeln('> ⚠️ ${sw.reason}')
+      ..writeln();
+  }
+
+  _grupoMarkdown(b, sw.tituloUsuario, sw.delUsuario);
+  _grupoMarkdown(b, sw.tituloSistema, sw.delSistema);
+
+  return b.toString();
+}
+
+/// Escribe un grupo (usuario / sistema) con una tabla por tipo de elemento.
+void _grupoMarkdown(StringBuffer b, String titulo, List<SoftwareItem> items) {
+  b
+    ..writeln('## $titulo (${items.length})')
+    ..writeln();
+  if (items.isEmpty) {
+    b
+      ..writeln('_Ninguno._')
+      ..writeln();
+    return;
+  }
+  // Orden fijo de los subgrupos: primero lo que un humano reconoce como
+  // "programa", al final el ruido (parches).
+  const orden = [
+    SoftwareKind.programa,
+    SoftwareKind.tienda,
+    SoftwareKind.componente,
+    SoftwareKind.actualizacion,
+  ];
+  const titulos = {
+    SoftwareKind.programa: 'Programas',
+    SoftwareKind.tienda: 'Apps de la Tienda',
+    SoftwareKind.componente: 'Componentes y runtimes',
+    SoftwareKind.actualizacion: 'Actualizaciones y parches',
+  };
+
+  for (final tipo in orden) {
+    final grupo = items.where((e) => e.kind == tipo).toList();
+    if (grupo.isEmpty) continue;
+    b
+      ..writeln('### ${titulos[tipo]} (${grupo.length})')
+      ..writeln()
+      ..writeln('| Programa | Versión | Fabricante | Instalado | Tamaño |')
+      ..writeln('| --- | --- | --- | --- | --- |');
+    for (final e in grupo) {
+      b.writeln('| ${_md(e.name)} | ${_md(e.versionVisible)} | '
+          '${_md(e.publisher)} | ${_md(e.installed)} | '
+          '${e.sizeMB > 0 ? '${e.sizeMB} MB' : ''} |');
+    }
+    b.writeln();
+  }
+
+  // Lo que no encaje en ningún subgrupo conocido no se pierde: si el backend
+  // añade un tipo nuevo, sigue apareciendo en el reporte.
+  final resto =
+      items.where((e) => !orden.contains(e.kind)).toList();
+  if (resto.isNotEmpty) {
+    b
+      ..writeln('### Otros (${resto.length})')
+      ..writeln()
+      ..writeln('| Programa | Versión | Fabricante |')
+      ..writeln('| --- | --- | --- |');
+    for (final e in resto) {
+      b.writeln(
+          '| ${_md(e.name)} | ${_md(e.versionVisible)} | ${_md(e.publisher)} |');
+    }
+    b.writeln();
+  }
+}
+
+/// Construye el .md de controladores y redes WiFi.
+String buildControladoresMarkdown(ControladoresInfo ctl, String equipo) {
+  final b = StringBuffer();
+  final nombre = equipo.isEmpty ? 'este equipo' : equipo;
+
+  b
+    ..writeln('# Controladores y redes WiFi — $nombre')
+    ..writeln()
+    ..writeln('Generado por $appName v$appVersion Rev $appRevision '
+        'el ${_humanStamp()}.')
+    ..writeln();
+  if (ctl.reason.isNotEmpty) {
+    b
+      ..writeln('> ⚠️ ${ctl.reason}')
+      ..writeln();
+  }
+
+  b
+    ..writeln('## Controladores de terceros (${ctl.drivers.length})')
+    ..writeln();
+  if (ctl.drivers.isEmpty) {
+    b
+      ..writeln('_Ninguno: los controladores en uso vienen en la propia imagen '
+          'del sistema._')
+      ..writeln();
+  } else {
+    b
+      ..writeln('| Controlador | Fabricante | Tipo | Versión | Fecha | Windows |')
+      ..writeln('| --- | --- | --- | --- | --- | --- |');
+    for (final c in ctl.drivers) {
+      b.writeln('| ${_md(c.visible)} | ${_md(c.provider)} | ${_md(c.clase)} | '
+          '${_md(c.version)} | ${_md(c.date)} | ${_md(c.name)} |');
+    }
+    b.writeln();
+  }
+
+  b
+    ..writeln('## Redes WiFi guardadas (${ctl.wifi.length})')
+    ..writeln();
+  if (ctl.wifi.isEmpty) {
+    b
+      ..writeln('_Ninguna._')
+      ..writeln();
+    return b.toString();
+  }
+  // Las contraseñas van en el reporte a propósito (sin ellas no sirve para
+  // reponer las redes), pero el archivo queda avisado: es información sensible.
+  b
+    ..writeln('> ⚠️ **Este archivo contiene las contraseñas de las redes en '
+        'texto legible.** Guárdalo donde corresponda o bórralo al terminar.')
+    ..writeln()
+    ..writeln('| Red | Seguridad | Contraseña |')
+    ..writeln('| --- | --- | --- |');
+  for (final r in ctl.wifi) {
+    final clave = r.abierta
+        ? '_red abierta_'
+        : r.password.isEmpty
+            ? '_no se pudo leer_'
+            : _md(r.password);
+    b.writeln('| ${_md(r.name)} | ${_md(r.auth)} | $clave |');
+  }
+  b.writeln();
+  return b.toString();
+}
+
+/// Escapa lo que rompería una celda de tabla Markdown: la barra vertical la
+/// interpreta como separador de columna y el salto de línea corta la fila.
+String _md(String s) =>
+    s.replaceAll('|', '\\|').replaceAll('\n', ' ').trim();
