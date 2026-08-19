@@ -97,6 +97,12 @@ type DiskInfo struct {
 	Serial    string `json:"serial"`
 	Bus       string `json:"bus"`
 
+	// Removable=true cuando el MEDIO es extraíble (memoria USB, tarjeta SD,
+	// lector). Esos no reportan S.M.A.R.T. y tardan en contestar que no, así que
+	// no se les sondea salvo que el usuario lo pida a mano. Un SSD/NVMe dentro de
+	// un gabinete USB NO es removible para Windows: a ese sí se le lee.
+	Removable bool `json:"removable"`
+
 	// Uso del sistema de archivos (suma de las particiones montadas del disco).
 	// 0 si el disco no tiene particiones montadas (secundario sin montar, etc.).
 	UsedBytes  int64 `json:"usedBytes"`

@@ -140,10 +140,16 @@ func handleHardware(w http.ResponseWriter, r *http.Request) {
 // handleDiscos sirve SOLO los discos, ya con S.M.A.R.T. Es la segunda parte del
 // arranque en dos tiempos: la GUI lo pide en segundo plano y actualiza la ficha
 // de Almacenamiento cuando llega.
-func handleDiscos(w http.ResponseWriter, _ *http.Request) {
+//
+// Parámetro opcional ?forzar=\\.\PHYSICALDRIVE2: sondea ESE disco por puente USB
+// aunque se haya clasificado como memoria extraíble. Lo usa el botón "Leer salud
+// igual" para el gabinete externo que se declara removible.
+func handleDiscos(w http.ResponseWriter, r *http.Request) {
 	// Se envuelve en un objeto (no un arreglo suelto) porque la GUI decodifica
 	// todas las respuestas como JSON de objeto.
-	responde(w, "/discos", map[string]any{"discos": collector.CollectDiscos()})
+	responde(w, "/discos", map[string]any{
+		"discos": collector.CollectDiscos(r.URL.Query().Get("forzar")),
+	})
 }
 
 // handleErrores sirve el "Historial de Errores": pantallazos azules y registro de

@@ -86,6 +86,10 @@ class _DashboardPageState extends State<DashboardPage> {
   /// true mientras se reintenta elevar el backend (UAC en curso).
   bool _elevating = false;
 
+  /// Discos a los que se les está forzando la lectura de salud a mano (botón
+  /// "Leer salud igual"), por nombre de dispositivo.
+  final Set<String> _forzandoSalud = {};
+
   /// true mientras está en camino la segunda fase del arranque: la salud
   /// (S.M.A.R.T.) de los discos. El resto del hardware ya está pintado; la ficha
   /// de Almacenamiento avisa que la salud sigue leyéndose.
@@ -166,6 +170,38 @@ class _DashboardPageState extends State<DashboardPage> {
     f.then((v) {
       if (mounted) setState(() => _controladores = v);
     }).catchError((Object _) {});
+  }
+
+  /// Fuerza la lectura de salud de un disco clasificado como memoria extraíble.
+  /// Existe para el gabinete externo que se declara removible: ahí la salud sí
+  /// se puede leer, pero por el tipo de medio no se sondea sola.
+  Future<void> _forzarSalud(DiskInfo d) async {
+    if (_forzandoSalud.contains(d.name)) return;
+    setState(() => _forzandoSalud.add(d.name));
+    try {
+      final discos = await widget.service.loadDiscos(forzar: d.name);
+      if (!mounted) return;
+      final hw = _hw;
+      if (hw != null) setState(() => _hw = hw.conDiscos(discos));
+      final leido = discos.firstWhere(
+        (x) => x.name == d.name,
+        orElse: () => d,
+      );
+      if (!leido.smartAvailable && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          backgroundColor: AppColors.surfaceAlt,
+          content: Text(
+            '${d.model.isEmpty ? d.name : d.model} no entregó datos de salud: '
+            'es una memoria extraíble o su adaptador no traduce los comandos.',
+            style: const TextStyle(color: AppColors.textHi, fontSize: kFont),
+          ),
+        ));
+      }
+    } catch (_) {
+      // El fallo ya se ve en la ficha: el disco sigue sin salud.
+    } finally {
+      if (mounted) setState(() => _forzandoSalud.remove(d.name));
+    }
   }
 
   /// Cambia la instalación analizada y recarga el historial.
@@ -1159,7 +1195,9 @@ class _DashboardPageState extends State<DashboardPage> {
   ///     puente USB o controladora RAID que no traducen los comandos.
   /// Devuelve null si no hay nada que avisar (todos con SMART, o Linux con root).
   Widget? _smartWarning(HardwareInfo hw) {
-    final anyMissing = hw.disks.any((d) => !d.smartAvailable);
+    // Los medios extraíbles (memoria USB, tarjeta) no reportan salud por su
+    // naturaleza: no son motivo para avisar de que falta smartctl o permisos.
+    final anyMissing = hw.disks.any((d) => !d.smartAvailable && !d.removable);
     if (!anyMissing) return null;
     final diag = hw.diag;
 
@@ -1338,6 +1376,17 @@ class _DashboardPageState extends State<DashboardPage> {
             const SizedBox(height: 12),
             _diskMetrics(d),
           ],
+          // Solo en Windows: ahí la salud de un disco externo se consigue
+          // sondeando tipos de puente USB, y eso es lo que fuerza el botón. En
+          // Linux el S.M.A.R.T. se pide igual a todos los discos, no hay nada
+          // que forzar.
+          if (d.removable &&
+              !d.smartAvailable &&
+              !_discosCargando &&
+              (_hw?.diag.isWindows ?? false)) ...[
+            const SizedBox(height: 10),
+            _botonForzarSalud(d),
+          ],
         ],
       ),
     );
@@ -1442,6 +1491,37 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
+  /// Botón para leer la salud de un disco tomado por memoria extraíble. Es la
+  /// salida para el gabinete externo (SSD/NVMe por USB) que se declara removible:
+  /// ahí sí hay salud que leer, pero sondearlo tarda y por eso no se hace solo.
+  Widget _botonForzarSalud(DiskInfo d) {
+    final leyendo = _forzandoSalud.contains(d.name);
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton.icon(
+        onPressed: leyendo ? null : () => _forzarSalud(d),
+        icon: leyendo
+            ? const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: AppColors.accent),
+              )
+            : const Icon(Icons.health_and_safety_outlined, size: 16),
+        label: Text(
+          leyendo
+              ? 'Leyendo la salud…'
+              : 'Leer salud igual (si es un disco en gabinete USB)',
+          style: const TextStyle(fontSize: kFont),
+        ),
+        style: TextButton.styleFrom(
+          foregroundColor: AppColors.accent,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        ),
+      ),
+    );
+  }
+
   /// Aviso mientras se lee la salud de los discos (segunda fase del arranque).
   Widget _leyendoSaludBox() => _warnBox(
         color: AppColors.textLow,
@@ -1480,9 +1560,15 @@ class _DashboardPageState extends State<DashboardPage> {
       );
 
   Widget _healthBadge(DiskInfo d) {
-    if (_discosCargando && !d.smartAvailable) {
+    if ((_discosCargando || _forzandoSalud.contains(d.name)) &&
+        !d.smartAvailable) {
       return _badgeSimple(
           AppColors.textLow, 'LEYENDO…', Icons.hourglass_top_rounded);
+    }
+    // Una memoria USB o una tarjeta no reporta salud: decirlo así es más honesto
+    // que "SIN SMART", que sugiere que algo falló.
+    if (d.removable && !d.smartAvailable) {
+      return _badgeSimple(AppColors.textLow, 'MEMORIA EXTRAÍBLE', Icons.usb_rounded);
     }
     final h = d.healthStatus;
     late final Color c;

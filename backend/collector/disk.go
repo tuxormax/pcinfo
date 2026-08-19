@@ -13,7 +13,7 @@ import (
 // en el primer arranque para pintar la pantalla al instante, y luego pide la
 // salud aparte con CollectDiscos (ver /discos en main.go). Leer S.M.A.R.T. es lo
 // único lento del inventario y depende de discos que pueden no contestar.
-func collectDisks(conSmart bool) []DiskInfo {
+func collectDisks(conSmart bool, forzarUSB string) []DiskInfo {
 	disks := []DiskInfo{}
 
 	info, err := ghw.Block()
@@ -30,12 +30,15 @@ func collectDisks(conSmart bool) []DiskInfo {
 		drive := strings.ToLower(d.DriveType.String())
 
 		di := DiskInfo{
-			Name:            deviceName(d.Name),
-			Model:           strings.TrimSpace(d.Model),
-			Vendor:          cleanDMI(d.Vendor),
-			SizeBytes:       int64(d.SizeBytes),
-			Serial:          strings.TrimSpace(d.SerialNumber),
-			Bus:             busName(ctrl, d.Name),
+			Name:      deviceName(d.Name),
+			Model:     strings.TrimSpace(d.Model),
+			Vendor:    cleanDMI(d.Vendor),
+			SizeBytes: int64(d.SizeBytes),
+			Serial:    strings.TrimSpace(d.SerialNumber),
+			Bus:       busName(ctrl, d.Name),
+			// En Linux ghw lo trae de sysfs; en Windows siempre viene false y lo
+			// corrige marcaMediosWindows con WMI (ghw no lo llena ahí).
+			Removable:       d.IsRemovable,
 			Type:            diskType(ctrl, drive),
 			LifePercentUsed: -1,
 		}
@@ -52,6 +55,10 @@ func collectDisks(conSmart bool) []DiskInfo {
 		disks = append(disks, di)
 	}
 
+	// Marca qué discos son de medio removible (memoria USB, tarjeta SD) antes de
+	// decidir a cuáles se les sondea el S.M.A.R.T.
+	marcaMediosWindows(disks)
+
 	if !conSmart {
 		return disks
 	}
@@ -61,7 +68,7 @@ func collectDisks(conSmart bool) []DiskInfo {
 	// no siempre acepta). En Linux, cada disco por su /dev/sdX, en PARALELO (cada
 	// smartctl ya tiene su timeout) → total ≈ disco más lento, no la suma.
 	if runtime.GOOS == "windows" {
-		enrichSmartWindows(disks)
+		enrichSmartWindows(disks, forzarUSB)
 	} else {
 		var wg sync.WaitGroup
 		for i := range disks {

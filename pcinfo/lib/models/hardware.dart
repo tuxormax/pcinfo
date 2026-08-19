@@ -105,6 +105,12 @@ class DiskInfo {
   final String serial;
   final String bus; // "nvme", "sata", "usb"
 
+  // true si el MEDIO es extraíble (memoria USB, tarjeta SD, lector). Esos no
+  // reportan S.M.A.R.T. y tardan en contestar que no, así que el backend no se
+  // los pregunta salvo que el usuario lo pida a mano. Un SSD/NVMe dentro de un
+  // gabinete USB NO es removible: a ese sí se le lee la salud.
+  final bool removable;
+
   // Uso del sistema de archivos (suma de particiones montadas). 0 si el disco
   // no tiene particiones montadas.
   final int usedBytes;
@@ -135,6 +141,7 @@ class DiskInfo {
     required this.type,
     required this.serial,
     required this.bus,
+    this.removable = false,
     this.usedBytes = 0,
     this.availBytes = 0,
     this.smartAvailable = false,
@@ -157,6 +164,7 @@ class DiskInfo {
         type: j['type'] ?? '',
         serial: j['serial'] ?? '',
         bus: j['bus'] ?? '',
+        removable: j['removable'] ?? false,
         usedBytes: (j['usedBytes'] ?? 0) as int,
         availBytes: (j['availBytes'] ?? 0) as int,
         smartAvailable: j['smartAvailable'] ?? false,

@@ -465,7 +465,7 @@ func scanOpen() []scanEntry {
 // acepta), pregunta con `--scan-open` y empareja cada resultado con el disco de
 // ghw por número de serie/modelo. Deja un log de diagnóstico junto al ejecutable
 // (smart-debug.log) por si algún equipo sigue sin reportar SMART.
-func enrichSmartWindows(disks []DiskInfo) {
+func enrichSmartWindows(disks []DiskInfo, forzarUSB string) {
 	var log strings.Builder
 	devs := scanOpen()
 	fmt.Fprintf(&log, "smartctl bin: %s\n", smartctlBin())
@@ -501,7 +501,7 @@ func enrichSmartWindows(disks []DiskInfo) {
 	// Pasada USB/UASP: los discos que siguen SIN SMART suelen ser externos en
 	// gabinete (--scan-open no los cubre o los abre con el tipo equivocado). Se
 	// reintenta por su ruta física con los tipos de puente USB (como CrystalDiskInfo).
-	probeSmartUSB(disks, &log)
+	probeSmartUSB(disks, &log, forzarUSB)
 
 	writeSmartDebug(log.String())
 }
@@ -537,25 +537,32 @@ var tiposSMARTWindowsUSB = []string{"sat", "usbjmicron", "usbasm1051", "usbproli
 // serie: se sondea ESE disco). Un puente USB oculta el modelo/serie reales —ghw
 // solo ve el gabinete ("ADATA ED600 SCSI Disk Device")—, así que al leer el SMART
 // también se corrigen con el modelo/serie verdaderos del disco.
-func probeSmartUSB(disks []DiskInfo, log *strings.Builder) {
+func probeSmartUSB(disks []DiskInfo, log *strings.Builder, forzarUSB string) {
 	limite := time.Now().Add(presupuestoUSB)
 	var mu sync.Mutex // el log lo escriben varias goroutines
 	var wg sync.WaitGroup
 	for i := range disks {
-		if disks[i].SmartAvailable || !puedeSerPuenteUSB(disks[i]) {
+		forzado := forzarUSB != "" && strings.EqualFold(disks[i].Name, forzarUSB)
+		if disks[i].SmartAvailable || (!puedeSerPuenteUSB(disks[i]) && !forzado) {
 			continue
 		}
+		// Un sondeo pedido a mano se toma su tiempo (el usuario lo está
+		// esperando a propósito); el automático corre con la espera corta.
+		espera := timeoutSmartUSB
+		if forzado {
+			espera = timeoutSmart
+		}
 		wg.Add(1)
-		go func(d *DiskInfo) { // cada goroutine toca SOLO su disco
+		go func(d *DiskInfo, espera time.Duration, forzado bool) { // cada goroutine toca SOLO su disco
 			defer wg.Done()
 			var linea strings.Builder
 			for _, dt := range tiposSMARTWindowsUSB {
-				if time.Now().After(limite) {
+				if !forzado && time.Now().After(limite) {
 					fmt.Fprintf(&linea, "usb %s: presupuesto agotado (%s), no se probaron más tipos\n",
 						d.Name, presupuestoUSB)
 					break
 				}
-				out := runSmartctl(d.Name, dt, timeoutSmartUSB)
+				out := runSmartctl(d.Name, dt, espera)
 				if !parseSmartInto(d, out) {
 					continue
 				}
@@ -576,15 +583,24 @@ func probeSmartUSB(disks []DiskInfo, log *strings.Builder) {
 				log.WriteString(linea.String())
 				mu.Unlock()
 			}
-		}(&disks[i])
+		}(&disks[i], espera, forzado)
 	}
 	wg.Wait()
 }
 
 // puedeSerPuenteUSB descarta los discos donde sondear tipos de puente USB es
-// tiempo tirado: un NVMe cuelga del PCIe, nunca de un gabinete USB, así que
-// probarle los 5 tipos solo servía para gastar segundos.
+// tiempo tirado:
+//   - un NVMe interno cuelga del PCIe, nunca de un gabinete USB;
+//   - una MEMORIA USB o una tarjeta SD (medio removible) no reporta S.M.A.R.T. y
+//     encima tarda en contestar que no — era lo que hacía esperar a la app.
+//
+// Un SSD/NVMe dentro de un gabinete externo NO cae aquí: Windows lo presenta
+// como disco fijo/externo, no como medio removible, así que se le sigue leyendo.
+// Para el gabinete que se declare removible está el sondeo forzado desde la GUI.
 func puedeSerPuenteUSB(d DiskInfo) bool {
+	if d.Removable {
+		return false
+	}
 	bus := strings.ToLower(d.Bus)
 	tipo := strings.ToLower(d.Type)
 	return !strings.Contains(bus, "nvme") && !strings.Contains(tipo, "nvme")

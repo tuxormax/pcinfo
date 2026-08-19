@@ -21,9 +21,12 @@ func Collect() HardwareInfo { return collect(true) }
 func CollectSinSmart() HardwareInfo { return collect(false) }
 
 // CollectDiscos devuelve SOLO los discos, ya con S.M.A.R.T. Es la segunda parte
-// del arranque en dos tiempos.
-func CollectDiscos() []DiskInfo {
-	return safe("disks", func() []DiskInfo { return collectDisks(true) })
+// del arranque en dos tiempos. [forzarUSB] es el nombre de dispositivo de un
+// disco al que hay que sondearle el S.M.A.R.T. por puente USB aunque se haya
+// clasificado como memoria extraíble: lo pide el usuario desde la GUI cuando un
+// gabinete externo se declara removible y se quedó sin lectura.
+func CollectDiscos(forzarUSB string) []DiskInfo {
+	return safe("disks", func() []DiskInfo { return collectDisks(true, forzarUSB) })
 }
 
 func collect(conSmart bool) HardwareInfo {
@@ -36,7 +39,7 @@ func collect(conSmart bool) HardwareInfo {
 		Board:  board,
 		Memory: safe("memory", func() MemoryInfo { return collectMemory(board) }),
 		GPU:    safe("gpu", collectGPU),
-		Disks:  safe("disks", func() []DiskInfo { return collectDisks(conSmart) }),
+		Disks:  safe("disks", func() []DiskInfo { return collectDisks(conSmart, "") }),
 		Diag:   safe("diag", collectDiag),
 	}
 }

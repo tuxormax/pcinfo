@@ -154,7 +154,7 @@ String buildReport(HardwareInfo hw) {
       line();
       line('  Disco ${i + 1}: ${d.model}');
       kv('Tipo', d.type.isEmpty ? '—' : d.type);
-      kv('Salud', _healthLabel(d.healthStatus));
+      kv('Salud', _saludDisco(d));
       kv('Dispositivo', d.name);
       kv('Serie', d.serial);
       kv('Bus', d.bus.toUpperCase());
@@ -292,6 +292,12 @@ String _tipoTexto(String kind) {
       return 'SISTEMA';
   }
 }
+
+/// Salud tal como se ve en la pantalla: un medio extraíble (memoria USB,
+/// tarjeta) no reporta salud por su naturaleza, así que se dice eso y no
+/// "SIN SMART", que sugiere un fallo (concordancia con la ficha del dashboard).
+String _saludDisco(DiskInfo d) =>
+    d.removable && !d.smartAvailable ? 'MEMORIA EXTRAÍBLE' : _healthLabel(d.healthStatus);
 
 String _healthLabel(DiskHealth h) {
   switch (h) {

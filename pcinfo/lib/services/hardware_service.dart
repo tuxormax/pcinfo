@@ -12,7 +12,10 @@ abstract class HardwareService {
   /// porque es lo único lento del inventario (un disco que no contesta —lector
   /// de tarjetas, gabinete USB— se lleva segundos por cada tipo de conexión que
   /// se prueba) y antes hacía que la app se pasara de los 30 s de espera.
-  Future<List<DiskInfo>> loadDiscos();
+  /// [forzar] = nombre de dispositivo de un disco al que hay que leerle la
+  /// salud aunque se haya clasificado como memoria extraíble (lo pide el botón
+  /// "Leer salud igual" cuando un gabinete externo se declara removible).
+  Future<List<DiskInfo>> loadDiscos({String forzar = ''});
 }
 
 /// Consume el backend Go (GET /hardware en localhost). Si no responde y se
@@ -49,13 +52,15 @@ class HttpHardwareService implements HardwareService {
   }
 
   @override
-  Future<List<DiskInfo>> loadDiscos() async {
+  Future<List<DiskInfo>> loadDiscos({String forzar = ''}) async {
     try {
       // Espera larga a propósito: aquí ya no hay nadie mirando una pantalla en
       // blanco —el resto del hardware está pintado— y el backend acota por su
       // cuenta cuánto sondea los discos que no contestan.
       final json = await pideJson(
-        _endpointDiscos,
+        forzar.isEmpty
+            ? _endpointDiscos
+            : _endpointDiscos.replace(queryParameters: {'forzar': forzar}),
         espera: const Duration(seconds: 120),
         que: 'al leer la salud de los discos',
       );
@@ -64,7 +69,7 @@ class HttpHardwareService implements HardwareService {
               .toList() ??
           const [];
     } catch (e) {
-      if (fallback != null) return fallback!.loadDiscos();
+      if (fallback != null) return fallback!.loadDiscos(forzar: forzar);
       rethrow;
     }
   }
@@ -72,7 +77,8 @@ class HttpHardwareService implements HardwareService {
 
 class MockHardwareService implements HardwareService {
   @override
-  Future<List<DiskInfo>> loadDiscos() async => (await load()).disks;
+  Future<List<DiskInfo>> loadDiscos({String forzar = ''}) async =>
+      (await load()).disks;
 
   @override
   Future<HardwareInfo> load() async {
