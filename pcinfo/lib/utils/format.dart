@@ -1,3 +1,7 @@
+/// Coma decimal, que es la del español: "35.5 TiB" pasa a "35,5 TiB". Toda la
+/// app escribe en español, así que los números también.
+String _coma(String n) => n.replaceAll('.', ',');
+
 /// Formatea bytes a una cadena legible (base binaria: GiB/MiB).
 String formatBytes(int bytes, {int decimals = 1}) {
   if (bytes <= 0) return '—';
@@ -9,14 +13,14 @@ String formatBytes(int bytes, {int decimals = 1}) {
     i++;
   }
   final n = i == 0 ? size.toStringAsFixed(0) : size.toStringAsFixed(decimals);
-  return '$n ${units[i]}';
+  return '${_coma(n)} ${units[i]}';
 }
 
 /// Formatea bytes a GB decimales (base 1000, como se etiqueta la capacidad de
 /// discos). Ej.: 240057409536 → "240.1 GB".
 String formatGB(int bytes, {int decimals = 1}) {
   if (bytes <= 0) return '0 GB';
-  return '${(bytes / 1e9).toStringAsFixed(decimals)} GB';
+  return '${_coma((bytes / 1e9).toStringAsFixed(decimals))} GB';
 }
 
 /// Formatea la capacidad de un disco en unidad DECIMAL (la real del fabricante):
@@ -26,8 +30,8 @@ String formatGB(int bytes, {int decimals = 1}) {
 String formatDiskCap(int bytes, {int decimals = 1}) {
   if (bytes <= 0) return '—';
   final gb = bytes / 1e9;
-  if (gb >= 1000) return '${(gb / 1000).toStringAsFixed(decimals)} TB';
-  return '${gb.toStringAsFixed(decimals)} GB';
+  if (gb >= 1000) return '${_coma((gb / 1000).toStringAsFixed(decimals))} TB';
+  return '${_coma(gb.toStringAsFixed(decimals))} GB';
 }
 
 /// Normaliza el nombre del fabricante de CPU a su forma corta.
@@ -41,6 +45,19 @@ String cleanVendor(String vendor) {
 /// Convierte MHz a GHz cuando aplica.
 String formatMhz(double mhz) {
   if (mhz <= 0) return '—';
-  if (mhz >= 1000) return '${(mhz / 1000).toStringAsFixed(2)} GHz';
+  if (mhz >= 1000) return '${_coma((mhz / 1000).toStringAsFixed(2))} GHz';
   return '${mhz.toStringAsFixed(0)} MHz';
+}
+
+/// Separa los miles con punto, como se escribe en español: 11559 → "11.559".
+/// Se usa para horas de funcionamiento y ciclos, que en un disco viejo son
+/// números de cinco cifras y sin separar no se leen de un vistazo.
+String formatEntero(int n) {
+  final texto = n.abs().toString();
+  final b = StringBuffer(n < 0 ? '-' : '');
+  for (var i = 0; i < texto.length; i++) {
+    if (i > 0 && (texto.length - i) % 3 == 0) b.write('.');
+    b.write(texto[i]);
+  }
+  return b.toString();
 }

@@ -51,6 +51,7 @@ func runServer(addr string) {
 	mux.HandleFunc("/discos", protege("/discos", handleDiscos))
 	mux.HandleFunc("/errores", protege("/errores", handleErrores))
 	mux.HandleFunc("/software", protege("/software", handleSoftware))
+	mux.HandleFunc("/bateria", protege("/bateria", handleBateria))
 	mux.HandleFunc("/controladores", protege("/controladores", handleControladores))
 	mux.HandleFunc("/controladores/tarea", protege("/controladores/tarea", handleTarea))
 	mux.HandleFunc("/controladores/respaldar", protege("/controladores/respaldar", handleRespaldar))
@@ -168,6 +169,13 @@ func handleErrores(w http.ResponseWriter, r *http.Request) {
 // la GUI solo lo pide al abrir esa pestaña.
 func handleSoftware(w http.ResponseWriter, _ *http.Request) {
 	responde(w, "/software", collector.CollectSoftware())
+}
+
+// handleBateria sirve el estado de salud de la batería. Va aparte de /hardware
+// porque en Windows hay que pedirle a powercfg que genere su informe, y eso se
+// lleva unos segundos: la GUI solo lo pide al abrir esa pestaña.
+func handleBateria(w http.ResponseWriter, _ *http.Request) {
+	responde(w, "/bateria", collector.CollectBattery())
 }
 
 // handleControladores sirve el inventario de controladores de terceros y redes

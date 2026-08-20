@@ -80,6 +80,13 @@ func collectDisks(conSmart bool, forzarUSB string) []DiskInfo {
 		}
 		wg.Wait()
 	}
+
+	// Con la salud ya leída, se redacta el veredicto y las explicaciones de cada
+	// disco (pestaña "Discos"). Va aquí y no en el colector de S.M.A.R.T. porque
+	// también hay que explicar los discos que NO lo reportan.
+	for i := range disks {
+		interpretaDisco(&disks[i])
+	}
 	return disks
 }
 

@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import '../version.dart';
+import '../models/bateria.dart';
 import '../models/controladores.dart';
 import '../models/errores.dart';
 import '../models/hardware.dart';
 import '../models/software.dart';
 import '../services/backend_http.dart';
+import '../services/bateria_service.dart';
 import '../services/backend_launcher.dart';
 import '../services/controladores_service.dart';
 import '../services/errores_service.dart';
@@ -17,7 +19,9 @@ import '../services/software_service.dart';
 import '../theme.dart';
 import '../utils/format.dart';
 import '../utils/report.dart';
+import 'bateria_page.dart';
 import 'controladores_page.dart';
+import 'discos_page.dart';
 import 'errores_page.dart';
 import 'software_page.dart';
 import 'widgets/spec_card.dart';
@@ -35,6 +39,9 @@ class DashboardPage extends StatefulWidget {
   /// Fuente de la pestaña "Controladores" (GET/POST /controladores).
   final ControladoresService? controladoresService;
 
+  /// Fuente de la pestaña "Batería" (GET /bateria). Null = pestaña sin datos.
+  final BateriaService? bateriaService;
+
   /// Launcher del backend. Solo se usa para "Reintentar como administrador"
   /// (Windows) cuando el SMART salió vacío por falta de elevación. Puede ser null
   /// (p. ej. en pruebas con el mock).
@@ -46,6 +53,7 @@ class DashboardPage extends StatefulWidget {
     this.erroresService,
     this.softwareService,
     this.controladoresService,
+    this.bateriaService,
     this.launcher,
   });
 
@@ -57,13 +65,15 @@ class _DashboardPageState extends State<DashboardPage> {
   late Future<HardwareInfo> _future;
 
   /// Pestaña activa: 0 = Hardware, 1 = Historial de Errores, 2 = Software,
-  /// 3 = Controladores.
+  /// 3 = Controladores, 4 = Batería, 5 = Discos.
   int _tab = 0;
 
   static const _tabHardwareIdx = 0;
   static const _tabErroresIdx = 1;
   static const _tabSoftwareIdx = 2;
   static const _tabControladoresIdx = 3;
+  static const _tabBateriaIdx = 4;
+  static const _tabDiscosIdx = 5;
 
   /// El historial de errores se pide SOLO al abrir su pestaña: en Windows
   /// recorre 30 días de registro de eventos y analiza los volcados, así que
@@ -76,12 +86,17 @@ class _DashboardPageState extends State<DashboardPage> {
   Future<SoftwareInfo>? _softwareFuture;
   Future<ControladoresInfo>? _controladoresFuture;
 
+  /// La batería también: en Windows hay que pedirle a powercfg que genere su
+  /// informe de batería, y eso se lleva unos segundos.
+  Future<BateriaInfo>? _bateriaFuture;
+
   /// Últimos datos cargados de cada pestaña (para el botón Guardar y para la
   /// barra superior, que se dibuja fuera del FutureBuilder).
   HardwareInfo? _hw;
   ErroresInfo? _errores;
   SoftwareInfo? _software;
   ControladoresInfo? _controladores;
+  BateriaInfo? _bateria;
 
   /// true mientras se reintenta elevar el backend (UAC en curso).
   bool _elevating = false;
@@ -172,6 +187,16 @@ class _DashboardPageState extends State<DashboardPage> {
     }).catchError((Object _) {});
   }
 
+  void _cargaBateria() {
+    final svc = widget.bateriaService;
+    if (svc == null) return;
+    final f = svc.load();
+    _bateriaFuture = f;
+    f.then((v) {
+      if (mounted) setState(() => _bateria = v);
+    }).catchError((Object _) {});
+  }
+
   /// Fuerza la lectura de salud de un disco clasificado como memoria extraíble.
   /// Existe para el gabinete externo que se declara removible: ahí la salud sí
   /// se puede leer, pero por el tipo de medio no se sondea sola.
@@ -226,6 +251,12 @@ class _DashboardPageState extends State<DashboardPage> {
         case _tabControladoresIdx:
           _controladores = null;
           _cargaControladores();
+        case _tabBateriaIdx:
+          _bateria = null;
+          _cargaBateria();
+        case _tabDiscosIdx:
+          // La salud de los discos viaja con el inventario: se recarga entero.
+          _cargaHardware();
         default:
           _cargaHardware();
       }
@@ -242,6 +273,8 @@ class _DashboardPageState extends State<DashboardPage> {
           if (_softwareFuture == null) _cargaSoftware();
         case _tabControladoresIdx:
           if (_controladoresFuture == null) _cargaControladores();
+        case _tabBateriaIdx:
+          if (_bateriaFuture == null) _cargaBateria();
       }
     });
   }
@@ -406,6 +439,8 @@ class _DashboardPageState extends State<DashboardPage> {
         _tabErroresIdx => _tabErrores(),
         _tabSoftwareIdx => _tabSoftware(),
         _tabControladoresIdx => _tabControladores(),
+        _tabBateriaIdx => _tabBateria(),
+        _tabDiscosIdx => _tabDiscos(),
         _ => _tabHardware(),
       };
 
@@ -542,6 +577,57 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
+  /// Pestaña "Discos": la salud de cada disco, explicada. Se apoya en los MISMOS
+  /// datos que la pestaña Hardware (el inventario ya trae los discos con su
+  /// S.M.A.R.T.), así que no vuelve a preguntar nada al backend.
+  Widget _tabDiscos() {
+    return FutureBuilder<HardwareInfo>(
+      future: _future,
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return _cargando('Buscando los discos del equipo…');
+        }
+        if (snap.hasError) {
+          return _estadoFallo('No se pudieron leer los discos', snap.error);
+        }
+        final hw = _hw ?? snap.data!;
+        final faltaAdmin =
+            hw.disks.any((d) => !d.smartAvailable && !d.removable) &&
+                !hw.diag.elevated;
+        return DiscosPage(
+          discos: hw.disks,
+          cargando: _discosCargando,
+          avisoAccion: _botonElevar(faltaAdmin),
+          onForzar: _forzarSalud,
+          forzando: _forzandoSalud,
+        );
+      },
+    );
+  }
+
+  Widget _tabBateria() {
+    if (widget.bateriaService == null) {
+      return _mensajeCentrado(
+        Icons.help_outline_rounded,
+        'Batería no disponible',
+        'Esta ventana se abrió sin conexión al servicio de PCInfo.',
+      );
+    }
+    return FutureBuilder<BateriaInfo>(
+      future: _bateriaFuture,
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return _cargando('Leyendo el estado de la batería…\n'
+              'Windows tarda unos segundos en preparar su informe.');
+        }
+        if (snap.hasError) {
+          return _estadoFallo('No se pudo leer la batería', snap.error);
+        }
+        return BateriaPage(data: snap.data!);
+      },
+    );
+  }
+
   /// Botón "Reintentar como administrador" (solo Windows y solo si hay launcher).
   /// Todo el módulo de controladores escribe en el equipo y necesita elevación,
   /// así que sin este botón la pestaña sería un callejón sin salida.
@@ -650,15 +736,22 @@ class _DashboardPageState extends State<DashboardPage> {
         border: Border(bottom: BorderSide(color: AppColors.border)),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: [
-          _tabBoton(_tabHardwareIdx, Icons.memory_rounded, 'Hardware'),
-          _tabBoton(
-              _tabErroresIdx, Icons.rule_folder_rounded, 'Historial de Errores'),
-          _tabBoton(_tabSoftwareIdx, Icons.apps_rounded, 'Software'),
-          _tabBoton(_tabControladoresIdx, Icons.settings_input_component_rounded,
-              'Controladores'),
-        ],
+      // Desplazable en horizontal: con cinco pestañas la fila ya no cabe en una
+      // ventana estrecha, y sin esto Flutter pinta la franja de desbordamiento.
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _tabBoton(_tabHardwareIdx, Icons.memory_rounded, 'Hardware'),
+            _tabBoton(_tabErroresIdx, Icons.rule_folder_rounded,
+                'Historial de Errores'),
+            _tabBoton(_tabSoftwareIdx, Icons.apps_rounded, 'Software'),
+            _tabBoton(_tabControladoresIdx,
+                Icons.settings_input_component_rounded, 'Controladores'),
+            _tabBoton(_tabBateriaIdx, Icons.battery_5_bar_rounded, 'Batería'),
+            _tabBoton(_tabDiscosIdx, Icons.storage_rounded, 'Discos'),
+          ],
+        ),
       ),
     );
   }
@@ -841,14 +934,18 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  /// Guardar: exporta lo que se está viendo, según la pestaña activa. Hardware e
-  /// historial de errores salen en .txt; software y controladores en .md, porque
-  /// son tablas largas que se pegan en un informe o un ticket.
+  /// Guardar: exporta lo que se está viendo, según la pestaña activa. Hardware,
+  /// historial de errores y batería salen en .txt; software y controladores en
+  /// .md, porque son tablas largas que se pegan en un informe o un ticket.
+  /// Siempre abre el diálogo del sistema para elegir carpeta y nombre (ver
+  /// `_guardaConDialogo` en report.dart).
   Widget _saveButton() {
     final habilitado = switch (_tab) {
       _tabErroresIdx => _errores != null,
       _tabSoftwareIdx => _software != null,
       _tabControladoresIdx => _controladores != null,
+      _tabBateriaIdx => _bateria != null,
+      _tabDiscosIdx => _hw != null && !_discosCargando,
       // Hardware: hasta que llegue la salud de los discos el reporte saldría
       // sin S.M.A.R.T. y parecería que el equipo no la reporta.
       _ => _hw != null && !_discosCargando,
@@ -888,8 +985,11 @@ class _DashboardPageState extends State<DashboardPage> {
         _tabSoftwareIdx => await saveSoftwareReport(_software!, equipo),
         _tabControladoresIdx =>
           await saveControladoresReport(_controladores!, equipo),
+        _tabBateriaIdx => await saveBateriaReport(_bateria!, equipo),
+        _tabDiscosIdx => await saveDiscosReport(_hw!.disks, equipo),
         _ => await saveReport(_hw!),
       };
+      if (path == null) return; // el usuario cerró el selector: no guardó nada
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         backgroundColor: AppColors.surfaceAlt,

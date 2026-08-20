@@ -1,5 +1,8 @@
 import 'dart:io';
 
+import 'package:file_selector/file_selector.dart';
+
+import '../models/bateria.dart';
 import '../models/controladores.dart';
 import '../models/errores.dart';
 import '../models/hardware.dart';
@@ -8,32 +11,90 @@ import '../version.dart';
 import 'format.dart';
 
 /// Genera un .txt con TODO lo que se ve en pantalla (sistema, CPU, placa, RAM,
-/// GPU y discos con uso + SMART) y lo guarda en la carpeta del usuario. Devuelve
-/// la ruta del archivo escrito.
-Future<String> saveReport(HardwareInfo hw) async {
-  final text = buildReport(hw);
-  final dir = _reportDir();
+/// GPU y discos con uso + SMART). Pregunta DÓNDE guardarlo con el diálogo del
+/// sistema. Devuelve la ruta escrita, o null si el usuario canceló.
+Future<String?> saveReport(HardwareInfo hw) {
   final host = _safe(hw.system.hostname.isEmpty ? 'equipo' : hw.system.hostname);
-  final path = '$dir${Platform.pathSeparator}PCInfo_${host}_${_fileStamp()}.txt';
-  await File(path).writeAsString(text);
-  return path;
+  return _guardaConDialogo(
+    texto: buildReport(hw),
+    nombre: 'PCInfo_${host}_${_fileStamp()}.txt',
+    extension: 'txt',
+  );
 }
 
 /// Guarda el "Historial de Errores" en un .txt (equivalente al C:\bluescreen.txt
 /// del script de Windows, pero con TODO lo que muestra la pestaña y en ambos
-/// sistemas). Devuelve la ruta del archivo escrito.
-Future<String> saveErroresReport(ErroresInfo err, String equipo) async {
-  final text = buildErroresReport(err, equipo);
-  final dir = _reportDir();
+/// sistemas). Devuelve la ruta escrita, o null si el usuario canceló.
+Future<String?> saveErroresReport(ErroresInfo err, String equipo) {
   final host = _safe(equipo.isEmpty ? 'equipo' : equipo);
-  final path =
-      '$dir${Platform.pathSeparator}PCInfo_Errores_${host}_${_fileStamp()}.txt';
-  await File(path).writeAsString(text);
+  return _guardaConDialogo(
+    texto: buildErroresReport(err, equipo),
+    nombre: 'PCInfo_Errores_${host}_${_fileStamp()}.txt',
+    extension: 'txt',
+  );
+}
+
+/// Guarda el informe de la batería en un .txt. Sale en texto plano (no en .md)
+/// porque es una explicación para leer, no una tabla: se pega tal cual en un
+/// correo o en un ticket. Devuelve la ruta escrita, o null si se canceló.
+Future<String?> saveBateriaReport(BateriaInfo bat, String equipo) {
+  final host = _safe(equipo.isEmpty ? 'equipo' : equipo);
+  return _guardaConDialogo(
+    texto: buildBateriaReport(bat, equipo),
+    nombre: 'PCInfo_Bateria_${host}_${_fileStamp()}.txt',
+    extension: 'txt',
+  );
+}
+
+/// Guarda la salud de los discos en un .txt: el veredicto de cada uno y las
+/// explicaciones, tal como se ven en la pestaña. Devuelve la ruta escrita, o
+/// null si se canceló.
+Future<String?> saveDiscosReport(List<DiskInfo> discos, String equipo) {
+  final host = _safe(equipo.isEmpty ? 'equipo' : equipo);
+  return _guardaConDialogo(
+    texto: buildDiscosReport(discos, equipo),
+    nombre: 'PCInfo_Discos_${host}_${_fileStamp()}.txt',
+    extension: 'txt',
+  );
+}
+
+/// Pide al usuario dónde guardar y escribe el archivo.
+///
+/// El reporte SIEMPRE pasa por el diálogo del sistema: antes se escribía solo
+/// en la carpeta del usuario y quien lo guardaba no sabía dónde había quedado
+/// (y menos aún podía mandarlo directo a una USB). El nombre sugerido ya viene
+/// armado con el equipo y la fecha, así que aceptar sin tocar nada deja el
+/// mismo archivo de siempre, pero en la carpeta que se eligió.
+///
+/// Devuelve la ruta escrita, o null si el usuario cerró el diálogo.
+Future<String?> _guardaConDialogo({
+  required String texto,
+  required String nombre,
+  required String extension,
+}) async {
+  final destino = await getSaveLocation(
+    suggestedName: nombre,
+    initialDirectory: _reportDir(),
+    confirmButtonText: 'Guardar',
+    acceptedTypeGroups: [
+      XTypeGroup(
+          label: extension == 'md' ? 'Markdown' : 'Texto',
+          extensions: [extension]),
+    ],
+  );
+  if (destino == null) return null; // el usuario canceló
+
+  // GTK (Linux) no agrega la extensión si el usuario la borró del nombre; sin
+  // ella el archivo se abre con cualquier cosa. Se repone aquí.
+  var path = destino.path;
+  if (!path.toLowerCase().endsWith('.$extension')) path = '$path.$extension';
+
+  await File(path).writeAsString(texto);
   return path;
 }
 
-/// Carpeta destino: HOME en Linux, USERPROFILE en Windows; cae al directorio
-/// actual si ninguna está definida.
+/// Carpeta que propone el diálogo la primera vez: HOME en Linux, USERPROFILE en
+/// Windows; cae al directorio actual si ninguna está definida.
 String _reportDir() {
   final env = Platform.environment;
   final home = Platform.isWindows ? env['USERPROFILE'] : env['HOME'];
@@ -343,27 +404,27 @@ String _gpuKind(GpuCard card) {
 // ---------------------------------------------------------------------------
 
 /// Guarda el inventario de software en un .md agrupado por quién instaló cada
-/// programa. Devuelve la ruta del archivo escrito.
-Future<String> saveSoftwareReport(SoftwareInfo sw, String equipo) async {
-  final text = buildSoftwareMarkdown(sw, equipo);
-  final dir = _reportDir();
+/// programa. Pregunta dónde guardarlo. Devuelve la ruta escrita, o null si el
+/// usuario canceló.
+Future<String?> saveSoftwareReport(SoftwareInfo sw, String equipo) {
   final host = _safe(equipo.isEmpty ? 'equipo' : equipo);
-  final path =
-      '$dir${Platform.pathSeparator}PCInfo_Software_${host}_${_fileStamp()}.md';
-  await File(path).writeAsString(text);
-  return path;
+  return _guardaConDialogo(
+    texto: buildSoftwareMarkdown(sw, equipo),
+    nombre: 'PCInfo_Software_${host}_${_fileStamp()}.md',
+    extension: 'md',
+  );
 }
 
-/// Guarda el inventario de controladores y redes WiFi en un .md.
-Future<String> saveControladoresReport(
-    ControladoresInfo ctl, String equipo) async {
-  final text = buildControladoresMarkdown(ctl, equipo);
-  final dir = _reportDir();
+/// Guarda el inventario de controladores y redes WiFi en un .md. Pregunta dónde
+/// guardarlo. Devuelve la ruta escrita, o null si el usuario canceló.
+Future<String?> saveControladoresReport(
+    ControladoresInfo ctl, String equipo) {
   final host = _safe(equipo.isEmpty ? 'equipo' : equipo);
-  final path =
-      '$dir${Platform.pathSeparator}PCInfo_Controladores_${host}_${_fileStamp()}.md';
-  await File(path).writeAsString(text);
-  return path;
+  return _guardaConDialogo(
+    texto: buildControladoresMarkdown(ctl, equipo),
+    nombre: 'PCInfo_Controladores_${host}_${_fileStamp()}.md',
+    extension: 'md',
+  );
 }
 
 /// Construye el .md del software instalado.
@@ -530,3 +591,201 @@ String buildControladoresMarkdown(ControladoresInfo ctl, String equipo) {
 /// interpreta como separador de columna y el salto de línea corta la fila.
 String _md(String s) =>
     s.replaceAll('|', '\\|').replaceAll('\n', ' ').trim();
+
+// ---------------------------------------------------------------------------
+// Reporte de la pestaña "Batería".
+//
+// Mismo criterio que en pantalla: primero el veredicto, después las cifras y
+// por último la explicación. Los textos NO se redactan aquí: vienen del backend
+// (verdict y notes) para que digan exactamente lo mismo que la app.
+// ---------------------------------------------------------------------------
+
+String buildBateriaReport(BateriaInfo bat, String equipo) {
+  final b = StringBuffer();
+  void line([String s = '']) => b.writeln(s);
+
+  line('$appName v$appVersion Rev $appRevision');
+  line('Estado de la batería · generado: ${_humanStamp()}');
+  if (equipo.isNotEmpty) line('Equipo: $equipo');
+  if (bat.source.isNotEmpty) line('Fuente: ${bat.source}');
+  line('=' * 60);
+
+  final p = bat.principal;
+  if (p == null) {
+    line();
+    line(bat.reason.isNotEmpty
+        ? bat.reason
+        : 'Este equipo no tiene batería.');
+    return b.toString();
+  }
+
+  line();
+  line('== ¿Cómo está la batería? ==');
+  line('  ${p.verdict}');
+  if (p.healthPercent >= 0) {
+    line('  Salud: ${p.healthPercent} % de la capacidad que tenía nueva '
+        '(${p.etiquetaSalud}).');
+  }
+  if (p.chargePercent >= 0) {
+    line('  Ahora mismo: ${p.chargePercent} % de carga · '
+        '${BateriaEstado.etiqueta(p.state)}.');
+  }
+
+  line();
+  line('== Cifras ==');
+  line('  Cuando era nueva aguantaba : ${energiaEnPalabras(p.designMWh)}'
+      '${p.designMWh > 0 ? " (${p.designMWh} mWh)" : ""}');
+  line('  Hoy, cargada al 100 %      : ${energiaEnPalabras(p.fullMWh)}'
+      '${p.fullMWh > 0 ? " (${p.fullMWh} mWh)" : ""}');
+  if (p.remainingMWh > 0) {
+    line('  En este momento            : ${energiaEnPalabras(p.remainingMWh)}');
+  }
+  line('  Veces que se ha cargado    : '
+      '${p.cycleCount > 0 ? "${p.cycleCount}" : "el equipo no lleva esa cuenta"}');
+
+  line();
+  line('== Cuánto dura sin enchufar ==');
+  line('  (la cuenta del sistema sale del uso habitual; usándolo a tope dura '
+      'bastante menos)');
+  if (bat.runtimeHeavyMin > 0) {
+    line('  Usándolo a tope (vídeo, brillo alto): unos '
+        '${duracionEnPalabras(bat.runtimeHeavyMin)}');
+  }
+  if (bat.runtimeFullMin > 0) {
+    line('  En el uso de siempre, al 100 %      : '
+        '${duracionEnPalabras(bat.runtimeFullMin)}');
+  }
+  if (bat.runtimeNowMin > 0) {
+    line('  Con la carga que le queda ahora     : '
+        '${duracionEnPalabras(bat.runtimeNowMin)}');
+  }
+  if (bat.wattsTypicalMW > 0) {
+    line('  Consumo medido del equipo           : '
+        '${vatiosEnPalabras(bat.wattsTypicalMW)} en uso habitual'
+        '${bat.wattsHeavyMW > 0 ? ", ${vatiosEnPalabras(bat.wattsHeavyMW)} a tope" : ""}');
+  }
+
+  line();
+  line('== Para pedir una batería nueva ==');
+  line('  Modelo de la batería: '
+      '${p.model.isNotEmpty ? p.model : "no lo publica el equipo"}');
+  if (p.manufacturer.isNotEmpty) line('  Fabricante          : ${p.manufacturer}');
+  if (bat.equipment.isNotEmpty) line('  Para el equipo      : ${bat.equipment}');
+  if (p.voltageMV > 0) {
+    line('  Voltaje             : ${voltiosEnPalabras(p.voltageMV)}'
+        '   (con otro voltaje NO sirve, aunque encaje)');
+  }
+  line('  Capacidad           : ${energiaEnPalabras(p.designMWh)}'
+      '${p.designMAh > 0 ? " · ${p.designMAh} mAh" : ""}');
+  final quimicaRepuesto = p.chemistryText.isNotEmpty ? p.chemistryText : p.chemistry;
+  if (quimicaRepuesto.isNotEmpty) line('  De qué está hecha   : $quimicaRepuesto');
+
+  if (p.notes.isNotEmpty) {
+    line();
+    line('== Qué significa todo esto ==');
+    for (final n in p.notes) {
+      line();
+      line('  ${n.title}');
+      line('    ${n.detail}');
+    }
+  }
+
+  line();
+  line('== Datos técnicos ==');
+  if (p.name.isNotEmpty) line('  Como la llama el equipo: ${p.name}');
+  if (p.serial.isNotEmpty) line('  Número de serie        : ${p.serial}');
+  if (p.designMWh > 0) line('  Capacidad de fábrica   : ${p.designMWh} mWh');
+  if (p.fullMWh > 0) line('  Capacidad actual       : ${p.fullMWh} mWh');
+  if (bat.onAcKnown) {
+    line('  Corriente              : '
+        '${bat.onAc ? "enchufado" : "funcionando con batería"}');
+  }
+
+  if (bat.history.length > 1) {
+    line();
+    line('== Cómo ha ido bajando ==');
+    for (final h in bat.history) {
+      line('  ${h.period.padRight(26)} ${energiaEnPalabras(h.fullMWh).padLeft(9)}'
+          '${h.healthPercent >= 0 ? "   ${h.healthPercent} % de su capacidad de fábrica" : ""}');
+    }
+  }
+
+  if (bat.reason.isNotEmpty) {
+    line();
+    line('Aviso: ${bat.reason}');
+  }
+
+  line();
+  line('=' * 60);
+  line('$appCopyright · $appEmail · Licencia $appLicense');
+  return b.toString();
+}
+
+// ---------------------------------------------------------------------------
+// Reporte de la pestaña "Discos".
+//
+// Mismo criterio que la batería: primero el veredicto de cada disco y después
+// el porqué. Los textos vienen del backend (verdict y notes) para que digan
+// exactamente lo mismo que la app.
+// ---------------------------------------------------------------------------
+
+String buildDiscosReport(List<DiskInfo> discos, String equipo) {
+  final b = StringBuffer();
+  void line([String s = '']) => b.writeln(s);
+
+  line('$appName v$appVersion Rev $appRevision');
+  line('Salud de los discos · generado: ${_humanStamp()}');
+  if (equipo.isNotEmpty) line('Equipo: $equipo');
+  line('=' * 60);
+
+  if (discos.isEmpty) {
+    line();
+    line('No se encontró ningún disco.');
+    return b.toString();
+  }
+
+  for (final (i, d) in discos.indexed) {
+    line();
+    line('-' * 60);
+    line('Disco ${i + 1}: ${d.titulo}');
+    line('-' * 60);
+    line('  ${d.verdict}');
+    if (d.lifePercentLeft >= 0) {
+      line('  Vida que le queda   : ${d.lifePercentLeft} %');
+    }
+    line('  Tipo                : ${d.type.isEmpty ? "—" : d.type}'
+        '   ·   Capacidad: ${formatDiskCap(d.sizeBytes)}');
+    if (d.hasUsage) {
+      line('  Espacio usado       : ${formatBytes(d.usedBytes)} de '
+          '${formatBytes(d.fsTotalBytes)} (${d.usedPercent.round()} %), '
+          'libres ${formatBytes(d.availBytes)}');
+    }
+    if (d.powerOnHours > 0) {
+      line('  Tiempo encendido    : ${formatEntero(d.powerOnHours)} h'
+          '${d.powerCycles > 0 ? "   ·   se ha encendido ${formatEntero(d.powerCycles)} veces" : ""}');
+    }
+    if (d.writtenBytes > 0) {
+      line('  Datos escritos      : ${formatBytes(d.writtenBytes)}');
+    }
+    if (d.smartAvailable) {
+      line('  Trozos dañados      : ${d.reallocatedSectors}');
+    }
+    if (d.serial.isNotEmpty) line('  Número de serie     : ${d.serial}');
+    line('  Dispositivo         : ${d.name}');
+
+    if (d.notes.isNotEmpty) {
+      line();
+      line('  Qué significa todo esto:');
+      for (final n in d.notes) {
+        line();
+        line('    ${n.title}');
+        line('      ${n.detail}');
+      }
+    }
+  }
+
+  line();
+  line('=' * 60);
+  line('$appCopyright · $appEmail · Licencia $appLicense');
+  return b.toString();
+}

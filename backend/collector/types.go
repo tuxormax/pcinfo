@@ -123,6 +123,12 @@ type DiskInfo struct {
 	// problemas detectados con su consecuencia, para el modal de la GUI.
 	HealthLevel string      `json:"healthLevel"`
 	Issues      []DiskIssue `json:"issues"`
+
+	// La misma salud, EXPLICADA como en la pestaña de batería: una frase que
+	// dice qué hacer y las notas que traducen cada número a lenguaje normal.
+	// Las arma interpretaDisco (disco_salud.go).
+	Verdict string `json:"verdict"`
+	Notes   []Nota `json:"notes"`
 }
 
 // DiskIssue es un problema concreto detectado en el disco: qué es y qué implica.

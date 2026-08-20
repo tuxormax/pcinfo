@@ -133,6 +133,12 @@ class DiskInfo {
   final String healthLevel;
   final List<DiskIssue> issues;
 
+  /// La misma salud EXPLICADA (pestaña "Discos"): una frase que dice qué hacer
+  /// y las notas que traducen cada número. Las redacta el backend para que el
+  /// texto sea idéntico en pantalla y en el reporte guardado.
+  final String verdict;
+  final List<DiscoNota> notes;
+
   const DiskInfo({
     required this.name,
     required this.model,
@@ -154,6 +160,8 @@ class DiskInfo {
     this.reallocatedSectors = 0,
     this.healthLevel = '',
     this.issues = const [],
+    this.verdict = '',
+    this.notes = const [],
   });
 
   factory DiskInfo.fromJson(Map<String, dynamic> j) => DiskInfo(
@@ -180,6 +188,11 @@ class DiskInfo {
                 ?.map((e) => DiskIssue.fromJson(e as Map<String, dynamic>))
                 .toList() ??
             const [],
+        verdict: j['verdict'] ?? '',
+        notes: (j['notes'] as List?)
+                ?.map((e) => DiscoNota.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            const [],
       );
 
   /// Total del sistema de archivos (ocupado + disponible). 0 si no hay
@@ -196,6 +209,14 @@ class DiskInfo {
   /// % disponible respecto al total montado.
   double get availPercent =>
       fsTotalBytes > 0 ? availBytes / fsTotalBytes * 100 : 0;
+
+  /// Vida útil que le QUEDA a un SSD (%), o -1 si el disco no lo reporta (los
+  /// mecánicos nunca lo hacen). El backend guarda la vida consumida.
+  int get lifePercentLeft =>
+      lifePercentUsed < 0 ? -1 : (100 - lifePercentUsed).clamp(0, 100);
+
+  /// Nombre para la ficha: el modelo, y si no lo hay, el dispositivo.
+  String get titulo => model.isNotEmpty ? model : name;
 
   /// Estado de salud legible: saludable / advertencia / falla / desconocido.
   /// Se prioriza el `healthLevel` que calcula el backend a partir de TODOS los
@@ -220,6 +241,22 @@ class DiskInfo {
 }
 
 enum DiskHealth { good, warning, fail, unknown }
+
+/// Una explicación del estado del disco en palabras sencillas. Misma forma que
+/// las notas de la batería (el backend usa un solo tipo para las dos).
+class DiscoNota {
+  final String level; // info | warning | fail
+  final String title;
+  final String detail;
+
+  const DiscoNota({this.level = '', this.title = '', this.detail = ''});
+
+  factory DiscoNota.fromJson(Map<String, dynamic> j) => DiscoNota(
+        level: j['level'] ?? '',
+        title: j['title'] ?? '',
+        detail: j['detail'] ?? '',
+      );
+}
 
 /// Un problema detectado en el disco: severidad, nombre y qué implica.
 class DiskIssue {
