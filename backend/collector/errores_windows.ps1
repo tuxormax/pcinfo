@@ -896,6 +896,14 @@ foreach ($b in ($bsod | Sort-Object Cuando -Descending)) {
         foreach ($nm in @($analisis.Descargados)) { Anota-Culpable $nm 'descarga' }
     }
 
+    # OJO: @($null) NO es un array vacio, es un array de UN elemento nulo
+    # (@($null).Count vale 1). Y en PS 5.1 leer una propiedad de $null devuelve
+    # $null sin avisar, asi que "@($analisis.Evidencia)" con $analisis nulo
+    # producia [null] en el JSON y la GUI pintaba la palabra "null". Pasa en
+    # todos los pantallazos cuyo volcado no existe, que son muchos.
+    $evidencia = @()
+    if ($analisis -and $analisis.Evidencia) { $evidencia = @($analisis.Evidencia | Where-Object { $_ }) }
+
     $culpable = ''; $culpableInfo = ''; $confianza = ''; $sospechosos = @()
     if ($analisis -and $analisis.Culpable) {
         $c = $analisis.Culpable
@@ -924,7 +932,7 @@ foreach ($b in ($bsod | Sort-Object Cuando -Descending)) {
             severity = 'critico'; kind = 'pantallazo'; title = $titulo; source = $b.Fuente
             code = $stopNorm; codeName = $nombre
             culprit = $culpable; culpritInfo = $culpableInfo; confidence = $confianza; suspects = $sospechosos
-            evidence = @($analisis.Evidencia)
+            evidence = $evidencia
             cause = (Causa-Stop $stop); fix = $fix; detail = $detalle.ToString()
         })
 }
