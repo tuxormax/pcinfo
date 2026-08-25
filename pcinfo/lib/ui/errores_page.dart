@@ -66,6 +66,12 @@ class _ErroresPageState extends State<ErroresPage> {
             const SizedBox(height: 14),
           ],
           _resumen(d),
+          // Va ARRIBA de la lista a proposito: es la conclusion, y sin ella
+          // habria que deducirla abriendo los pantallazos uno por uno.
+          if (d.culprits.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            _culpables(d),
+          ],
           if (d.reason.isNotEmpty) ...[
             const SizedBox(height: 14),
             _aviso(d),
@@ -83,6 +89,98 @@ class _ErroresPageState extends State<ErroresPage> {
             const SizedBox(height: 8),
             _volcados(d),
           ],
+        ],
+      ),
+    );
+  }
+
+  // ---- Controladores señalados (cruce de TODOS los volcados) ----
+
+  /// Un volcado suelto casi nunca nombra al culpable: el patrón aparece al
+  /// cruzarlos. Esta tarjeta responde a "¿qué controlador cambio?", con el
+  /// dispositivo y la versión que hacen falta para desinstalarlo.
+  ///
+  /// Solo Windows: en Linux el backend devuelve la lista vacía y no aparece.
+  Widget _culpables(ErroresInfo d) {
+    final rojo = _colorSeveridad('critico');
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: rojo.withValues(alpha: 0.45)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.rule_rounded, size: 18, color: rojo),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text('Controladores señalados',
+                    style: TextStyle(
+                        color: rojo,
+                        fontSize: kFont,
+                        fontWeight: FontWeight.w700)),
+              ),
+              _badgeGlobal(
+                  '${d.dumpsAnalyzed} volcados analizados', AppColors.textMid),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+              'Cruzando todos los volcados. Estar en la pila de llamadas prueba '
+              'que su código se ejecutaba; estar descargándose es un patrón '
+              'fuerte, pero indirecto.',
+              style: TextStyle(color: AppColors.textMid, fontSize: kFont)),
+          const SizedBox(height: 12),
+          ...d.culprits.map((c) => _filaCulpable(c, rojo)),
+        ],
+      ),
+    );
+  }
+
+  Widget _filaCulpable(Culprit c, Color rojo) {
+    final datos = [
+      if (c.vendor.isNotEmpty) c.vendor,
+      if (c.version.isNotEmpty) 'v${c.version}',
+    ].join(' · ');
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(c.probado ? Icons.gps_fixed_rounded : Icons.help_outline_rounded,
+              size: 16, color: c.probado ? rojo : AppColors.textMid),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SelectableText(c.titulo,
+                    style: const TextStyle(
+                        color: AppColors.textHi,
+                        fontSize: kFont,
+                        fontWeight: FontWeight.w700)),
+                // El archivo se repite cuando el titulo es el dispositivo:
+                // hace falta para saber que desinstalar.
+                if (c.device.isNotEmpty)
+                  SelectableText(c.driver,
+                      style: const TextStyle(
+                          color: AppColors.textMid, fontSize: kFont)),
+                if (datos.isNotEmpty)
+                  SelectableText(datos,
+                      style: const TextStyle(
+                          color: AppColors.textMid, fontSize: kFont)),
+                if (c.why.isNotEmpty)
+                  Text(c.why,
+                      style: TextStyle(
+                          color: c.probado ? rojo : AppColors.textMid,
+                          fontSize: kFont)),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -626,6 +724,15 @@ class _ErrorCardState extends State<_ErrorCard> {
                       style: const TextStyle(
                           color: AppColors.textMid, fontSize: kFont)),
                 ],
+                // POR QUE se le acusa. Sin esto "confianza alta" y "confianza
+                // baja" son etiquetas opacas y no se puede decidir si vale la
+                // pena desinstalar un controlador.
+                ...e.evidence.map((t) => Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: SelectableText(t,
+                          style: const TextStyle(
+                              color: AppColors.textMid, fontSize: kFont)),
+                    )),
               ],
             ),
           ),
@@ -759,7 +866,12 @@ class _ErrorCardState extends State<_ErrorCard> {
     if (mounted) setState(() => _copiado = false);
   }
 
-  Widget _badge(String texto, Color color) => Container(
+  Widget _badge(String texto, Color color) => _badgeGlobal(texto, color);
+}
+
+/// Etiqueta pequena. Suelta (fuera de la clase) porque la usan tanto la pagina
+/// como la tarjeta de cada pantallazo, igual que _colorSeveridad.
+Widget _badgeGlobal(String texto, Color color) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.14),
@@ -770,7 +882,6 @@ class _ErrorCardState extends State<_ErrorCard> {
             style: TextStyle(
                 color: color, fontSize: kFont - 2, fontWeight: FontWeight.w700)),
       );
-}
 
 // ---------------------------------------------------------------------------
 // Traducción de categorías y severidades (compartida por la página y la tarjeta)

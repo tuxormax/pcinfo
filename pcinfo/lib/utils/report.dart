@@ -268,6 +268,26 @@ String buildErroresReport(ErroresInfo err, String equipo) {
   if (err.reason.isNotEmpty) line('Aviso: ${err.reason}');
   line('=' * 78);
 
+  // La conclusión va ANTES del listado: quien lea el reporte pegado en un chat
+  // tiene que ver primero qué controlador cambiar, no deducirlo de 30 entradas.
+  if (err.culprits.isNotEmpty) {
+    line();
+    line('=' * 78);
+    line('CONTROLADORES SEÑALADOS  (cruce de ${err.dumpsAnalyzed} volcados)');
+    line('=' * 78);
+    line('Estar en la pila de llamadas prueba que su código se ejecutaba.');
+    line('Estar descargándose es un patrón fuerte, pero indirecto.');
+    for (final c in err.culprits) {
+      line();
+      line('  ${c.titulo}');
+      if (c.device.isNotEmpty) line('    Archivo   : ${c.driver}');
+      if (c.vendor.isNotEmpty) line('    Fabricante: ${c.vendor}');
+      if (c.version.isNotEmpty) line('    Versión   : ${c.version}');
+      if (c.path.isNotEmpty) line('    Ruta      : ${c.path}');
+      if (c.why.isNotEmpty) line('    Señalado  : ${c.why}');
+    }
+  }
+
   if (err.items.isEmpty) {
     line();
     line(err.available
@@ -290,6 +310,10 @@ String buildErroresReport(ErroresInfo err, String equipo) {
       line('Causante    : ${e.culprit}'
           '${e.confidence.isNotEmpty ? "   (confianza ${e.confidence})" : ""}');
       if (e.culpritInfo.isNotEmpty) line('              ${e.culpritInfo}');
+    }
+    // Por qué se le acusa: sin esto "confianza alta" no se puede juzgar.
+    for (final ev in e.evidence) {
+      line('Evidencia   : $ev');
     }
     for (final s in e.suspects.skip(1)) {
       line('Sospechoso  : $s');
