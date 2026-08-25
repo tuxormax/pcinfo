@@ -61,6 +61,11 @@ type SystemError struct {
 	CulpritInfo string   `json:"culpritInfo"` // fabricante, versión y ruta
 	Confidence  string   `json:"confidence"`  // alta | media | baja
 	Suspects    []string `json:"suspects"`    // otros sospechosos
+	// Por qué se acusa a ese driver, en español y ya redactado. Existe para que
+	// "alta" y "baja" no sean una etiqueta opaca: la diferencia entre "estaba en
+	// la pila de llamadas" y "su nombre aparece suelto en el archivo" es la que
+	// decide si vale la pena desinstalar un driver.
+	Evidence []string `json:"evidence"`
 
 	Cause  string `json:"cause"`  // por qué ocurre (español)
 	Fix    string `json:"fix"`    // cómo resolverlo (español)
@@ -116,6 +121,28 @@ type ErrorsReport struct {
 
 	Items []SystemError `json:"items"`
 	Dumps []DumpFile    `json:"dumps"`
+
+	// Culpables cruzando TODOS los volcados analizados, del más señalado al
+	// menos. Un volcado suelto casi nunca nombra al culpable (caso real: de 5
+	// minidumps, solo uno tenía un driver de terceros en la pila); el patrón
+	// aparece al cruzarlos. Es lo que permite decir QUÉ driver desinstalar.
+	Culprits      []Culprit `json:"culprits"`
+	DumpsAnalyzed int       `json:"dumpsAnalyzed"`
+}
+
+// Culprit es un driver de terceros señalado por el cruce de volcados, con lo
+// que hace falta para poder cambiarlo: de qué dispositivo es y qué versión.
+type Culprit struct {
+	Driver  string `json:"driver"`  // rtwlane601.sys
+	Device  string `json:"device"`  // "Realtek Wireless LAN 802.11ac"
+	Vendor  string `json:"vendor"`  // fabricante que lo firma
+	Version string `json:"version"` // versión instalada
+	Path    string `json:"path"`
+
+	InStack   int    `json:"inStack"`   // en cuántos volcados estaba EJECUTÁNDOSE
+	Unloading int    `json:"unloading"` // en cuántos estaba descargándose
+	Total     int    `json:"total"`     // volcados analizados
+	Why       string `json:"why"`       // frase ya redactada para la pantalla
 }
 
 // CollectErrors arma el reporte de errores del sistema. Igual que Collect(), va

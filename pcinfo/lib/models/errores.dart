@@ -21,6 +21,12 @@ class ErroresInfo {
   final List<ErrorItem> items;
   final List<DumpFile> dumps;
 
+  /// Culpables cruzando TODOS los volcados analizados, del más señalado al
+  /// menos. Un volcado suelto casi nunca nombra al culpable; el patrón aparece
+  /// al cruzarlos. Es lo que permite decir QUÉ driver desinstalar.
+  final List<Culprit> culprits;
+  final int dumpsAnalyzed;
+
   const ErroresInfo({
     this.os = '',
     this.elevated = false,
@@ -34,6 +40,8 @@ class ErroresInfo {
     this.installs = const [],
     this.items = const [],
     this.dumps = const [],
+    this.culprits = const [],
+    this.dumpsAnalyzed = 0,
   });
 
   factory ErroresInfo.fromJson(Map<String, dynamic> j) => ErroresInfo(
@@ -58,6 +66,11 @@ class ErroresInfo {
                 ?.map((e) => DumpFile.fromJson(e as Map<String, dynamic>))
                 .toList() ??
             const [],
+        culprits: (j['culprits'] as List?)
+                ?.map((e) => Culprit.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            const [],
+        dumpsAnalyzed: (j['dumpsAnalyzed'] ?? 0) as int,
       );
 
   bool get isWindows => os == 'windows';
@@ -100,6 +113,12 @@ class ErrorItem {
   final String confidence; // alta | media | baja
   final List<String> suspects;
 
+  /// Por qué se acusa a ese driver, ya redactado. Existe para que `confidence`
+  /// no sea una etiqueta opaca: la diferencia entre "estaba en la pila de
+  /// llamadas" y "su nombre aparece suelto en el archivo" es la que decide si
+  /// vale la pena desinstalar un driver.
+  final List<String> evidence;
+
   final String cause;
   final String fix;
   final String detail; // texto crudo del registro
@@ -119,6 +138,7 @@ class ErrorItem {
     this.culpritInfo = '',
     this.confidence = '',
     this.suspects = const [],
+    this.evidence = const [],
     this.cause = '',
     this.fix = '',
     this.detail = '',
@@ -140,6 +160,8 @@ class ErrorItem {
         confidence: j['confidence'] ?? '',
         suspects:
             (j['suspects'] as List?)?.map((e) => '$e').toList() ?? const [],
+        evidence:
+            (j['evidence'] as List?)?.map((e) => '$e').toList() ?? const [],
         cause: j['cause'] ?? '',
         fix: j['fix'] ?? '',
         detail: j['detail'] ?? '',
@@ -195,4 +217,51 @@ class Install {
     if (current) return 'Este equipo ($drive)';
     return label.isEmpty ? 'Windows en $drive' : 'Windows en $drive · $label';
   }
+}
+
+/// Un driver de terceros señalado por el CRUCE de volcados, con lo que hace
+/// falta para poder cambiarlo: de qué dispositivo es y qué versión tiene.
+/// Espejo de `Culprit` en backend/collector/errors.go.
+class Culprit {
+  final String driver; // rtwlane601.sys
+  final String device; // "Realtek Wireless LAN 802.11ac"
+  final String vendor; // fabricante que lo firma
+  final String version; // versión instalada
+  final String path;
+
+  final int inStack; // en cuántos volcados estaba EJECUTÁNDOSE
+  final int unloading; // en cuántos estaba descargándose
+  final int total; // volcados analizados
+  final String why; // frase ya redactada para la pantalla
+
+  const Culprit({
+    this.driver = '',
+    this.device = '',
+    this.vendor = '',
+    this.version = '',
+    this.path = '',
+    this.inStack = 0,
+    this.unloading = 0,
+    this.total = 0,
+    this.why = '',
+  });
+
+  factory Culprit.fromJson(Map<String, dynamic> j) => Culprit(
+        driver: j['driver'] ?? '',
+        device: j['device'] ?? '',
+        vendor: j['vendor'] ?? '',
+        version: j['version'] ?? '',
+        path: j['path'] ?? '',
+        inStack: (j['inStack'] ?? 0) as int,
+        unloading: (j['unloading'] ?? 0) as int,
+        total: (j['total'] ?? 0) as int,
+        why: j['why'] ?? '',
+      );
+
+  /// Estar en la pila es PRUEBA de que su código se ejecutaba; estar
+  /// descargándose es un patrón fuerte pero indirecto.
+  bool get probado => inStack > 0;
+
+  /// Cómo se llama en pantalla: el dispositivo si se conoce, si no el archivo.
+  String get titulo => device.isNotEmpty ? device : driver;
 }

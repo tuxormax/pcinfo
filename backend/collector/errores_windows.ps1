@@ -236,10 +236,173 @@ function Lee-Bytes([string]$ruta, [int]$max) {
     } finally { $fs.Dispose() }
 }
 
+# =============================================================================
+#  LECTURA REAL DEL VOLCADO  (v1.7)
+# -----------------------------------------------------------------------------
+#  Antes, el culpable se elegia buscando en el archivo CUALQUIER cadena que
+#  pareciera un nombre de driver (regex sobre los bytes) y quedandose con el
+#  primero que no fuera de Microsoft. Eso no distingue entre "este driver estaba
+#  ejecutandose cuando revento" y "este nombre aparece suelto en algun lado del
+#  archivo", y por eso acusaba a drivers que ni siquiera estan cargados.
+#
+#  Caso real (25-ago-2026): senalo adp80xx.sys (controladora SAS de
+#  PMC-Sierra) en una laptop ASUS que no tiene esa controladora ni ese driver
+#  cargado. El culpable de verdad era atc.sys, de Bitdefender, y estaba SEIS
+#  veces en la pila de llamadas.
+#
+#  Ahora se leen las estructuras que el propio volcado trae:
+#
+#    - LISTA DE MODULOS: cada driver con su direccion base y su tamano. Con eso
+#      cualquier direccion se traduce a "modulo+desplazamiento".
+#    - PILA DE LLAMADAS: se traduce cada direccion. Un driver que aparece aqui
+#      ESTABA EJECUTANDOSE. Eso es prueba, no sospecha.
+#    - DRIVERS DESCARGADOS: los que Windows acababa de descargar, CON SU RANGO
+#      DE DIRECCIONES. Si la direccion que fallo cae en el rango de uno de
+#      ellos, es la prueba definitiva del clasico "driver que se descargo y
+#      dejo enganches vivos apuntando a memoria liberada".
+#
+#  Solo los MINIDUMPS traen estas estructuras (DumpType = 4, "triage"). Un
+#  MEMORY.DMP completo no las tiene: ahi se sigue usando el metodo viejo, pero
+#  marcado como confianza BAJA para que no se confunda con una prueba.
+# =============================================================================
+
+# Offsets del formato PAGEDU64. La cabecera del volcado ocupa 0x2000 bytes y
+# justo despues viene la cabecera "triage" con 18 enteros de 32 bits.
+$TRIAGE_BASE = 0x2000
+$TRIAGE_CAMPOS = @{
+    UnloadedDriversOffset =  6
+    CallStackOffset       = 10
+    SizeOfCallStack       = 11
+    DriverListOffset      = 12
+    DriverCount           = 13
+}
+# Cada entrada de la lista de drivers mide 0x90 bytes.
+$DRV_STRIDE   = 0x90
+$DRV_NOMBREOF = 0x00   # desplazamiento (absoluto en el archivo) al nombre
+$DRV_BASE     = 0x38   # DllBase
+$DRV_TAM      = 0x48   # SizeOfImage
+# Cada entrada de descargados mide 0x38, tras un contador de 64 bits.
+$UNL_STRIDE   = 0x38
+$UNL_NOMBRE   = 0x10   # el nombre va EN LINEA, maximo 12 caracteres
+$UNL_INICIO   = 0x28
+$UNL_FIN      = 0x30
+
+function Lee-U32($b, $o) {
+    if ($o -lt 0 -or ($o + 4) -gt $b.Length) { return $null }
+    return [BitConverter]::ToUInt32($b, $o)
+}
+function Lee-U64($b, $o) {
+    if ($o -lt 0 -or ($o + 8) -gt $b.Length) { return $null }
+    return [BitConverter]::ToUInt64($b, $o)
+}
+
+# Lee las estructuras del minidump. Devuelve $null si el volcado no es "triage"
+# o si algo no cuadra: ante la duda NO se inventa nada, se cae al metodo viejo.
+function Lee-Triage($b) {
+    $tipo = Lee-U32 $b 0xF98
+    if ($tipo -ne 4) { return $null }   # 4 = DUMP_TYPE_TRIAGE (minidump)
+
+    $h = @{}
+    foreach ($k in $TRIAGE_CAMPOS.Keys) {
+        $v = Lee-U32 $b ($TRIAGE_BASE + 4 * $TRIAGE_CAMPOS[$k])
+        if ($null -eq $v) { return $null }
+        $h[$k] = [int]$v
+    }
+    # Coherencia: un minidump real tiene unos cientos de drivers, no millones.
+    if ($h.DriverCount -le 0 -or $h.DriverCount -gt 5000) { return $null }
+    if (($h.DriverListOffset + $h.DriverCount * $DRV_STRIDE) -gt $b.Length) { return $null }
+
+    # --- Lista de modulos cargados -----------------------------------------
+    $mods = New-Object System.Collections.ArrayList
+    for ($i = 0; $i -lt $h.DriverCount; $i++) {
+        $e   = $h.DriverListOffset + $i * $DRV_STRIDE
+        $no  = Lee-U64 $b ($e + $DRV_NOMBREOF)
+        $bas = Lee-U64 $b ($e + $DRV_BASE)
+        $tam = Lee-U32 $b ($e + $DRV_TAM)
+        if ($null -eq $no -or $null -eq $bas -or $null -eq $tam) { continue }
+        if ($bas -eq 0 -or $tam -eq 0) { continue }
+        $nombre = Lee-NombreW $b ([int]$no)
+        if (-not $nombre) { continue }
+        [void]$mods.Add([pscustomobject]@{
+            Nombre = [System.IO.Path]::GetFileName($nombre.Replace('\', '/'))
+            Base   = $bas
+            Fin    = $bas + $tam
+        })
+    }
+    if ($mods.Count -eq 0) { return $null }
+
+    # --- Drivers descargados, con su rango ---------------------------------
+    # OJO: Windows guarda el nombre RECORTADO a 12 caracteres en esta lista
+    # ("bdprivmon.sy"). No es un fallo de lectura: es como lo almacena.
+    $desc = New-Object System.Collections.ArrayList
+    $uo = $h.UnloadedDriversOffset
+    $cnt = Lee-U64 $b $uo
+    if ($null -ne $cnt -and $cnt -gt 0 -and $cnt -le 64) {
+        for ($i = 0; $i -lt $cnt; $i++) {
+            $e = $uo + 8 + $i * $UNL_STRIDE
+            if (($e + $UNL_STRIDE) -gt $b.Length) { break }
+            $ln = [BitConverter]::ToUInt16($b, $e)
+            if ($ln -le 0 -or $ln -gt 24) { continue }
+            $nm = [System.Text.Encoding]::Unicode.GetString($b, $e + $UNL_NOMBRE, $ln).Trim([char]0)
+            if (-not $nm) { continue }
+            [void]$desc.Add([pscustomobject]@{
+                Nombre = $nm
+                Base   = (Lee-U64 $b ($e + $UNL_INICIO))
+                Fin    = (Lee-U64 $b ($e + $UNL_FIN))
+            })
+        }
+    }
+
+    # --- Pila de llamadas ---------------------------------------------------
+    # Se recorre de 8 en 8 bytes traduciendo cada valor. Los que caen dentro de
+    # un modulo son direcciones de retorno: ahi estuvo la ejecucion.
+    $pila = New-Object System.Collections.ArrayList
+    $cs = $h.CallStackOffset; $sz = $h.SizeOfCallStack
+    if ($cs -gt 0 -and $sz -gt 0 -and ($cs + $sz) -le $b.Length) {
+        $ultimo = ''
+        for ($o = 0; $o -lt ($sz - 8); $o += 8) {
+            $v = Lee-U64 $b ($cs + $o)
+            if ($null -eq $v) { break }
+            $m = Halla-Modulo $mods $v
+            # Se agrupan repeticiones seguidas: el mismo modulo 30 veces
+            # seguidas es una sola llamada, no 30 pasos distintos.
+            if ($m -and $m.Nombre -ne $ultimo) {
+                [void]$pila.Add($m.Nombre)
+                $ultimo = $m.Nombre
+            }
+        }
+    }
+
+    return [pscustomobject]@{ Modulos = $mods; Descargados = $desc; Pila = $pila }
+}
+
+# Nombre en UTF-16 precedido de su longitud en caracteres (32 bits).
+function Lee-NombreW($b, $o) {
+    $n = Lee-U32 $b $o
+    if ($null -eq $n -or $n -le 0 -or $n -gt 260) { return '' }
+    $bytes = $n * 2
+    if (($o + 4 + $bytes) -gt $b.Length) { return '' }
+    return [System.Text.Encoding]::Unicode.GetString($b, $o + 4, $bytes).Trim([char]0)
+}
+
+function Halla-Modulo($mods, $dir) {
+    if ($null -eq $dir -or $dir -eq 0) { return $null }
+    foreach ($m in $mods) {
+        if ($dir -ge $m.Base -and $dir -lt $m.Fin) { return $m }
+    }
+    return $null
+}
+
+function Es-DeMicrosoft($info) {
+    if (-not $info) { return $false }
+    return ($info.Compania -and $info.Compania -match 'Microsoft')
+}
+
 function Analiza-Dump($archivoDump, $stopEvento) {
     $res = [pscustomobject]@{
         Archivo = $archivoDump.FullName; Formato = ''; Stop = $stopEvento; FaultAddr = ''
-        Culpable = $null; Confianza = 'baja'; Sospechosos = @(); Nota = ''
+        Culpable = $null; Confianza = 'baja'; Sospechosos = @(); Evidencia = @()
+        Pila = @(); Descargados = @(); Nota = ''
     }
     # 16 MB basta: un minidump completo pesa mucho menos y de MEMORY.DMP (que
     # puede ocupar GB) la lista de modulos vive al principio. Leer mas haria que
@@ -248,12 +411,18 @@ function Analiza-Dump($archivoDump, $stopEvento) {
     catch { $res.Nota = "No se pudo leer el volcado: $($_.Exception.Message)"; return $res }
     if ($bytes.Length -lt 0x1000) { $res.Nota = 'El volcado esta incompleto o es demasiado pequeno.'; return $res }
 
+    $params = @()
     $sig = [System.Text.Encoding]::ASCII.GetString($bytes, 0, 8)
     if ($sig -like 'PAGEDU64*') {
         $res.Formato = 'Kernel x64 (PAGEDU64)'
         try {
             $bc = [BitConverter]::ToUInt32($bytes, 0x38)
             if ($bc -ne 0 -and -not $res.Stop) { $res.Stop = '0x' + $bc.ToString('X8') }
+            # Los 4 parametros del bugcheck viven en 0x40, 0x48, 0x50 y 0x58.
+            for ($i = 0; $i -lt 4; $i++) {
+                $v = Lee-U64 $bytes (0x40 + 8 * $i)
+                if ($null -ne $v) { $params += $v }
+            }
             if ($bytes.Length -ge 0xF18) {
                 $ex = [BitConverter]::ToUInt64($bytes, 0xF10)
                 if ($ex -ne 0) { $res.FaultAddr = '0x' + $ex.ToString('X16') }
@@ -268,36 +437,125 @@ function Analiza-Dump($archivoDump, $stopEvento) {
         $res.Formato = 'Formato desconocido'
     }
 
-    # Nombres de módulos presentes en el volcado (ASCII y UTF-16).
+    $clase = Clase-Bugcheck $res.Stop
+    $tri = $null
+    try { $tri = Lee-Triage $bytes } catch { $tri = $null }
+
+    # ================= CAMINO BUENO: estructuras reales del volcado ==========
+    if ($tri) {
+        $res.Formato = $res.Formato + ' - estructuras leidas'
+        $res.Pila = @($tri.Pila)
+        $res.Descargados = @($tri.Descargados | ForEach-Object { $_.Nombre })
+
+        # --- Prueba 1: drivers de TERCEROS en la pila de llamadas -----------
+        # Si un driver aparece aqui es porque SU CODIGO se estaba ejecutando.
+        $enPila = New-Object System.Collections.ArrayList
+        foreach ($nm in $tri.Pila) {
+            $info = Get-DriverInfo $nm
+            if ($info -and -not (Es-DeMicrosoft $info)) {
+                if (-not ($enPila | Where-Object { $_.Nombre -eq $info.Nombre })) { [void]$enPila.Add($info) }
+            }
+        }
+
+        # --- Prueba 2: la direccion que fallo cae en un driver DESCARGADO ---
+        # Es el clasico "se descargo dejando enganches vivos": la siguiente
+        # operacion salta a memoria que ya no es de nadie.
+        $culpableDescargado = $null
+        foreach ($p in $params) {
+            foreach ($d in $tri.Descargados) {
+                if ($null -ne $d.Base -and $null -ne $d.Fin -and $p -ge $d.Base -and $p -lt $d.Fin) {
+                    $culpableDescargado = $d; break
+                }
+            }
+            if ($culpableDescargado) { break }
+        }
+
+        if ($culpableDescargado) {
+            $info = Get-DriverInfo $culpableDescargado.Nombre
+            if (-not $info) { $info = [pscustomobject]@{ Nombre = $culpableDescargado.Nombre; Ruta = ''; Compania = ''; Version = ''; Descripcion = '' } }
+            $res.Culpable = $info
+            $res.Confianza = 'alta'
+            $res.Sospechosos = @($info) + @($enPila)
+            $res.Evidencia = @("La direccion que fallo cae dentro de '$($culpableDescargado.Nombre)', un driver que Windows ACABABA DE DESCARGAR. Se descargo dejando trabajo pendiente apuntando a memoria ya liberada.")
+        }
+        elseif ($enPila.Count -gt 0) {
+            # Si hay pista por clase de bugcheck (video/disco/red), se prefiere
+            # ese; si no, el que este mas arriba en la pila.
+            $orden = $enPila
+            if ($clase -and $CLASE_HINTS.ContainsKey($clase)) {
+                $hints = $CLASE_HINTS[$clase]
+                $pref = @($enPila | Where-Object { $nm = $_.Nombre; ($hints | Where-Object { $nm -like "*$_*" }).Count -gt 0 })
+                $orden = @($pref) + @($enPila | Where-Object { $pref -notcontains $_ })
+            }
+            $res.Culpable = $orden[0]
+            $res.Confianza = 'alta'
+            $res.Sospechosos = @($orden)
+            $veces = @($tri.Pila | Where-Object { $_ -eq $orden[0].Nombre }).Count
+            $res.Evidencia = @("'$($orden[0].Nombre)' aparece $veces $(if($veces -eq 1){'vez'}else{'veces'}) en la pila de llamadas del volcado: su codigo se estaba ejecutando cuando el equipo cayo.")
+        }
+        else {
+            # NINGUN driver de terceros en la pila. Antes aqui se inventaba un
+            # culpable a partir de cualquier nombre suelto del archivo; ahora se
+            # dice la verdad, que es un dato util por si mismo.
+            $res.Confianza = 'baja'
+            $pilaTxt = if ($tri.Pila.Count -gt 0) { ($tri.Pila | Select-Object -First 6) -join ' -> ' } else { '(vacia)' }
+            $res.Nota = "En la pila de llamadas de este volcado NO hay ningun driver de terceros: solo componentes de Windows ($pilaTxt). No se puede senalar a un driver con este volcado."
+            if ($tri.Descargados.Count -gt 0) {
+                $res.Nota += " Windows estaba descargando estos drivers al momento de la caida: $((@($tri.Descargados | ForEach-Object { $_.Nombre }) | Select-Object -First 8) -join ', ')."
+            }
+            # Los cargados de terceros quedan como sospechosos SIN acusar a nadie.
+            $sos = New-Object System.Collections.ArrayList
+            foreach ($m in $tri.Modulos) {
+                $info = Get-DriverInfo $m.Nombre
+                if ($info -and -not (Es-DeMicrosoft $info)) {
+                    if ($clase -and $CLASE_HINTS.ContainsKey($clase)) {
+                        $nm = $info.Nombre
+                        if (($CLASE_HINTS[$clase] | Where-Object { $nm -like "*$_*" }).Count -gt 0) { [void]$sos.Add($info) }
+                    }
+                }
+            }
+            $res.Sospechosos = @($sos)
+            if ($sos.Count -gt 0) {
+                $res.Evidencia = @("Ninguno estaba en la pila. Se listan por ser drivers de $clase y este pantallazo ser de $clase, que es una coincidencia de categoria, NO una prueba.")
+            }
+        }
+        return $res
+    }
+
+    # ============ CAMINO DE RESPALDO: volcado sin estructuras ================
+    # MEMORY.DMP completo, minidump x86 o MDMP. Aqui solo se puede mirar que
+    # nombres aparecen en el archivo, que es justo el metodo que producia falsos
+    # positivos. Se conserva porque es mejor que nada, pero se marca BAJA y se
+    # dice en la nota para que nadie lo tome por una prueba.
     $rx = [regex]'(?i)\b[a-z0-9_\-]{2,40}\.(sys|dll|exe)\b'
     $nombres = New-Object System.Collections.Generic.HashSet[string]
     foreach ($enc in @([System.Text.Encoding]::ASCII, [System.Text.Encoding]::Unicode)) {
         $txt = $enc.GetString($bytes)
         foreach ($m in $rx.Matches($txt)) { [void]$nombres.Add($m.Value.ToLower()) }
     }
-
-    # Solo los de TERCEROS son sospechosos reales (los de Microsoft son la víctima).
     $terceros = @()
     foreach ($n in $nombres) {
         $info = Get-DriverInfo $n
-        if ($info -and $info.Compania -and ($info.Compania -notmatch 'Microsoft')) { $terceros += $info }
+        if ($info -and -not (Es-DeMicrosoft $info)) { $terceros += $info }
     }
     $terceros = @($terceros | Sort-Object Nombre -Unique)
 
-    $clase = Clase-Bugcheck $res.Stop
-    $orden = $terceros
+    # Sin pista de categoria no se acusa a nadie: seria elegir al azar.
     if ($clase -and $CLASE_HINTS.ContainsKey($clase)) {
         $hints = $CLASE_HINTS[$clase]
         $pref = @($terceros | Where-Object { $nm = $_.Nombre; ($hints | Where-Object { $nm -like "*$_*" }).Count -gt 0 })
-        $resto = @($terceros | Where-Object { $pref -notcontains $_ })
-        $orden = @($pref) + @($resto)
+        if ($pref.Count -gt 0) {
+            $res.Culpable = $pref[0]
+            $res.Confianza = 'baja'
+            $res.Sospechosos = @($pref) + @($terceros | Where-Object { $pref -notcontains $_ })
+            $res.Evidencia = @("Este volcado no trae la lista de modulos ni la pila, asi que NO hay prueba de que este driver interviniera: solo aparece nombrado en el archivo y es de $clase, como el pantallazo. Trata esto como una pista, no como un diagnostico.")
+            $res.Nota = 'Volcado sin estructuras de diagnostico. Para un analisis fiable hace falta un minidump de C:\Windows\Minidump.'
+            return $res
+        }
     }
-    if ($orden.Count -gt 0) {
-        $res.Culpable = $orden[0]
-        $res.Sospechosos = $orden
-        if ($clase -and ($CLASE_HINTS[$clase] | Where-Object { $res.Culpable.Nombre -like "*$_*" }).Count -gt 0) {
-            $res.Confianza = 'alta'
-        } else { $res.Confianza = 'media' }
+    $res.Sospechosos = @($terceros | Select-Object -First 10)
+    if ($terceros.Count -gt 0) {
+        $res.Nota = 'Este volcado no trae la lista de modulos ni la pila de llamadas, asi que no se puede senalar a nadie. Los drivers de terceros listados solo aparecen nombrados dentro del archivo, que no prueba que hayan intervenido.'
     } else {
         $res.Nota = 'No se hallaron drivers de terceros en el volcado: el causante probable es un componente de Windows, y la causa de fondo suele ser hardware (RAM, disco o temperatura) o Windows danado.'
     }
@@ -553,6 +811,32 @@ function Fecha($t) {
 }
 
 $items = New-Object System.Collections.ArrayList
+# =============================================================================
+#  CORRELACION ENTRE VOLCADOS
+# -----------------------------------------------------------------------------
+#  Un volcado suelto casi nunca nombra al culpable: en un caso real, de 5
+#  minidumps solo UNO tenia un driver de terceros en la pila. Lo que si delata
+#  al culpable es el PATRON entre volcados: los drivers de Bitdefender salian
+#  en la lista de descargados de los CINCO.
+#
+#  Aqui se cuenta, para cada driver de terceros, en cuantos volcados aparecio y
+#  como. "6 de 8 pantallazos" es lo que convierte un sospechoso en un culpable,
+#  y es lo que hace falta para poder decir QUE driver desinstalar.
+# =============================================================================
+$global:TotalAnalizados = 0
+$global:Acumulado = @{}
+
+function Anota-Culpable([string]$nombre, [string]$como) {
+    if (-not $nombre) { return }
+    # El nombre de los descargados viene recortado a 12 caracteres por Windows.
+    # Se usa tal cual como clave: recortar los demas los mezclaria.
+    $k = $nombre.ToLower()
+    if (-not $global:Acumulado.ContainsKey($k)) {
+        $global:Acumulado[$k] = [pscustomobject]@{ Nombre = $nombre; Pila = 0; Descarga = 0 }
+    }
+    if ($como -eq 'pila') { $global:Acumulado[$k].Pila++ } else { $global:Acumulado[$k].Descarga++ }
+}
+
 $dumps = Get-Minidumps
 
 # ---- 1) Pantallazos azules ---------------------------------------------------
@@ -603,6 +887,15 @@ foreach ($b in ($bsod | Sort-Object Cuando -Descending)) {
     $titulo = 'Pantalla azul (BSOD)'
     if ($nombre) { $titulo = "Pantalla azul: $nombre" } elseif ($stopNorm) { $titulo = "Pantalla azul: $stopNorm" }
 
+    # --- Se acumula la evidencia de TODOS los volcados -------------------
+    # Un volcado suelto rara vez nombra al culpable; el patron aparece al
+    # cruzarlos. Ver Resume-Culpables al final del script.
+    if ($analisis) {
+        $global:TotalAnalizados++
+        foreach ($nm in @($analisis.Pila)) { Anota-Culpable $nm 'pila' }
+        foreach ($nm in @($analisis.Descargados)) { Anota-Culpable $nm 'descarga' }
+    }
+
     $culpable = ''; $culpableInfo = ''; $confianza = ''; $sospechosos = @()
     if ($analisis -and $analisis.Culpable) {
         $c = $analisis.Culpable
@@ -631,6 +924,7 @@ foreach ($b in ($bsod | Sort-Object Cuando -Descending)) {
             severity = 'critico'; kind = 'pantallazo'; title = $titulo; source = $b.Fuente
             code = $stopNorm; codeName = $nombre
             culprit = $culpable; culpritInfo = $culpableInfo; confidence = $confianza; suspects = $sospechosos
+            evidence = @($analisis.Evidencia)
             cause = (Causa-Stop $stop); fix = $fix; detail = $detalle.ToString()
         })
 }
@@ -714,11 +1008,40 @@ try {
     $elevado = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 } catch { }
 
+# --- Ranking de culpables, cruzando todos los volcados -----------------------
+$culpables = New-Object System.Collections.ArrayList
+foreach ($k in $global:Acumulado.Keys) {
+    $a = $global:Acumulado[$k]
+    $info = Get-DriverInfo $a.Nombre
+    # Sin informacion del archivo no se puede saber si es de Microsoft; se
+    # descarta para no acusar a un componente del sistema.
+    if (-not $info) { continue }
+    if (Es-DeMicrosoft $info) { continue }
+    $veces = [Math]::Max($a.Pila, $a.Descarga)
+    $como = @()
+    if ($a.Pila -gt 0)     { $como += "ejecutandose en $($a.Pila) de $global:TotalAnalizados" }
+    if ($a.Descarga -gt 0) { $como += "descargandose en $($a.Descarga) de $global:TotalAnalizados" }
+    [void]$culpables.Add([ordered]@{
+            driver   = $info.Nombre
+            device   = $info.Descripcion
+            vendor   = $info.Compania
+            version  = $info.Version
+            path     = $info.Ruta
+            inStack  = $a.Pila
+            unloading= $a.Descarga
+            total    = $global:TotalAnalizados
+            why      = ($como -join ' y ')
+        })
+}
+$culpables = @($culpables | Sort-Object -Property @{Expression = { $_.inStack }; Descending = $true }, @{Expression = { $_.unloading }; Descending = $true } | Select-Object -First 10)
+
 $resultado = [ordered]@{
     ok       = $true
     elevated = $elevado
     items    = @($items)
     dumps    = @($listaDumps)
+    culprits = @($culpables)
+    dumpsAnalyzed = $global:TotalAnalizados
 }
 $json = $resultado | ConvertTo-Json -Depth 6
 Set-Content -Path $Salida -Value $json -Encoding UTF8
