@@ -27,6 +27,13 @@ class ErroresInfo {
   final List<Culprit> culprits;
   final int dumpsAnalyzed;
 
+  /// Cómo se llama en pantalla lo que se cruzó, redactado por el backend: en
+  /// Windows son volcados de memoria y en Linux los registros que el propio
+  /// kernel imprime al caer. Vacíos (respuesta antigua) = los textos de
+  /// [etiquetaAnalizados] y [notaCulpables], que son los de Windows.
+  final String analyzedLabel;
+  final List<String> culpritsNote;
+
   const ErroresInfo({
     this.os = '',
     this.elevated = false,
@@ -42,6 +49,8 @@ class ErroresInfo {
     this.dumps = const [],
     this.culprits = const [],
     this.dumpsAnalyzed = 0,
+    this.analyzedLabel = '',
+    this.culpritsNote = const [],
   });
 
   factory ErroresInfo.fromJson(Map<String, dynamic> j) => ErroresInfo(
@@ -71,9 +80,29 @@ class ErroresInfo {
                 .toList() ??
             const [],
         dumpsAnalyzed: (j['dumpsAnalyzed'] ?? 0) as int,
+        analyzedLabel: j['analyzedLabel'] ?? '',
+        culpritsNote: (j['culpritsNote'] as List?)
+                ?.map((e) => '$e')
+                .where((e) => e.isNotEmpty)
+                .toList() ??
+            const [],
       );
 
   bool get isWindows => os == 'windows';
+
+  /// Qué se cruzó para señalar a los controladores.
+  String get etiquetaAnalizados => analyzedLabel.isNotEmpty
+      ? analyzedLabel
+      : '$dumpsAnalyzed volcados analizados';
+
+  /// Qué significa ese cruce, una frase por renglón.
+  List<String> get notaCulpables => culpritsNote.isNotEmpty
+      ? culpritsNote
+      : const [
+          'Cruzando todos los volcados.',
+          'Estar en la pila de llamadas prueba que su código se ejecutaba.',
+          'Estar descargándose es un patrón fuerte, pero indirecto.',
+        ];
 
   /// El selector de unidad solo tiene sentido si hay más de un Windows a la
   /// vista (arrancando desde un medio de rescate: el del USB y el del disco).

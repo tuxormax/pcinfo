@@ -273,10 +273,11 @@ String buildErroresReport(ErroresInfo err, String equipo) {
   if (err.culprits.isNotEmpty) {
     line();
     line('=' * 78);
-    line('CONTROLADORES SEÑALADOS  (cruce de ${err.dumpsAnalyzed} volcados)');
+    line('CONTROLADORES SEÑALADOS  (${err.etiquetaAnalizados})');
     line('=' * 78);
-    line('Estar en la pila de llamadas prueba que su código se ejecutaba.');
-    line('Estar descargándose es un patrón fuerte, pero indirecto.');
+    for (final n in err.notaCulpables) {
+      line(n);
+    }
     for (final c in err.culprits) {
       line();
       line('  ${c.titulo}');

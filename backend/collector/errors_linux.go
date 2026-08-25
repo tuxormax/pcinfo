@@ -50,6 +50,10 @@ func collectErrors(_ string) ErrorsReport {
 		Installs:    []Install{},
 	}
 	desde := time.Now().AddDate(0, 0, -diasAnalisis)
+	// Las entradas SIN agrupar: el análisis del fallo del kernel necesita cada
+	// caída por separado (igual que cada .dmp en Windows), y la lista que se
+	// muestra las agrupa en una sola fila.
+	var crudas []entradaLog
 
 	if tieneComando("journalctl") {
 		// Las dos pasadas se juntan y se agrupan UNA sola vez: si se agruparan por
@@ -75,7 +79,8 @@ func collectErrors(_ string) ErrorsReport {
 			todas = append(todas, ent...)
 			rep.Available = true
 		}
-		rep.Items = append(rep.Items, agrupaEntradas(sinRepetidas(todas))...)
+		crudas = sinRepetidas(todas)
+		rep.Items = append(rep.Items, agrupaEntradas(crudas)...)
 		// 3) Programas que se cayeron (systemd-coredump) = los .dmp de Windows.
 		if ent, err := leeJournal(desde, "-t", "systemd-coredump", "-p", "6", "-n", "200"); err == nil {
 			rep.Items = append(rep.Items, agrupaCoredumps(ent)...)
@@ -93,12 +98,16 @@ func collectErrors(_ string) ErrorsReport {
 				" Ejecuta PCInfo como root para acceder a /var/log."
 		} else {
 			rep.Available = true
+			crudas = ent
 			rep.Items = append(rep.Items, agrupaEntradas(ent)...)
 		}
 	}
 
 	rep.Items = append(rep.Items, unidadesFallidas()...)
 	rep.Dumps = volcadosLinux()
+	// Análisis del fallo del kernel: quién se estaba ejecutando y quién se
+	// estaba descargando al caer. Es el equivalente de leer el .dmp en Windows.
+	analizaPanicos(&rep, instantesPanico(crudas))
 	return rep
 }
 

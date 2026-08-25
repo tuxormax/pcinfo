@@ -128,6 +128,13 @@ type ErrorsReport struct {
 	// aparece al cruzarlos. Es lo que permite decir QUÉ driver desinstalar.
 	Culprits      []Culprit `json:"culprits"`
 	DumpsAnalyzed int       `json:"dumpsAnalyzed"`
+
+	// Cómo se llama en pantalla lo que se cruzó. Lo redacta el backend porque
+	// no es lo mismo en los dos sistemas: en Windows son volcados de memoria y
+	// en Linux son los registros que el kernel imprime al caer. Vacío = la GUI
+	// usa el texto de Windows, que es el que había antes.
+	AnalyzedLabel string   `json:"analyzedLabel"` // "5 volcados analizados"
+	CulpritsNote  []string `json:"culpritsNote"`  // qué significa el cruce, una frase por renglón
 }
 
 // Culprit es un driver de terceros señalado por el cruce de volcados, con lo
@@ -168,6 +175,12 @@ func CollectErrors(raiz string) ErrorsReport {
 	}
 	if rep.Installs == nil {
 		rep.Installs = []Install{}
+	}
+	if rep.Culprits == nil {
+		rep.Culprits = []Culprit{}
+	}
+	if rep.CulpritsNote == nil {
+		rep.CulpritsNote = []string{}
 	}
 	ordenaErrores(rep.Items)
 	if len(rep.Items) > maxErrores {

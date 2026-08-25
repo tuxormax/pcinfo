@@ -124,16 +124,15 @@ class _ErroresPageState extends State<ErroresPage> {
                         fontSize: kFont,
                         fontWeight: FontWeight.w700)),
               ),
-              _badgeGlobal(
-                  '${d.dumpsAnalyzed} volcados analizados', AppColors.textMid),
+              _badgeGlobal(d.etiquetaAnalizados, AppColors.textMid),
             ],
           ),
           const SizedBox(height: 6),
-          const Text(
-              'Cruzando todos los volcados. Estar en la pila de llamadas prueba '
-              'que su código se ejecutaba; estar descargándose es un patrón '
-              'fuerte, pero indirecto.',
-              style: TextStyle(color: AppColors.textMid, fontSize: kFont)),
+          // Lo redacta el backend: lo que se cruza no es lo mismo en Windows
+          // (volcados de memoria) que en Linux (lo que el kernel imprime al
+          // caer), y llamarlo igual en los dos sería mentir en uno.
+          Text(d.notaCulpables.join(' '),
+              style: const TextStyle(color: AppColors.textMid, fontSize: kFont)),
           const SizedBox(height: 12),
           ...d.culprits.map((c) => _filaCulpable(c, rojo)),
         ],
