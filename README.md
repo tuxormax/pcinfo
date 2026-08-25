@@ -68,6 +68,16 @@ PCInfo lee entonces **sus** registros de eventos y **sus** volcados de pantallaz
 
 La pestaña *Hardware* sigue funcionando en ese escenario y muestra el hardware real del equipo (el sistema operativo que reporta es el del medio de rescate).
 
+## Recopilador de pantallazos azules (Windows)
+
+El instalador de Windows deja puesta la herramienta **bluescreen**, que captura **cada pantallazo azul en cuanto ocurre** — la app, en cambio, solo mira hacia atrás cuando la abres.
+
+- Registra la tarea `RecopilarBluescreens`, disparada por el propio pantallazo (evento 1001) y, de respaldo, al arrancar. Corre como SYSTEM.
+- Va acumulando todos los fallos en **`C:\bluescreen.txt`**, cada uno con su bloque `/****CAUSANTE DEL ERROR****/`: qué driver lo causó, por qué se le señala y cómo resolverlo. Es el mismo análisis del volcado que usa la pestaña *Historial de Errores*, así que los dos señalan siempre al mismo culpable.
+- Sobre todo, **garantiza que Windows llegue a crear el volcado**: deja el volcado pequeño configurado (`CrashDumpEnabled = 3`), sube el histórico a 50 minidumps y se asegura de que el archivo de paginación esté administrado por el sistema. Sin eso el pantallazo no deja `.dmp` y no hay nada que analizar — en un caso real, de 32 pantallazos solo sobrevivieron 5 volcados.
+
+En el menú Inicio queda como **Pantallazos azules (bluescreen)**, con opciones para ver el informe, regenerarlo o quitar la tarea. Al desinstalar PCInfo la tarea se quita; el `C:\bluescreen.txt` **se conserva**.
+
 ## Respaldar y restaurar controladores y redes WiFi (Windows)
 
 Antes de formatear un equipo, la pestaña **Controladores** guarda lo que Windows no vuelve a poner solo:

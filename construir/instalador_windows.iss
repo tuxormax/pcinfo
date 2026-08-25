@@ -59,6 +59,12 @@ Source: "{#SourceBackend}"; DestDir: "{app}"; DestName: "pcinfo-backend.exe"; Fl
 ; almacenamiento sale "SIN SMART" en Windows (no viene en el PATH del sistema).
 Source: "{#SourceSmartctl}"; DestDir: "{app}"; DestName: "smartctl.exe"; Flags: ignoreversion
 Source: "{#SourceDrivedb}"; DestDir: "{app}"; DestName: "drivedb.h"; Flags: ignoreversion
+; Recopilador de pantallazos azules. Deja el equipo capturando SOLO cada BSOD en
+; C:\bluescreen.txt y, sobre todo, garantiza que Windows llegue a crear el .dmp:
+; sin volcado, el análisis del culpable de la pestaña Historial de Errores no
+; tiene nada que leer (caso real: 32 pantallazos y solo 5 volcados).
+Source: "..\herramientas\bluescreen\bluescreen.ps1"; DestDir: "{app}\bluescreen"; Flags: ignoreversion
+Source: "..\herramientas\bluescreen\bluescreen.bat"; DestDir: "{app}\bluescreen"; Flags: ignoreversion
 #ifdef VcRedist
 ; Runtime de Visual C++ empaquetado (la app no arranca sin VCRUNTIME140).
 Source: "{#VcRedist}"; DestDir: "{tmp}"; Flags: deleteafterinstall
@@ -66,6 +72,7 @@ Source: "{#VcRedist}"; DestDir: "{tmp}"; Flags: deleteafterinstall
 
 [Icons]
 Name: "{group}\PCInfo"; Filename: "{app}\pcinfo.exe"
+Name: "{group}\Pantallazos azules (bluescreen)"; Filename: "{app}\bluescreen\bluescreen.bat"; Comment: "Ver y recopilar los pantallazos azules del equipo"
 Name: "{group}\Desinstalar PCInfo"; Filename: "{uninstallexe}"
 Name: "{commondesktop}\PCInfo"; Filename: "{app}\pcinfo.exe"; Tasks: desktopicon
 
@@ -76,16 +83,28 @@ Name: "desktopicon"; Description: "Crear acceso directo en el escritorio"; Group
 #ifdef VcRedist
 Filename: "{tmp}\vc_redist.x64.exe"; Parameters: "/install /quiet /norestart"; StatusMsg: "Instalando Visual C++ Runtime..."; Flags: waituntilterminated
 #endif
-; NO hay servicio en 2º plano: la GUI (asInvoker, abre siempre) lanza el backend
-; como proceso hijo mientras está abierta y lo cierra al salir (estilo HWiNFO).
-; El backend se lanza elevado (UAC) solo si se necesita SMART. Aquí solo se ofrece
-; iniciar la app al terminar. runasoriginaluser: abrir la app como el usuario
+; Deja puesta la tarea 'RecopilarBluescreens' (la dispara el propio pantallazo,
+; vía el evento 1001) y configura Windows para que SIEMPRE guarde el volcado. Se
+; hace en cada instalación y sin preguntar: es lo que garantiza que la pestaña
+; Historial de Errores tenga un .dmp que analizar. Se espera a que termine
+; porque además recopila los pantallazos que ya hubieran ocurrido.
+; skipifdoesntexist: si el equipo no tiene PowerShell, se salta en silencio en
+; vez de abrirle un error al usuario en mitad de la instalación.
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\bluescreen\bluescreen.ps1"" -InstalarTarea"; StatusMsg: "Configurando el recopilador de pantallazos azules..."; Flags: runhidden waituntilterminated skipifdoesntexist
+
+; PCInfo en sí NO deja servicio en 2º plano: la GUI (asInvoker, abre siempre)
+; lanza el backend como proceso hijo mientras está abierta y lo cierra al salir
+; (estilo HWiNFO); el backend se eleva por UAC solo si necesita SMART. Aquí solo
+; se ofrece abrir la app al terminar. runasoriginaluser: abrirla como el usuario
 ; normal (no heredar la elevación del instalador), igual que un doble clic.
 Filename: "{app}\pcinfo.exe"; Description: "Iniciar PCInfo"; Flags: nowait postinstall skipifsilent runasoriginaluser
 
 [UninstallRun]
 ; Cerrar cualquier backend que la app haya dejado corriendo.
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM pcinfo-backend.exe /F"; Flags: runhidden; RunOnceId: "KillBackend"
+; Quitar la tarea del recopilador. C:\bluescreen.txt NO se borra: es el informe
+; del usuario, y borrarlo al desinstalar sería perder su historial de fallos.
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\bluescreen\bluescreen.ps1"" -QuitarTarea"; Flags: runhidden skipifdoesntexist; RunOnceId: "QuitarTareaBluescreen"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"

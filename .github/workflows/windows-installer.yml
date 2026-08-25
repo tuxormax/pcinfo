@@ -125,6 +125,15 @@ jobs:
           New-Item -ItemType Directory -Force -Path instaladores | Out-Null
           Compress-Archive -Path $dest -DestinationPath "instaladores\$env:PCINFO_NAME`_portable.zip" -Force
 
+      # El instalador empaqueta la herramienta bluescreen y deja su tarea puesta.
+      # Este paso comprueba que sigue siendo ASCII puro, que compila y que su
+      # analizador del volcado NO se ha separado del de PCInfo: si los dos se
+      # desincronizan, el C:\bluescreen.txt y la pestaña Historial de Errores
+      # acusarían a drivers distintos del mismo pantallazo.
+      - name: Verificar la herramienta bluescreen
+        shell: pwsh
+        run: pwsh -NoProfile -File construir/verificar_bluescreen.ps1
+
       - name: Descargar VC++ Redistributable
         run: Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "construir\vc_redist.x64.exe"
 
