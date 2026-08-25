@@ -159,3 +159,16 @@ jobs:
             || gh release upload "$TAG" \
                  "instaladores/${PCINFO_NAME}.exe" \
                  "instaladores/${PCINFO_NAME}_portable.zip" --clobber
+
+          # Copias con NOMBRE FIJO, ademas de las versionadas.
+          # Son las unicas que permiten un enlace directo permanente:
+          #   .../releases/latest/download/PCInfo-Windows-Instalador.exe
+          # GitHub resuelve "latest/download/<nombre>" solo con el nombre EXACTO,
+          # asi que con "pcinfo_v1.6_rev-38.exe" el enlace del README caducaria en
+          # cada revision. Las versionadas se conservan porque al recibir un
+          # archivo de un cliente hace falta saber de que Rev es.
+          cp "instaladores/${PCINFO_NAME}.exe"          "instaladores/PCInfo-Windows-Instalador.exe"
+          cp "instaladores/${PCINFO_NAME}_portable.zip" "instaladores/PCInfo-Windows-Portable.zip"
+          gh release upload "$TAG" \
+            "instaladores/PCInfo-Windows-Instalador.exe" \
+            "instaladores/PCInfo-Windows-Portable.zip" --clobber

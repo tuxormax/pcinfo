@@ -151,6 +151,13 @@ if [ "$PUBLICAR" = "1" ]; then
       --notes "Instalador .deb de Linux. El .exe y el .zip portable de Windows los sube el CI a este mismo release." \
       2>/dev/null \
       || gh release upload "$TAG" "$DEB" --clobber
+
+    # Copia con NOMBRE FIJO ademas de la versionada: es la unica forma de que el
+    # enlace directo del README no caduque en cada revision, porque GitHub
+    # resuelve "latest/download/<nombre>" solo con el nombre EXACTO.
+    FIJO="$OUT_DIR/PCInfo-Linux.deb"
+    cp "$DEB" "$FIJO"
+    gh release upload "$TAG" "$FIJO" --clobber
     echo ">> Publicado: https://github.com/tuxormax/pcinfo/releases/tag/$TAG"
   fi
 else

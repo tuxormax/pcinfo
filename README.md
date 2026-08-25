@@ -2,6 +2,19 @@
 
 [![Licencia: GPL v3](https://img.shields.io/badge/Licencia-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Autor](https://img.shields.io/badge/autor-tuxor-orange.svg)](mailto:tuxor.max@gmail.com)
+[![Ultima version](https://img.shields.io/github/v/release/tuxormax/pcinfo?label=descargar&color=success)](https://github.com/tuxormax/pcinfo/releases/latest)
+
+## Descargar
+
+### [Windows &mdash; Instalador](https://github.com/tuxormax/pcinfo/releases/latest/download/PCInfo-Windows-Instalador.exe)
+### [Windows &mdash; Portable, sin instalar](https://github.com/tuxormax/pcinfo/releases/latest/download/PCInfo-Windows-Portable.zip)
+### [Linux &mdash; Paquete .deb](https://github.com/tuxormax/pcinfo/releases/latest/download/PCInfo-Linux.deb)
+
+Los tres apuntan **siempre a la ultima version**: no hay que buscar nada ni entrar a Releases.
+
+Version concreta o anteriores: **[todas las descargas](https://github.com/tuxormax/pcinfo/releases)**
+
+---
 
 App de **inventario de hardware** multiplataforma (**Linux** y **Windows**): CPU, tarjeta madre, RAM, GPU, almacenamiento y sistema operativo. Sin temperaturas — solo información del equipo.
 
@@ -26,13 +39,15 @@ Y dos pestañas más:
 
 ## Descargar e instalar
 
-Los instaladores **no se guardan en el repositorio** (son binarios pesados). Se publican en la sección **[Releases](https://github.com/tuxormax/pcinfo/releases)**, un release por revisión y sin borrar los anteriores — entra ahí, abre la versión más reciente y descarga el archivo de tu sistema:
+Los enlaces directos están arriba. Aquí el detalle de cada uno:
 
-| Sistema | Archivo | Instalación |
+| Sistema | Descarga directa | Cómo se instala |
 |---|---|---|
-| Linux (Debian/Ubuntu) | `pcinfo_v<version>_rev-<rev>.deb` | `sudo apt install ./pcinfo_v1.1_rev-25.deb` |
-| Windows 10 u 11 (64 bits) | `pcinfo_v<version>_rev-<rev>.exe` | Doble clic y seguir el asistente |
-| Windows — versión portable | `pcinfo_v<version>_rev-<rev>_portable.zip` | Descomprimir y abrir `pcinfo.exe` (no instala nada) |
+| **Linux** (Debian/Ubuntu/Mint) | **[PCInfo-Linux.deb](https://github.com/tuxormax/pcinfo/releases/latest/download/PCInfo-Linux.deb)** | `sudo apt install ./PCInfo-Linux.deb` |
+| **Windows 10 u 11** (64 bits) | **[PCInfo-Windows-Instalador.exe](https://github.com/tuxormax/pcinfo/releases/latest/download/PCInfo-Windows-Instalador.exe)** | Doble clic y seguir el asistente |
+| **Windows portable** | **[PCInfo-Windows-Portable.zip](https://github.com/tuxormax/pcinfo/releases/latest/download/PCInfo-Windows-Portable.zip)** | Descomprimir y abrir `pcinfo.exe` — no instala nada, sirve desde una USB |
+
+Los instaladores **no se guardan en el repositorio** (son binarios pesados): viven en **[Releases](https://github.com/tuxormax/pcinfo/releases)**, un release por revisión y sin borrar los anteriores. Cada release trae además los mismos archivos **con la versión en el nombre** (`pcinfo_v1.6_rev-38.exe`), que son los útiles cuando alguien te manda uno y hay que saber de qué revisión es.
 
 Notas:
 
