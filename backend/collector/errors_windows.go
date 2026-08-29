@@ -17,7 +17,7 @@ import (
 )
 
 // Historial de errores en Windows. El trabajo pesado lo hace un script de
-// PowerShell EMBEBIDO (errores_windows.ps1), portado de www/windows/bluescreen.ps1:
+// PowerShell EMBEBIDO (errores_windows.ps1), hermano de herramientas/bluescreen/bluescreen.ps1:
 // lee el registro de eventos, localiza los .dmp del pantallazo azul, deduce el
 // driver culpable leyendo el volcado y traduce cada STOP code a "causa + cómo
 // resolverlo" en español. Go solo lo ejecuta y convierte su JSON a ErrorsReport.

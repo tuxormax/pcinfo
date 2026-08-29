@@ -208,7 +208,7 @@ function Get-DriverInfo([string]$nombre) {
 #  aplicacion no puedan senalar a dos culpables distintos.
 #
 #  ==> ESTE BLOQUE VIVE EN DOS ARCHIVOS. Si tocas uno, copia al otro:
-#         www/windows/bluescreen/bluescreen.ps1        (esta herramienta)
+#         pcinfo/herramientas/bluescreen/bluescreen.ps1    (esta herramienta)
 #         www/pcinfo/backend/collector/errores_windows.ps1  (PCInfo)
 #      Y OJO: este archivo es ASCII PURO (PS 5.1 lo lee como ANSI sin BOM y
 #      rompe los acentos), el de PCInfo va en UTF-8 con BOM y si los lleva.

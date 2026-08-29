@@ -10,7 +10,7 @@ import (
 // (pantallazos azules y registro de eventos en Windows, journald / kernel en
 // Linux) y los devuelve YA INTERPRETADOS: qué pasó, quién lo causó y cómo se
 // resuelve, en español. Es el equivalente multiplataforma del script
-// www/windows/bluescreen.ps1 (de ahí vienen el catálogo de STOP codes, el
+// herramientas/bluescreen/bluescreen.ps1 (de ahí vienen el catálogo de STOP codes, el
 // análisis del .dmp y la deducción del driver culpable).
 //
 // Contrato: GET /errores → ErrorsReport. Espejo en pcinfo/lib/models/errores.dart.

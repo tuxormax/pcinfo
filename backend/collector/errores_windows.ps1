@@ -17,7 +17,7 @@
     sino que se leen DIRECTAMENTE de sus archivos .evtx. Sirve para diagnosticar
     desde un medio de rescate (Hiren's BootCD PE, WinPE) un equipo que ya no arranca.
 
-    Portado de www/windows/bluescreen.ps1 (catálogo de STOP codes, guía en español y
+    Comparte analizador con herramientas/bluescreen/bluescreen.ps1 (catálogo de STOP codes, guía en español y
     deducción del driver culpable a partir del volcado, sin herramientas externas).
 #>
 

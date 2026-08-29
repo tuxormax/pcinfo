@@ -20,16 +20,15 @@ El instalador de PCInfo ejecuta `bluescreen.ps1 -InstalarTarea`, que:
 Al desinstalar PCInfo se ejecuta `-QuitarTarea`. `C:\bluescreen.txt` **no se
 borra**: es el informe del usuario.
 
-## ⚠️ Este archivo vive en DOS repositorios
+## Aquí vive el original (desde 29-ago-2026)
 
-| Copia | Repo |
-|---|---|
-| `www/windows/bluescreen/bluescreen.ps1` | `tuxormax/windows` — **el original** |
-| `pcinfo/herramientas/bluescreen/bluescreen.ps1` | `tuxormax/pcinfo` — la que se empaqueta |
+Esta carpeta es **la única copia** de `bluescreen`. Antes había otra en
+`tuxormax/windows` (`www/windows/bluescreen/`) y había que mantener las dos
+idénticas byte a byte; **esa se eliminó**. PCInfo y bluescreen son herramientas
+complementarias — una captura el pantallazo en cuanto ocurre, la otra lo explica
+en la app — y comparten analizador, así que viven juntas.
 
-Tienen que ser **idénticas byte a byte**: el runner de Windows que genera el
-`.exe` solo clona el repo de PCInfo, así que la copia de aquí es la que llega al
-usuario. Al tocar una, copiar a la otra.
+Si buscas bluescreen en el repo `windows`, ya no está: está aquí.
 
 ## ⚠️ Y el analizador vive en DOS archivos
 
