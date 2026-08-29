@@ -8,7 +8,9 @@ REM Lanzador de bluescreen.ps1
 REM El .bat se auto-eleva a Administrador (TODO corre en la misma ventana).
 REM Por defecto INSTALA la tarea que se dispara sola cuando ocurre un BSOD
 REM (evento 1001) y ademas captura los pantallazos que ya hayan pasado.
-REM El registro se acumula en C:\bluescreen.txt.
+REM El registro se acumula en C:\bluescreen.md (Markdown, como todos los
+REM reportes de PCInfo: se lee igual en el Bloc de notas y pegado en un ticket
+REM conserva sus titulos y sus tablas).
 REM ---------------------------------------------------------------------------
 
 net session >nul 2>&1
@@ -41,7 +43,7 @@ if not "%~1"=="" (
 cls
 echo ============================================================
 echo    RECOPILADOR DE PANTALLAZOS AZULES (BSOD)
-echo    Registro: C:\bluescreen.txt
+echo    Registro: C:\bluescreen.md
 echo ============================================================
 echo.
 echo   [1] INSTALAR: dejar el equipo capturando BSOD solo
@@ -49,7 +51,7 @@ echo       (crea la tarea que se dispara al ocurrir un pantallazo
 echo        y de una vez recopila los que ya pasaron)
 echo.
 echo   [2] Recopilar AHORA los pantallazos nuevos (sin instalar)
-echo   [3] Ver el registro C:\bluescreen.txt
+echo   [3] Ver el registro C:\bluescreen.md
 echo   [4] Rehacer TODO el historial desde cero
 echo   [5] Desinstalar la tarea (dejar de capturar solo)
 echo   [0] Salir

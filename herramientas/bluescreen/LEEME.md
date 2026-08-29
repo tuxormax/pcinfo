@@ -1,7 +1,7 @@
 # bluescreen — recopilador de pantallazos azules
 
 Herramienta que PCInfo instala en Windows junto con la aplicación. Deja el equipo
-**capturando solo** cada pantallazo azul y acumulándolos en `C:\bluescreen.txt`.
+**capturando solo** cada pantallazo azul y acumulándolos en `C:\bluescreen.md`.
 
 ## Qué hace al instalarse
 
@@ -17,7 +17,7 @@ El instalador de PCInfo ejecuta `bluescreen.ps1 -InstalarTarea`, que:
    Errores* de PCInfo pueden decir qué driver causó el fallo.
 3. Recopila los pantallazos que ya hubieran ocurrido.
 
-Al desinstalar PCInfo se ejecuta `-QuitarTarea`. `C:\bluescreen.txt` **no se
+Al desinstalar PCInfo se ejecuta `-QuitarTarea`. `C:\bluescreen.md` **no se
 borra**: es el informe del usuario.
 
 ## Aquí vive el original (desde 29-ago-2026)
@@ -34,7 +34,7 @@ Si buscas bluescreen en el repo `windows`, ya no está: está aquí.
 
 La parte que lee el `.dmp` y señala al driver culpable (`Lee-Triage`,
 `Analiza-Dump` y sus ayudantes) es **el mismo código** que
-`backend/collector/errores_windows.ps1`, para que el `.txt` y la aplicación no
+`backend/collector/errores_windows.ps1`, para que el informe y la aplicación no
 puedan señalar a dos culpables distintos. Si se corrige el análisis, se corrige
 en los dos.
 

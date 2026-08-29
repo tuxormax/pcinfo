@@ -10,51 +10,59 @@ import '../models/software.dart';
 import '../version.dart';
 import 'format.dart';
 
-/// Genera un .txt con TODO lo que se ve en pantalla (sistema, CPU, placa, RAM,
+// ---------------------------------------------------------------------------
+// TODOS los reportes de PCInfo se guardan en Markdown (.md) — regla del
+// proyecto. Un .md se sigue leyendo como texto plano en cualquier editor, pero
+// pegado en un ticket, un correo o un repositorio queda con sus títulos y sus
+// tablas, y así ningún dato depende del alineado a mano con espacios.
+// ---------------------------------------------------------------------------
+
+/// Genera un .md con TODO lo que se ve en pantalla (sistema, CPU, placa, RAM,
 /// GPU y discos con uso + SMART). Pregunta DÓNDE guardarlo con el diálogo del
 /// sistema. Devuelve la ruta escrita, o null si el usuario canceló.
 Future<String?> saveReport(HardwareInfo hw) {
-  final host = _safe(hw.system.hostname.isEmpty ? 'equipo' : hw.system.hostname);
+  final host = _safe(
+    hw.system.hostname.isEmpty ? 'equipo' : hw.system.hostname,
+  );
   return _guardaConDialogo(
     texto: buildReport(hw),
-    nombre: 'PCInfo_${host}_${_fileStamp()}.txt',
-    extension: 'txt',
+    nombre: 'PCInfo_${host}_${_fileStamp()}.md',
+    extension: 'md',
   );
 }
 
-/// Guarda el "Historial de Errores" en un .txt (equivalente al C:\bluescreen.txt
+/// Guarda el "Historial de Errores" en un .md (equivalente al C:\bluescreen.md
 /// del script de Windows, pero con TODO lo que muestra la pestaña y en ambos
 /// sistemas). Devuelve la ruta escrita, o null si el usuario canceló.
 Future<String?> saveErroresReport(ErroresInfo err, String equipo) {
   final host = _safe(equipo.isEmpty ? 'equipo' : equipo);
   return _guardaConDialogo(
     texto: buildErroresReport(err, equipo),
-    nombre: 'PCInfo_Errores_${host}_${_fileStamp()}.txt',
-    extension: 'txt',
+    nombre: 'PCInfo_Errores_${host}_${_fileStamp()}.md',
+    extension: 'md',
   );
 }
 
-/// Guarda el informe de la batería en un .txt. Sale en texto plano (no en .md)
-/// porque es una explicación para leer, no una tabla: se pega tal cual en un
-/// correo o en un ticket. Devuelve la ruta escrita, o null si se canceló.
+/// Guarda el informe de la batería en un .md. Devuelve la ruta escrita, o null
+/// si se canceló.
 Future<String?> saveBateriaReport(BateriaInfo bat, String equipo) {
   final host = _safe(equipo.isEmpty ? 'equipo' : equipo);
   return _guardaConDialogo(
     texto: buildBateriaReport(bat, equipo),
-    nombre: 'PCInfo_Bateria_${host}_${_fileStamp()}.txt',
-    extension: 'txt',
+    nombre: 'PCInfo_Bateria_${host}_${_fileStamp()}.md',
+    extension: 'md',
   );
 }
 
-/// Guarda la salud de los discos en un .txt: el veredicto de cada uno y las
+/// Guarda la salud de los discos en un .md: el veredicto de cada uno y las
 /// explicaciones, tal como se ven en la pestaña. Devuelve la ruta escrita, o
 /// null si se canceló.
 Future<String?> saveDiscosReport(List<DiskInfo> discos, String equipo) {
   final host = _safe(equipo.isEmpty ? 'equipo' : equipo);
   return _guardaConDialogo(
     texto: buildDiscosReport(discos, equipo),
-    nombre: 'PCInfo_Discos_${host}_${_fileStamp()}.txt',
-    extension: 'txt',
+    nombre: 'PCInfo_Discos_${host}_${_fileStamp()}.md',
+    extension: 'md',
   );
 }
 
@@ -78,8 +86,9 @@ Future<String?> _guardaConDialogo({
     confirmButtonText: 'Guardar',
     acceptedTypeGroups: [
       XTypeGroup(
-          label: extension == 'md' ? 'Markdown' : 'Texto',
-          extensions: [extension]),
+        label: extension == 'md' ? 'Markdown' : 'Texto',
+        extensions: [extension],
+      ),
     ],
   );
   if (destino == null) return null; // el usuario canceló
@@ -118,52 +127,120 @@ String _humanStamp() {
 /// Reemplaza lo que no sea apto para un nombre de archivo.
 String _safe(String s) => s.replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
 
-/// Construye el texto del reporte, espejo de las fichas del dashboard.
+// ---------------------------------------------------------------------------
+// Piezas comunes de los reportes en Markdown.
+// ---------------------------------------------------------------------------
+
+/// Cabecera de todos los reportes: título de primer nivel y la línea de quién
+/// lo generó y cuándo (sin eso, un reporte pegado en un chat no dice de qué
+/// equipo ni de qué versión salió).
+void _cabecera(StringBuffer b, String titulo, String equipo) {
+  final nombre = equipo.isEmpty ? 'este equipo' : equipo;
+  b
+    ..writeln('# $titulo — $nombre')
+    ..writeln()
+    ..writeln(
+      'Generado por $appName v$appVersion Rev $appRevision '
+      'el ${_humanStamp()}.',
+    )
+    ..writeln();
+}
+
+/// Pie común: la línea de licencia, separada del cuerpo.
+void _pie(StringBuffer b) {
+  b
+    ..writeln('---')
+    ..writeln()
+    ..writeln('_$appCopyright · $appEmail · Licencia ${appLicense}_');
+}
+
+/// Abre una tabla Markdown con los encabezados dados.
+void _tabla(StringBuffer b, List<String> columnas) {
+  b
+    ..writeln('| ${columnas.join(' | ')} |')
+    ..writeln('| ${columnas.map((_) => '---').join(' | ')} |');
+}
+
+/// Escribe una fila de tabla escapando cada celda. Una celda vacía sale como
+/// raya: en una tabla, un hueco no se distingue de un dato que faltó leer.
+void _fila(StringBuffer b, List<String> celdas) {
+  b.writeln(
+    '| ${celdas.map((c) {
+      final v = _md(c);
+      return v.isEmpty ? '—' : v;
+    }).join(' | ')} |',
+  );
+}
+
+/// Encierra un texto crudo (mensaje del sistema, traza) en un bloque de código.
+/// La valla se alarga si el propio texto trae acentos graves, para que no parta
+/// el bloque a la mitad.
+String _bloque(String texto) {
+  var valla = 3;
+  for (final m in RegExp(r'`{3,}').allMatches(texto)) {
+    if (m.group(0)!.length >= valla) valla = m.group(0)!.length + 1;
+  }
+  final cerca = '`' * valla;
+  final b = StringBuffer()..writeln('${cerca}text');
+  for (final l in texto.split('\n')) {
+    b.writeln(l.trimRight());
+  }
+  b.writeln(cerca);
+  return b.toString();
+}
+
+/// Construye el reporte de hardware en Markdown, espejo de las fichas del
+/// dashboard.
 String buildReport(HardwareInfo hw) {
   final b = StringBuffer();
-  void line([String s = '']) => b.writeln(s);
-  void kv(String k, String v) => line('  $k: $v');
-  void section(String t) {
-    line();
-    line('== $t ==');
+  _cabecera(b, 'Reporte de hardware', hw.system.hostname);
+
+  void seccion(String t) {
+    b
+      ..writeln('## $t')
+      ..writeln();
   }
 
-  line('$appName v$appVersion Rev $appRevision');
-  line('Reporte de hardware generado: ${_humanStamp()}');
-  line('Equipo: ${hw.system.hostname}');
-  line('=' * 60);
+  void kv(String k, String v) => _fila(b, [k, v]);
 
   // Sistema operativo
-  section('Sistema operativo');
+  seccion('Sistema operativo');
+  _tabla(b, ['Dato', 'Valor']);
   kv('Sistema', hw.system.distro);
   kv('Nombre del equipo', hw.system.hostname);
   kv('Kernel', hw.system.kernel);
   kv('Arquitectura', hw.system.arch);
   if (hw.system.desktop.isNotEmpty) kv('Escritorio', hw.system.desktop);
+  b.writeln();
 
   // CPU
   final c = hw.cpu;
-  section('Procesador (CPU)');
+  seccion('Procesador (CPU)');
+  _tabla(b, ['Dato', 'Valor']);
   kv('Fabricante', cleanVendor(c.vendor));
   kv('Modelo', c.model);
   kv('Núcleos', '${c.cores}');
   kv('Hilos', '${c.threads}');
   kv('Frecuencia base', formatMhz(c.baseMhz));
   if (c.maxMhz > 0) kv('Frecuencia máxima', formatMhz(c.maxMhz));
+  b.writeln();
 
   // Tarjeta madre
   final bd = hw.board;
-  section('Tarjeta madre');
+  seccion('Tarjeta madre');
+  _tabla(b, ['Dato', 'Valor']);
   kv('Fabricante', bd.vendor);
   kv('Modelo', bd.product);
   if (bd.formFactor.isNotEmpty) kv('Tamaño', bd.formFactor);
   if (bd.version.isNotEmpty) kv('Versión', bd.version);
   kv('BIOS', '${bd.biosVendor} ${bd.biosVersion}'.trim());
   kv('Fecha BIOS', bd.biosDate);
+  b.writeln();
 
   // RAM
   final m = hw.memory;
-  section('Memoria RAM');
+  seccion('Memoria RAM');
+  _tabla(b, ['Dato', 'Valor']);
   kv('Total', formatBytes(m.totalBytes));
   kv('Montaje', m.soldered ? 'Soldada (no ampliable)' : 'Ranuras (ampliable)');
   if (m.totalSlots > 0) {
@@ -172,62 +249,88 @@ String buildReport(HardwareInfo hw) {
   } else {
     kv('Módulos', '${m.modules.length}');
   }
-  if (m.maxCapacityBytes > 0) kv('Capacidad máx.', formatBytes(m.maxCapacityBytes));
+  if (m.maxCapacityBytes > 0) {
+    kv('Capacidad máx.', formatBytes(m.maxCapacityBytes));
+  }
+  b.writeln();
   if (!m.slotsVerified && !m.soldered && m.totalSlots > 0) {
-    line('    (!) Ranuras y capacidad máx. según el firmware; puede no coincidir '
-        'con la placa (modelo no verificado en el catálogo).');
+    b
+      ..writeln(
+        '> ⚠️ Ranuras y capacidad máx. según el firmware; puede no '
+        'coincidir con la placa (modelo no verificado en el catálogo).',
+      )
+      ..writeln();
   }
-  for (final mod in m.modules) {
-    final ff = mod.formFactor.isEmpty ? '' : ' · ${mod.formFactor}';
-    final spd = mod.speedMhz > 0 ? ' ${mod.speedMhz}MHz' : '';
-    line('    - ${mod.location}$ff: ${formatBytes(mod.sizeBytes)} ${mod.type}$spd'
-        .trimRight());
-  }
-  final libres = m.freeSlots;
-  for (var i = 0; i < libres; i++) {
-    line('    - Ranura libre: Vacía');
+  if (m.modules.isNotEmpty || m.freeSlots > 0) {
+    _tabla(b, ['Ranura', 'Formato', 'Capacidad', 'Tipo', 'Velocidad']);
+    for (final mod in m.modules) {
+      _fila(b, [
+        mod.location,
+        mod.formFactor,
+        formatBytes(mod.sizeBytes),
+        mod.type,
+        mod.speedMhz > 0 ? '${mod.speedMhz} MHz' : '',
+      ]);
+    }
+    for (var i = 0; i < m.freeSlots; i++) {
+      _fila(b, ['Ranura libre', '', 'Vacía', '', '']);
+    }
+    b.writeln();
   }
 
   // GPU — una sección por tarjeta (espejo de las fichas del dashboard).
   if (hw.gpu.cards.isEmpty) {
-    section('Tarjeta gráfica (GPU)');
+    seccion('Tarjeta gráfica (GPU)');
+    _tabla(b, ['Dato', 'Valor']);
     kv('Estado', 'No detectada');
+    b.writeln();
   } else {
     final multi = hw.gpu.cards.length > 1;
     for (final (i, card) in hw.gpu.cards.indexed) {
-      section(multi
-          ? 'Tarjeta gráfica ${i + 1} · ${_gpuKind(card)}'
-          : 'Tarjeta gráfica (GPU)');
+      seccion(
+        multi
+            ? 'Tarjeta gráfica ${i + 1} · ${_gpuKind(card)}'
+            : 'Tarjeta gráfica (GPU)',
+      );
+      _tabla(b, ['Dato', 'Valor']);
       kv('Fabricante', cleanVendor(card.vendor));
       kv('Modelo', card.product);
       kv('Tipo', _gpuKind(card));
       if (card.memoryBytes > 0) kv('VRAM', formatBytes(card.memoryBytes));
       kv('Driver', card.driver);
+      b.writeln();
     }
   }
 
   // Almacenamiento
-  section('Almacenamiento');
+  seccion('Almacenamiento');
   if (hw.disks.isEmpty) {
-    line('  No se detectaron discos');
+    b
+      ..writeln('_No se detectaron discos._')
+      ..writeln();
   } else {
     for (final (i, d) in hw.disks.indexed) {
-      line();
-      line('  Disco ${i + 1}: ${d.model}');
-      kv('Tipo', d.type.isEmpty ? '—' : d.type);
+      b
+        ..writeln('### Disco ${i + 1} — ${_md(d.model)}')
+        ..writeln();
+      _tabla(b, ['Dato', 'Valor']);
+      kv('Tipo', d.type);
       kv('Salud', _saludDisco(d));
       kv('Dispositivo', d.name);
       kv('Serie', d.serial);
       kv('Bus', d.bus.toUpperCase());
       kv('Capacidad', formatDiskCap(d.sizeBytes));
       if (d.hasUsage) {
-        kv('Ocupado',
-            '${formatGB(d.usedBytes)} (${d.usedPercent.round()}%)');
-        kv('Disponible',
-            '${formatGB(d.availBytes)} (${d.availPercent.round()}%)');
+        kv('Ocupado', '${formatGB(d.usedBytes)} (${d.usedPercent.round()}%)');
+        kv(
+          'Disponible',
+          '${formatGB(d.availBytes)} (${d.availPercent.round()}%)',
+        );
       }
       if (d.smartAvailable) {
-        if (d.writtenBytes > 0) kv('Escrituras totales', formatBytes(d.writtenBytes));
+        if (d.writtenBytes > 0) {
+          kv('Escrituras totales', formatBytes(d.writtenBytes));
+        }
         if (d.readBytes > 0) kv('Lecturas totales', formatBytes(d.readBytes));
         if (d.lifePercentUsed >= 0) {
           kv('Vida restante', '${100 - d.lifePercentUsed}%');
@@ -236,112 +339,153 @@ String buildReport(HardwareInfo hw) {
         kv('Ciclos de encendido', '${d.powerCycles}');
         kv('Sectores reasignados', '${d.reallocatedSectors}');
       }
+      b.writeln();
     }
   }
 
-  line();
-  line('=' * 60);
-  line('$appCopyright · $appEmail · Licencia $appLicense');
+  _pie(b);
   return b.toString();
 }
 
-/// Construye el texto del historial de errores, espejo de la pestaña
+/// Construye el historial de errores en Markdown, espejo de la pestaña
 /// "Historial de Errores". Si se agrega o quita un dato en `errores_page.dart`,
 /// reflejarlo aquí (misma regla de concordancia que el reporte de hardware).
 String buildErroresReport(ErroresInfo err, String equipo) {
   final b = StringBuffer();
-  void line([String s = '']) => b.writeln(s);
+  _cabecera(b, 'Historial de errores del sistema', equipo);
 
-  line('$appName v$appVersion Rev $appRevision');
-  line('Historial de errores del sistema · generado: ${_humanStamp()}');
-  if (equipo.isNotEmpty) line('Equipo: $equipo');
+  _tabla(b, ['Dato', 'Valor']);
+  _fila(b, ['Sistema', err.os]);
+  _fila(b, ['Fuente', err.source]);
   // Qué instalación se leyó: sin esto, un reporte hecho desde un medio de
   // rescate parecería del propio medio y no del equipo averiado.
   if (err.target.isNotEmpty) {
-    line('Instalación analizada: ${err.targetLabel.isEmpty ? err.target : err.targetLabel}'
-        '   (${err.target})'
-        '${err.offline ? "   [NO estaba en ejecución]" : ""}');
+    if (err.targetLabel.isNotEmpty) {
+      _fila(b, ['Instalación analizada', err.targetLabel]);
+    }
+    _fila(b, ['Carpeta de esa instalación', err.target]);
   }
-  line('Sistema: ${err.os}   ·   Fuente: ${err.source}');
-  line('Periodo analizado: últimos ${err.scanDays} días');
-  line('Administrador/root: ${err.elevated ? "sí" : "no"}');
-  if (err.reason.isNotEmpty) line('Aviso: ${err.reason}');
-  line('=' * 78);
+  _fila(b, ['Periodo analizado', 'últimos ${err.scanDays} días']);
+  _fila(b, ['Administrador/root', err.elevated ? 'sí' : 'no']);
+  if (err.target.isNotEmpty && err.offline) {
+    _fila(b, ['Estado de esa instalación', 'NO estaba en ejecución']);
+  }
+  b.writeln();
+  if (err.reason.isNotEmpty) {
+    b
+      ..writeln('> ⚠️ ${_md(err.reason)}')
+      ..writeln();
+  }
 
   // La conclusión va ANTES del listado: quien lea el reporte pegado en un chat
   // tiene que ver primero qué controlador cambiar, no deducirlo de 30 entradas.
   if (err.culprits.isNotEmpty) {
-    line();
-    line('=' * 78);
-    line('CONTROLADORES SEÑALADOS  (${err.etiquetaAnalizados})');
-    line('=' * 78);
+    b
+      ..writeln('## Controladores señalados (${err.etiquetaAnalizados})')
+      ..writeln();
     for (final n in err.notaCulpables) {
-      line(n);
+      b.writeln('> ${_md(n)}');
     }
+    if (err.notaCulpables.isNotEmpty) b.writeln();
     for (final c in err.culprits) {
-      line();
-      line('  ${c.titulo}');
-      if (c.device.isNotEmpty) line('    Archivo   : ${c.driver}');
-      if (c.vendor.isNotEmpty) line('    Fabricante: ${c.vendor}');
-      if (c.version.isNotEmpty) line('    Versión   : ${c.version}');
-      if (c.path.isNotEmpty) line('    Ruta      : ${c.path}');
-      if (c.why.isNotEmpty) line('    Señalado  : ${c.why}');
+      b
+        ..writeln('### ${_md(c.titulo)}')
+        ..writeln();
+      _tabla(b, ['Dato', 'Valor']);
+      if (c.device.isNotEmpty) _fila(b, ['Archivo', c.driver]);
+      if (c.vendor.isNotEmpty) _fila(b, ['Fabricante', c.vendor]);
+      if (c.version.isNotEmpty) _fila(b, ['Versión', c.version]);
+      if (c.path.isNotEmpty) _fila(b, ['Ruta', c.path]);
+      if (c.why.isNotEmpty) _fila(b, ['Señalado', c.why]);
+      b.writeln();
     }
   }
 
+  b
+    ..writeln('## Errores registrados (${err.items.length})')
+    ..writeln();
   if (err.items.isEmpty) {
-    line();
-    line(err.available
-        ? 'No se registraron errores en el periodo analizado.'
-        : 'No hay información disponible (ver el aviso de arriba).');
+    b
+      ..writeln(
+        err.available
+            ? '_No se registraron errores en el periodo analizado._'
+            : '_No hay información disponible (ver el aviso de arriba)._',
+      )
+      ..writeln();
   }
 
   for (final (i, e) in err.items.indexed) {
-    line();
-    line('-' * 78);
-    line('#${i + 1}  [${_sevTexto(e.severity)}] [${_tipoTexto(e.kind)}]  ${e.title}');
-    line('-' * 78);
-    line('Cuándo      : ${e.when}'
-        '${e.repetido ? "   (${e.count} veces, desde ${e.firstWhen})" : ""}');
-    line('Origen      : ${e.source}');
+    b
+      ..writeln(
+        '### ${i + 1}. [${_sevTexto(e.severity)}] '
+        '[${_tipoTexto(e.kind)}] ${_md(e.title)}',
+      )
+      ..writeln();
+    _tabla(b, ['Dato', 'Valor']);
+    _fila(b, [
+      'Cuándo',
+      '${e.when}${e.repetido ? " (${e.count} veces, desde ${e.firstWhen})" : ""}',
+    ]);
+    _fila(b, ['Origen', e.source]);
     if (e.code.isNotEmpty) {
-      line('Código      : ${e.code}${e.codeName.isNotEmpty ? "  ${e.codeName}" : ""}');
+      _fila(b, [
+        'Código',
+        '${e.code}${e.codeName.isNotEmpty ? "  ${e.codeName}" : ""}',
+      ]);
     }
     if (e.culprit.isNotEmpty) {
-      line('Causante    : ${e.culprit}'
-          '${e.confidence.isNotEmpty ? "   (confianza ${e.confidence})" : ""}');
-      if (e.culpritInfo.isNotEmpty) line('              ${e.culpritInfo}');
-    }
-    // Por qué se le acusa: sin esto "confianza alta" no se puede juzgar.
-    for (final ev in e.evidence) {
-      line('Evidencia   : $ev');
-    }
-    for (final s in e.suspects.skip(1)) {
-      line('Sospechoso  : $s');
-    }
-    if (e.cause.isNotEmpty) line('Qué pasó    : ${e.cause}');
-    if (e.fix.isNotEmpty) line('Solución    : ${e.fix}');
-    if (e.detail.isNotEmpty) {
-      line();
-      line('--- Mensaje original del sistema ---');
-      for (final l in e.detail.split('\n')) {
-        line(l.trimRight());
+      _fila(b, [
+        'Causante',
+        '${e.culprit}'
+            '${e.confidence.isNotEmpty ? " (confianza ${e.confidence})" : ""}',
+      ]);
+      if (e.culpritInfo.isNotEmpty) {
+        _fila(b, ['Datos del causante', e.culpritInfo]);
       }
+    }
+    if (e.cause.isNotEmpty) _fila(b, ['Qué pasó', e.cause]);
+    if (e.fix.isNotEmpty) _fila(b, ['Solución', e.fix]);
+    b.writeln();
+
+    // Por qué se le acusa: sin esto "confianza alta" no se puede juzgar.
+    if (e.evidence.isNotEmpty) {
+      b.writeln('**Evidencia:**');
+      b.writeln();
+      for (final ev in e.evidence) {
+        b.writeln('- ${_md(ev)}');
+      }
+      b.writeln();
+    }
+    final otros = e.suspects.skip(1).toList();
+    if (otros.isNotEmpty) {
+      b.writeln('**Otros sospechosos:**');
+      b.writeln();
+      for (final s in otros) {
+        b.writeln('- ${_md(s)}');
+      }
+      b.writeln();
+    }
+    if (e.detail.isNotEmpty) {
+      b
+        ..writeln('**Mensaje original del sistema:**')
+        ..writeln()
+        ..write(_bloque(e.detail))
+        ..writeln();
     }
   }
 
   if (err.dumps.isNotEmpty) {
-    line();
-    line('=' * 78);
-    line('Volcados de memoria presentes en el disco');
+    b
+      ..writeln('## Volcados de memoria presentes en el disco')
+      ..writeln();
+    _tabla(b, ['Cuándo', 'Tamaño', 'Archivo']);
     for (final d in err.dumps) {
-      line('  ${d.when}   ${formatBytes(d.sizeBytes).padLeft(10)}   ${d.path}');
+      _fila(b, [d.when, formatBytes(d.sizeBytes), d.path]);
     }
+    b.writeln();
   }
 
-  line();
-  line('=' * 78);
-  line('$appCopyright · $appEmail · Licencia $appLicense');
+  _pie(b);
   return b.toString();
 }
 
@@ -382,8 +526,9 @@ String _tipoTexto(String kind) {
 /// Salud tal como se ve en la pantalla: un medio extraíble (memoria USB,
 /// tarjeta) no reporta salud por su naturaleza, así que se dice eso y no
 /// "SIN SMART", que sugiere un fallo (concordancia con la ficha del dashboard).
-String _saludDisco(DiskInfo d) =>
-    d.removable && !d.smartAvailable ? 'MEMORIA EXTRAÍBLE' : _healthLabel(d.healthStatus);
+String _saludDisco(DiskInfo d) => d.removable && !d.smartAvailable
+    ? 'MEMORIA EXTRAÍBLE'
+    : _healthLabel(d.healthStatus);
 
 String _healthLabel(DiskHealth h) {
   switch (h) {
@@ -406,7 +551,8 @@ String _gpuKind(GpuCard card) {
       .toLowerCase()
       .replaceAll('(tm)', '')
       .replaceAll('(r)', '');
-  final integrada = v.contains('intel') ||
+  final integrada =
+      v.contains('intel') ||
       p.contains('uhd') ||
       p.contains('iris') ||
       p.contains('vega') ||
@@ -423,9 +569,9 @@ String _gpuKind(GpuCard card) {
 // ---------------------------------------------------------------------------
 // Exportación del "Software instalado" y de la pestaña "Controladores".
 //
-// Estos dos reportes salen en MARKDOWN (.md) y no en .txt como los de hardware
-// y errores: la lista de software es una tabla larga, y en .md se puede pegar
-// en un ticket, un informe o un repositorio y sigue leyéndose ordenada.
+// Como todos los reportes de PCInfo, salen en MARKDOWN (.md): la lista de
+// software es una tabla larga, y en .md se puede pegar en un ticket, un informe
+// o un repositorio y sigue leyéndose ordenada.
 // ---------------------------------------------------------------------------
 
 /// Guarda el inventario de software en un .md agrupado por quién instaló cada
@@ -442,8 +588,7 @@ Future<String?> saveSoftwareReport(SoftwareInfo sw, String equipo) {
 
 /// Guarda el inventario de controladores y redes WiFi en un .md. Pregunta dónde
 /// guardarlo. Devuelve la ruta escrita, o null si el usuario canceló.
-Future<String?> saveControladoresReport(
-    ControladoresInfo ctl, String equipo) {
+Future<String?> saveControladoresReport(ControladoresInfo ctl, String equipo) {
   final host = _safe(equipo.isEmpty ? 'equipo' : equipo);
   return _guardaConDialogo(
     texto: buildControladoresMarkdown(ctl, equipo),
@@ -466,14 +611,18 @@ String buildSoftwareMarkdown(SoftwareInfo sw, String equipo) {
   b
     ..writeln('# Software instalado — $nombre')
     ..writeln()
-    ..writeln('Generado por $appName v$appVersion Rev $appRevision '
-        'el ${_humanStamp()}.')
+    ..writeln(
+      'Generado por $appName v$appVersion Rev $appRevision '
+      'el ${_humanStamp()}.',
+    )
     ..writeln();
   if (sw.source.isNotEmpty) b.writeln('- **Fuentes:** ${sw.source}');
   b
-    ..writeln('- **Total:** ${sw.items.length} elementos '
-        '(${sw.delUsuario.length} · ${sw.tituloUsuario.toLowerCase()}, '
-        '${sw.delSistema.length} · ${sw.tituloSistema.toLowerCase()})')
+    ..writeln(
+      '- **Total:** ${sw.items.length} elementos '
+      '(${sw.delUsuario.length} · ${sw.tituloUsuario.toLowerCase()}, '
+      '${sw.delSistema.length} · ${sw.tituloSistema.toLowerCase()})',
+    )
     ..writeln();
   if (sw.reason.isNotEmpty) {
     b
@@ -522,17 +671,18 @@ void _grupoMarkdown(StringBuffer b, String titulo, List<SoftwareItem> items) {
       ..writeln('| Programa | Versión | Fabricante | Instalado | Tamaño |')
       ..writeln('| --- | --- | --- | --- | --- |');
     for (final e in grupo) {
-      b.writeln('| ${_md(e.name)} | ${_md(e.versionVisible)} | '
-          '${_md(e.publisher)} | ${_md(e.installed)} | '
-          '${e.sizeMB > 0 ? '${e.sizeMB} MB' : ''} |');
+      b.writeln(
+        '| ${_md(e.name)} | ${_md(e.versionVisible)} | '
+        '${_md(e.publisher)} | ${_md(e.installed)} | '
+        '${e.sizeMB > 0 ? '${e.sizeMB} MB' : ''} |',
+      );
     }
     b.writeln();
   }
 
   // Lo que no encaje en ningún subgrupo conocido no se pierde: si el backend
   // añade un tipo nuevo, sigue apareciendo en el reporte.
-  final resto =
-      items.where((e) => !orden.contains(e.kind)).toList();
+  final resto = items.where((e) => !orden.contains(e.kind)).toList();
   if (resto.isNotEmpty) {
     b
       ..writeln('### Otros (${resto.length})')
@@ -541,7 +691,8 @@ void _grupoMarkdown(StringBuffer b, String titulo, List<SoftwareItem> items) {
       ..writeln('| --- | --- | --- |');
     for (final e in resto) {
       b.writeln(
-          '| ${_md(e.name)} | ${_md(e.versionVisible)} | ${_md(e.publisher)} |');
+        '| ${_md(e.name)} | ${_md(e.versionVisible)} | ${_md(e.publisher)} |',
+      );
     }
     b.writeln();
   }
@@ -555,8 +706,10 @@ String buildControladoresMarkdown(ControladoresInfo ctl, String equipo) {
   b
     ..writeln('# Controladores y redes WiFi — $nombre')
     ..writeln()
-    ..writeln('Generado por $appName v$appVersion Rev $appRevision '
-        'el ${_humanStamp()}.')
+    ..writeln(
+      'Generado por $appName v$appVersion Rev $appRevision '
+      'el ${_humanStamp()}.',
+    )
     ..writeln();
   if (ctl.reason.isNotEmpty) {
     b
@@ -569,16 +722,22 @@ String buildControladoresMarkdown(ControladoresInfo ctl, String equipo) {
     ..writeln();
   if (ctl.drivers.isEmpty) {
     b
-      ..writeln('_Ninguno: los controladores en uso vienen en la propia imagen '
-          'del sistema._')
+      ..writeln(
+        '_Ninguno: los controladores en uso vienen en la propia imagen '
+        'del sistema._',
+      )
       ..writeln();
   } else {
     b
-      ..writeln('| Controlador | Fabricante | Tipo | Versión | Fecha | Windows |')
+      ..writeln(
+        '| Controlador | Fabricante | Tipo | Versión | Fecha | Windows |',
+      )
       ..writeln('| --- | --- | --- | --- | --- | --- |');
     for (final c in ctl.drivers) {
-      b.writeln('| ${_md(c.visible)} | ${_md(c.provider)} | ${_md(c.clase)} | '
-          '${_md(c.version)} | ${_md(c.date)} | ${_md(c.name)} |');
+      b.writeln(
+        '| ${_md(c.visible)} | ${_md(c.provider)} | ${_md(c.clase)} | '
+        '${_md(c.version)} | ${_md(c.date)} | ${_md(c.name)} |',
+      );
     }
     b.writeln();
   }
@@ -595,8 +754,10 @@ String buildControladoresMarkdown(ControladoresInfo ctl, String equipo) {
   // Las contraseñas van en el reporte a propósito (sin ellas no sirve para
   // reponer las redes), pero el archivo queda avisado: es información sensible.
   b
-    ..writeln('> ⚠️ **Este archivo contiene las contraseñas de las redes en '
-        'texto legible.** Guárdalo donde corresponda o bórralo al terminar.')
+    ..writeln(
+      '> ⚠️ **Este archivo contiene las contraseñas de las redes en '
+      'texto legible.** Guárdalo donde corresponda o bórralo al terminar.',
+    )
     ..writeln()
     ..writeln('| Red | Seguridad | Contraseña |')
     ..writeln('| --- | --- | --- |');
@@ -604,8 +765,8 @@ String buildControladoresMarkdown(ControladoresInfo ctl, String equipo) {
     final clave = r.abierta
         ? '_red abierta_'
         : r.password.isEmpty
-            ? '_no se pudo leer_'
-            : _md(r.password);
+        ? '_no se pudo leer_'
+        : _md(r.password);
     b.writeln('| ${_md(r.name)} | ${_md(r.auth)} | $clave |');
   }
   b.writeln();
@@ -614,8 +775,16 @@ String buildControladoresMarkdown(ControladoresInfo ctl, String equipo) {
 
 /// Escapa lo que rompería una celda de tabla Markdown: la barra vertical la
 /// interpreta como separador de columna y el salto de línea corta la fila.
-String _md(String s) =>
-    s.replaceAll('|', '\\|').replaceAll('\n', ' ').trim();
+///
+/// Lo que trae contrabarras (rutas de Windows como `\\.\\PHYSICALDRIVE0` o
+/// `C:\\Windows\\...`) se envuelve en acentos graves: sin eso, al mostrar el .md
+/// la contrabarra se come el carácter siguiente y la ruta que se copia del
+/// reporte ya no es la del equipo.
+String _md(String s) {
+  final v = s.replaceAll('|', '\\|').replaceAll('\n', ' ').trim();
+  if (s.contains('\\') && !v.contains('`')) return '`$v`';
+  return v;
+}
 
 // ---------------------------------------------------------------------------
 // Reporte de la pestaña "Batería".
@@ -627,122 +796,183 @@ String _md(String s) =>
 
 String buildBateriaReport(BateriaInfo bat, String equipo) {
   final b = StringBuffer();
-  void line([String s = '']) => b.writeln(s);
-
-  line('$appName v$appVersion Rev $appRevision');
-  line('Estado de la batería · generado: ${_humanStamp()}');
-  if (equipo.isNotEmpty) line('Equipo: $equipo');
-  if (bat.source.isNotEmpty) line('Fuente: ${bat.source}');
-  line('=' * 60);
+  _cabecera(b, 'Estado de la batería', equipo);
+  if (bat.source.isNotEmpty) {
+    b
+      ..writeln('Fuente: ${_md(bat.source)}.')
+      ..writeln();
+  }
 
   final p = bat.principal;
   if (p == null) {
-    line();
-    line(bat.reason.isNotEmpty
-        ? bat.reason
-        : 'Este equipo no tiene batería.');
+    b
+      ..writeln(
+        _md(
+          bat.reason.isNotEmpty ? bat.reason : 'Este equipo no tiene batería.',
+        ),
+      )
+      ..writeln();
+    _pie(b);
     return b.toString();
   }
 
-  line();
-  line('== ¿Cómo está la batería? ==');
-  line('  ${p.verdict}');
+  b
+    ..writeln('## ¿Cómo está la batería?')
+    ..writeln()
+    ..writeln('**${_md(p.verdict)}**')
+    ..writeln();
   if (p.healthPercent >= 0) {
-    line('  Salud: ${p.healthPercent} % de la capacidad que tenía nueva '
-        '(${p.etiquetaSalud}).');
+    b.writeln(
+      '- Salud: ${p.healthPercent} % de la capacidad que tenía nueva '
+      '(${_md(p.etiquetaSalud)}).',
+    );
   }
   if (p.chargePercent >= 0) {
-    line('  Ahora mismo: ${p.chargePercent} % de carga · '
-        '${BateriaEstado.etiqueta(p.state)}.');
+    b.writeln(
+      '- Ahora mismo: ${p.chargePercent} % de carga · '
+      '${_md(BateriaEstado.etiqueta(p.state))}.',
+    );
   }
+  b.writeln();
 
-  line();
-  line('== Cifras ==');
-  line('  Cuando era nueva aguantaba : ${energiaEnPalabras(p.designMWh)}'
-      '${p.designMWh > 0 ? " (${p.designMWh} mWh)" : ""}');
-  line('  Hoy, cargada al 100 %      : ${energiaEnPalabras(p.fullMWh)}'
-      '${p.fullMWh > 0 ? " (${p.fullMWh} mWh)" : ""}');
+  b
+    ..writeln('## Cifras')
+    ..writeln();
+  _tabla(b, ['Dato', 'Valor']);
+  _fila(b, [
+    'Cuando era nueva aguantaba',
+    '${energiaEnPalabras(p.designMWh)}'
+        '${p.designMWh > 0 ? " (${p.designMWh} mWh)" : ""}',
+  ]);
+  _fila(b, [
+    'Hoy, cargada al 100 %',
+    '${energiaEnPalabras(p.fullMWh)}'
+        '${p.fullMWh > 0 ? " (${p.fullMWh} mWh)" : ""}',
+  ]);
   if (p.remainingMWh > 0) {
-    line('  En este momento            : ${energiaEnPalabras(p.remainingMWh)}');
+    _fila(b, ['En este momento', energiaEnPalabras(p.remainingMWh)]);
   }
-  line('  Veces que se ha cargado    : '
-      '${p.cycleCount > 0 ? "${p.cycleCount}" : "el equipo no lleva esa cuenta"}');
+  _fila(b, [
+    'Veces que se ha cargado',
+    p.cycleCount > 0 ? '${p.cycleCount}' : 'el equipo no lleva esa cuenta',
+  ]);
+  b.writeln();
 
-  line();
-  line('== Cuánto dura sin enchufar ==');
-  line('  (la cuenta del sistema sale del uso habitual; usándolo a tope dura '
-      'bastante menos)');
+  b
+    ..writeln('## Cuánto dura sin enchufar')
+    ..writeln()
+    ..writeln(
+      '> La cuenta del sistema sale del uso habitual; usándolo a tope '
+      'dura bastante menos.',
+    )
+    ..writeln();
+  _tabla(b, ['Situación', 'Duración']);
   if (bat.runtimeHeavyMin > 0) {
-    line('  Usándolo a tope (vídeo, brillo alto): unos '
-        '${duracionEnPalabras(bat.runtimeHeavyMin)}');
+    _fila(b, [
+      'Usándolo a tope (vídeo, brillo alto)',
+      'unos ${duracionEnPalabras(bat.runtimeHeavyMin)}',
+    ]);
   }
   if (bat.runtimeFullMin > 0) {
-    line('  En el uso de siempre, al 100 %      : '
-        '${duracionEnPalabras(bat.runtimeFullMin)}');
+    _fila(b, [
+      'En el uso de siempre, al 100 %',
+      duracionEnPalabras(bat.runtimeFullMin),
+    ]);
   }
   if (bat.runtimeNowMin > 0) {
-    line('  Con la carga que le queda ahora     : '
-        '${duracionEnPalabras(bat.runtimeNowMin)}');
+    _fila(b, [
+      'Con la carga que le queda ahora',
+      duracionEnPalabras(bat.runtimeNowMin),
+    ]);
   }
   if (bat.wattsTypicalMW > 0) {
-    line('  Consumo medido del equipo           : '
-        '${vatiosEnPalabras(bat.wattsTypicalMW)} en uso habitual'
-        '${bat.wattsHeavyMW > 0 ? ", ${vatiosEnPalabras(bat.wattsHeavyMW)} a tope" : ""}');
+    _fila(b, [
+      'Consumo medido del equipo',
+      '${vatiosEnPalabras(bat.wattsTypicalMW)} en uso habitual'
+          '${bat.wattsHeavyMW > 0 ? ", ${vatiosEnPalabras(bat.wattsHeavyMW)} a tope" : ""}',
+    ]);
   }
+  b.writeln();
 
-  line();
-  line('== Para pedir una batería nueva ==');
-  line('  Modelo de la batería: '
-      '${p.model.isNotEmpty ? p.model : "no lo publica el equipo"}');
-  if (p.manufacturer.isNotEmpty) line('  Fabricante          : ${p.manufacturer}');
-  if (bat.equipment.isNotEmpty) line('  Para el equipo      : ${bat.equipment}');
+  b
+    ..writeln('## Para pedir una batería nueva')
+    ..writeln();
+  _tabla(b, ['Dato', 'Valor']);
+  _fila(b, [
+    'Modelo de la batería',
+    p.model.isNotEmpty ? p.model : 'no lo publica el equipo',
+  ]);
+  if (p.manufacturer.isNotEmpty) _fila(b, ['Fabricante', p.manufacturer]);
+  if (bat.equipment.isNotEmpty) _fila(b, ['Para el equipo', bat.equipment]);
   if (p.voltageMV > 0) {
-    line('  Voltaje             : ${voltiosEnPalabras(p.voltageMV)}'
-        '   (con otro voltaje NO sirve, aunque encaje)');
+    _fila(b, [
+      'Voltaje',
+      '${voltiosEnPalabras(p.voltageMV)} (con otro voltaje NO sirve, aunque encaje)',
+    ]);
   }
-  line('  Capacidad           : ${energiaEnPalabras(p.designMWh)}'
-      '${p.designMAh > 0 ? " · ${p.designMAh} mAh" : ""}');
-  final quimicaRepuesto = p.chemistryText.isNotEmpty ? p.chemistryText : p.chemistry;
-  if (quimicaRepuesto.isNotEmpty) line('  De qué está hecha   : $quimicaRepuesto');
+  _fila(b, [
+    'Capacidad',
+    '${energiaEnPalabras(p.designMWh)}'
+        '${p.designMAh > 0 ? " · ${p.designMAh} mAh" : ""}',
+  ]);
+  final quimicaRepuesto = p.chemistryText.isNotEmpty
+      ? p.chemistryText
+      : p.chemistry;
+  if (quimicaRepuesto.isNotEmpty) {
+    _fila(b, ['De qué está hecha', quimicaRepuesto]);
+  }
+  b.writeln();
 
   if (p.notes.isNotEmpty) {
-    line();
-    line('== Qué significa todo esto ==');
+    b
+      ..writeln('## Qué significa todo esto')
+      ..writeln();
     for (final n in p.notes) {
-      line();
-      line('  ${n.title}');
-      line('    ${n.detail}');
+      b
+        ..writeln('### ${_md(n.title)}')
+        ..writeln()
+        ..writeln(_md(n.detail))
+        ..writeln();
     }
   }
 
-  line();
-  line('== Datos técnicos ==');
-  if (p.name.isNotEmpty) line('  Como la llama el equipo: ${p.name}');
-  if (p.serial.isNotEmpty) line('  Número de serie        : ${p.serial}');
-  if (p.designMWh > 0) line('  Capacidad de fábrica   : ${p.designMWh} mWh');
-  if (p.fullMWh > 0) line('  Capacidad actual       : ${p.fullMWh} mWh');
+  b
+    ..writeln('## Datos técnicos')
+    ..writeln();
+  _tabla(b, ['Dato', 'Valor']);
+  if (p.name.isNotEmpty) _fila(b, ['Como la llama el equipo', p.name]);
+  if (p.serial.isNotEmpty) _fila(b, ['Número de serie', p.serial]);
+  if (p.designMWh > 0) _fila(b, ['Capacidad de fábrica', '${p.designMWh} mWh']);
+  if (p.fullMWh > 0) _fila(b, ['Capacidad actual', '${p.fullMWh} mWh']);
   if (bat.onAcKnown) {
-    line('  Corriente              : '
-        '${bat.onAc ? "enchufado" : "funcionando con batería"}');
+    _fila(b, ['Corriente', bat.onAc ? 'enchufado' : 'funcionando con batería']);
   }
+  b.writeln();
 
   if (bat.history.length > 1) {
-    line();
-    line('== Cómo ha ido bajando ==');
+    b
+      ..writeln('## Cómo ha ido bajando')
+      ..writeln();
+    _tabla(b, ['Periodo', 'Capacidad', 'Salud']);
     for (final h in bat.history) {
-      line('  ${h.period.padRight(26)} ${energiaEnPalabras(h.fullMWh).padLeft(9)}'
-          '${h.healthPercent >= 0 ? "   ${h.healthPercent} % de su capacidad de fábrica" : ""}');
+      _fila(b, [
+        h.period,
+        energiaEnPalabras(h.fullMWh),
+        h.healthPercent >= 0
+            ? '${h.healthPercent} % de su capacidad de fábrica'
+            : '',
+      ]);
     }
+    b.writeln();
   }
 
   if (bat.reason.isNotEmpty) {
-    line();
-    line('Aviso: ${bat.reason}');
+    b
+      ..writeln('> ⚠️ ${_md(bat.reason)}')
+      ..writeln();
   }
 
-  line();
-  line('=' * 60);
-  line('$appCopyright · $appEmail · Licencia $appLicense');
+  _pie(b);
   return b.toString();
 }
 
@@ -756,61 +986,65 @@ String buildBateriaReport(BateriaInfo bat, String equipo) {
 
 String buildDiscosReport(List<DiskInfo> discos, String equipo) {
   final b = StringBuffer();
-  void line([String s = '']) => b.writeln(s);
-
-  line('$appName v$appVersion Rev $appRevision');
-  line('Salud de los discos · generado: ${_humanStamp()}');
-  if (equipo.isNotEmpty) line('Equipo: $equipo');
-  line('=' * 60);
+  _cabecera(b, 'Salud de los discos', equipo);
 
   if (discos.isEmpty) {
-    line();
-    line('No se encontró ningún disco.');
+    b
+      ..writeln('_No se encontró ningún disco._')
+      ..writeln();
+    _pie(b);
     return b.toString();
   }
 
   for (final (i, d) in discos.indexed) {
-    line();
-    line('-' * 60);
-    line('Disco ${i + 1}: ${d.titulo}');
-    line('-' * 60);
-    line('  ${d.verdict}');
+    b
+      ..writeln('## Disco ${i + 1} — ${_md(d.titulo)}')
+      ..writeln()
+      ..writeln('**${_md(d.verdict)}**')
+      ..writeln();
+    _tabla(b, ['Dato', 'Valor']);
     if (d.lifePercentLeft >= 0) {
-      line('  Vida que le queda   : ${d.lifePercentLeft} %');
+      _fila(b, ['Vida que le queda', '${d.lifePercentLeft} %']);
     }
-    line('  Tipo                : ${d.type.isEmpty ? "—" : d.type}'
-        '   ·   Capacidad: ${formatDiskCap(d.sizeBytes)}');
+    _fila(b, ['Tipo', d.type]);
+    _fila(b, ['Capacidad', formatDiskCap(d.sizeBytes)]);
     if (d.hasUsage) {
-      line('  Espacio usado       : ${formatBytes(d.usedBytes)} de '
-          '${formatBytes(d.fsTotalBytes)} (${d.usedPercent.round()} %), '
-          'libres ${formatBytes(d.availBytes)}');
+      _fila(b, [
+        'Espacio usado',
+        '${formatBytes(d.usedBytes)} de ${formatBytes(d.fsTotalBytes)} '
+            '(${d.usedPercent.round()} %), libres ${formatBytes(d.availBytes)}',
+      ]);
     }
     if (d.powerOnHours > 0) {
-      line('  Tiempo encendido    : ${formatEntero(d.powerOnHours)} h'
-          '${d.powerCycles > 0 ? "   ·   se ha encendido ${formatEntero(d.powerCycles)} veces" : ""}');
+      _fila(b, ['Tiempo encendido', '${formatEntero(d.powerOnHours)} h']);
+      if (d.powerCycles > 0) {
+        _fila(b, ['Veces que se ha encendido', formatEntero(d.powerCycles)]);
+      }
     }
     if (d.writtenBytes > 0) {
-      line('  Datos escritos      : ${formatBytes(d.writtenBytes)}');
+      _fila(b, ['Datos escritos', formatBytes(d.writtenBytes)]);
     }
     if (d.smartAvailable) {
-      line('  Trozos dañados      : ${d.reallocatedSectors}');
+      _fila(b, ['Trozos dañados', '${d.reallocatedSectors}']);
     }
-    if (d.serial.isNotEmpty) line('  Número de serie     : ${d.serial}');
-    line('  Dispositivo         : ${d.name}');
+    if (d.serial.isNotEmpty) _fila(b, ['Número de serie', d.serial]);
+    _fila(b, ['Dispositivo', d.name]);
+    b.writeln();
 
     if (d.notes.isNotEmpty) {
-      line();
-      line('  Qué significa todo esto:');
+      b
+        ..writeln('### Qué significa todo esto')
+        ..writeln();
       for (final n in d.notes) {
-        line();
-        line('    ${n.title}');
-        line('      ${n.detail}');
+        b
+          ..writeln('**${_md(n.title)}**')
+          ..writeln()
+          ..writeln(_md(n.detail))
+          ..writeln();
       }
     }
   }
 
-  line();
-  line('=' * 60);
-  line('$appCopyright · $appEmail · Licencia $appLicense');
+  _pie(b);
   return b.toString();
 }

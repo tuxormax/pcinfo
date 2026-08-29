@@ -69,9 +69,9 @@ void main() {
     final texto = buildDiscosReport(_discos, 'DESKTOP-0QAGG5O');
     expect(texto, contains('El disco está sano.'));
     expect(texto, contains('Este disco da señales de desgaste.'));
-    expect(texto, contains('Vida que le queda   : 84 %'));
+    expect(texto, contains('| Vida que le queda | 84 % |'));
     expect(texto, contains('11.559 h'));
     // El disco mecánico no reporta vida: no debe aparecer inventada.
-    expect(texto.split('Disco 2:')[1], isNot(contains('Vida que le queda')));
+    expect(texto.split('## Disco 2')[1], isNot(contains('Vida que le queda')));
   });
 }

@@ -60,7 +60,7 @@ Source: "{#SourceBackend}"; DestDir: "{app}"; DestName: "pcinfo-backend.exe"; Fl
 Source: "{#SourceSmartctl}"; DestDir: "{app}"; DestName: "smartctl.exe"; Flags: ignoreversion
 Source: "{#SourceDrivedb}"; DestDir: "{app}"; DestName: "drivedb.h"; Flags: ignoreversion
 ; Recopilador de pantallazos azules. Deja el equipo capturando SOLO cada BSOD en
-; C:\bluescreen.txt y, sobre todo, garantiza que Windows llegue a crear el .dmp:
+; C:\bluescreen.md y, sobre todo, garantiza que Windows llegue a crear el .dmp:
 ; sin volcado, el análisis del culpable de la pestaña Historial de Errores no
 ; tiene nada que leer (caso real: 32 pantallazos y solo 5 volcados).
 Source: "..\herramientas\bluescreen\bluescreen.ps1"; DestDir: "{app}\bluescreen"; Flags: ignoreversion
@@ -102,7 +102,7 @@ Filename: "{app}\pcinfo.exe"; Description: "Iniciar PCInfo"; Flags: nowait posti
 [UninstallRun]
 ; Cerrar cualquier backend que la app haya dejado corriendo.
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM pcinfo-backend.exe /F"; Flags: runhidden; RunOnceId: "KillBackend"
-; Quitar la tarea del recopilador. C:\bluescreen.txt NO se borra: es el informe
+; Quitar la tarea del recopilador. C:\bluescreen.md NO se borra: es el informe
 ; del usuario, y borrarlo al desinstalar sería perder su historial de fallos.
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\bluescreen\bluescreen.ps1"" -QuitarTarea"; Flags: runhidden skipifdoesntexist; RunOnceId: "QuitarTareaBluescreen"
 

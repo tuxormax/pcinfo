@@ -22,8 +22,10 @@ Incluye además la pestaña **Historial de Errores**: lee lo que registró el si
 
 Y dos pestañas más:
 
-- **Software** — todos los programas instalados con su versión, separando **lo que instaló el usuario** de **lo que vino con el sistema**. Se exporta a **Markdown** (`.md`) ya agrupado, listo para pegar en un informe o un ticket.
+- **Software** — todos los programas instalados con su versión, separando **lo que instaló el usuario** de **lo que vino con el sistema**. Se exporta ya agrupado, listo para pegar en un informe o un ticket.
 - **Controladores** *(solo Windows)* — **respaldar y restaurar** los controladores de terceros del equipo y las **redes WiFi guardadas** (con sus contraseñas). Pensado para formatear un equipo sin perder ni los drivers ni las claves del WiFi.
+
+En todas las pestañas, el botón **Guardar** pregunta dónde dejar el archivo y escribe un **Markdown** (`.md`): se lee igual que un texto plano en cualquier editor, y pegado en un ticket, un correo o un repositorio conserva sus títulos y sus tablas.
 
 > **En desarrollo.** Reescritura completa del antiguo *LinuxHWMonitor* (Python + PyQt5) a una arquitectura **Go + Flutter**.
 
@@ -64,7 +66,7 @@ La versión **portable** cabe en una memoria USB y sirve para revisar un equipo 
 2. Abre `pcinfo.exe` desde la USB.
 3. En la pestaña **Historial de Errores**, el selector *«Analizando el Windows de:»* lista las instalaciones encontradas en los discos. Elige la del Windows averiado — normalmente `C:` o `D:`, no la unidad del medio de rescate.
 
-PCInfo lee entonces **sus** registros de eventos y **sus** volcados de pantallazo azul aunque ese Windows no pueda arrancar, deduce el driver culpable a partir del volcado y explica qué pasó y cómo resolverlo. Al analizar una instalación apagada se revisan los últimos **180 días** en lugar de 30, porque un equipo averiado suele llevar semanas sin usarse. Con **Guardar** queda un `.txt` con todo el diagnóstico.
+PCInfo lee entonces **sus** registros de eventos y **sus** volcados de pantallazo azul aunque ese Windows no pueda arrancar, deduce el driver culpable a partir del volcado y explica qué pasó y cómo resolverlo. Al analizar una instalación apagada se revisan los últimos **180 días** en lugar de 30, porque un equipo averiado suele llevar semanas sin usarse. Con **Guardar** queda un `.md` con todo el diagnóstico.
 
 La pestaña *Hardware* sigue funcionando en ese escenario y muestra el hardware real del equipo (el sistema operativo que reporta es el del medio de rescate).
 
@@ -73,10 +75,10 @@ La pestaña *Hardware* sigue funcionando en ese escenario y muestra el hardware 
 El instalador de Windows deja puesta la herramienta **bluescreen**, que captura **cada pantallazo azul en cuanto ocurre** — la app, en cambio, solo mira hacia atrás cuando la abres.
 
 - Registra la tarea `RecopilarBluescreens`, disparada por el propio pantallazo (evento 1001) y, de respaldo, al arrancar. Corre como SYSTEM.
-- Va acumulando todos los fallos en **`C:\bluescreen.txt`**, cada uno con su bloque `/****CAUSANTE DEL ERROR****/`: qué driver lo causó, por qué se le señala y cómo resolverlo. Es el mismo análisis del volcado que usa la pestaña *Historial de Errores*, así que los dos señalan siempre al mismo culpable.
+- Va acumulando todos los fallos en **`C:\bluescreen.md`**, cada uno con su sección **CAUSANTE DEL ERROR**: qué driver lo causó, por qué se le señala y cómo resolverlo. Es el mismo análisis del volcado que usa la pestaña *Historial de Errores*, así que los dos señalan siempre al mismo culpable.
 - Sobre todo, **garantiza que Windows llegue a crear el volcado**: deja el volcado pequeño configurado (`CrashDumpEnabled = 3`), sube el histórico a 50 minidumps y se asegura de que el archivo de paginación esté administrado por el sistema. Sin eso el pantallazo no deja `.dmp` y no hay nada que analizar — en un caso real, de 32 pantallazos solo sobrevivieron 5 volcados.
 
-En el menú Inicio queda como **Pantallazos azules (bluescreen)**, con opciones para ver el informe, regenerarlo o quitar la tarea. Al desinstalar PCInfo la tarea se quita; el `C:\bluescreen.txt` **se conserva**.
+En el menú Inicio queda como **Pantallazos azules (bluescreen)**, con opciones para ver el informe, regenerarlo o quitar la tarea. Al desinstalar PCInfo la tarea se quita; el `C:\bluescreen.md` **se conserva**.
 
 ## Respaldar y restaurar controladores y redes WiFi (Windows)
 

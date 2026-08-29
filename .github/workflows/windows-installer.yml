@@ -128,7 +128,7 @@ jobs:
       # El instalador empaqueta la herramienta bluescreen y deja su tarea puesta.
       # Este paso comprueba que sigue siendo ASCII puro, que compila y que su
       # analizador del volcado NO se ha separado del de PCInfo: si los dos se
-      # desincronizan, el C:\bluescreen.txt y la pestaña Historial de Errores
+      # desincronizan, el C:\bluescreen.md y la pestaña Historial de Errores
       # acusarían a drivers distintos del mismo pantallazo.
       - name: Verificar la herramienta bluescreen
         shell: pwsh

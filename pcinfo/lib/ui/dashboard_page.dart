@@ -934,9 +934,9 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  /// Guardar: exporta lo que se está viendo, según la pestaña activa. Hardware,
-  /// historial de errores y batería salen en .txt; software y controladores en
-  /// .md, porque son tablas largas que se pegan en un informe o un ticket.
+  /// Guardar: exporta lo que se está viendo, según la pestaña activa. TODOS los
+  /// reportes salen en Markdown (.md) — regla del proyecto: se leen igual en
+  /// cualquier editor y pegados en un informe o un ticket conservan sus tablas.
   /// Siempre abre el diálogo del sistema para elegir carpeta y nombre (ver
   /// `_guardaConDialogo` en report.dart).
   Widget _saveButton() {

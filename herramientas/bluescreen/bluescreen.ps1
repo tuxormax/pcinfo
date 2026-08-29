@@ -1,11 +1,15 @@
 <#
 .SYNOPSIS
-    Recopila TODOS los pantallazos azules (BSOD) del equipo en C:\bluescreen.txt.
+    Recopila TODOS los pantallazos azules (BSOD) del equipo en C:\bluescreen.md.
 
 .DESCRIPTION
     Lee los pantallazos azules desde varias fuentes de Windows y los va acumulando
-    en un solo archivo de texto (por defecto C:\bluescreen.txt), con fecha, hora,
-    equipo, sistema operativo y todos los detalles de cada evento.
+    en un solo archivo (por defecto C:\bluescreen.md), con fecha, hora, equipo,
+    sistema operativo y todos los detalles de cada evento.
+
+    El informe es MARKDOWN, como TODOS los reportes de PCInfo: se lee igual que
+    un texto plano en el Bloc de notas, pero pegado en un ticket, un correo o un
+    repositorio conserva sus titulos y sus tablas.
 
     Fuentes que consulta:
         - Evento 1001  "Microsoft-Windows-WER-SystemErrorReporting"
@@ -15,13 +19,17 @@
         - Evento 6008  "EventLog" (apagado inesperado del sistema).
         - Archivos de volcado: C:\Windows\Minidump\*.dmp y C:\Windows\MEMORY.DMP.
 
-    No borra ni modifica nada del sistema: solo LEE registros y ESCRIBE el .txt.
+    No borra ni modifica nada del sistema: solo LEE registros y ESCRIBE el .md.
 
     Para no duplicar, guarda los EventRecordId ya volcados en un marcador
-    (C:\bluescreen.txt.procesados) y en cada corrida solo agrega los nuevos.
+    (C:\bluescreen.md.procesados) y en cada corrida solo agrega los nuevos.
+
+    Si el equipo venia de una version anterior (que escribia C:\bluescreen.txt),
+    ese archivo NO se toca: el historial se regenera entero en el .md y el viejo
+    queda como estaba.
 
 .PARAMETER Archivo
-    Ruta del archivo de salida. Por defecto C:\bluescreen.txt.
+    Ruta del archivo de salida. Por defecto C:\bluescreen.md.
 
 .PARAMETER Rehacer
     Borra el archivo y el marcador y vuelve a generar TODO el historial desde cero.
@@ -38,7 +46,7 @@
 
 .EXAMPLE
     .\bluescreen.ps1
-    Recopila los pantallazos nuevos y los agrega a C:\bluescreen.txt.
+    Recopila los pantallazos nuevos y los agrega a C:\bluescreen.md.
 
 .EXAMPLE
     .\bluescreen.ps1 -Rehacer
@@ -55,7 +63,7 @@
 #Requires -Version 5.1
 [CmdletBinding()]
 param(
-    [string]$Archivo = 'C:\bluescreen.txt',
+    [string]$Archivo = 'C:\bluescreen.md',
     [switch]$Rehacer,
     [switch]$Ver,
     [switch]$InstalarTarea,
@@ -67,6 +75,21 @@ try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 
 function Log([string]$msg, [string]$color = 'Gray') {
     Write-Host $msg -ForegroundColor $color
+}
+
+# --- Celdas del informe Markdown ---------------------------------------------
+#  Escapa lo que romperia una tabla: la barra vertical la toma como separador de
+#  columna y el salto de linea corta la fila. Lo que trae contrabarras (rutas de
+#  Windows como C:\Windows\Minidump\...) se envuelve en acentos graves: sin eso
+#  el visor de Markdown se come una contrabarra y la ruta que se copia del
+#  informe ya no es la del equipo.
+function MD($valor) {
+    $s = "$valor"
+    if ([string]::IsNullOrWhiteSpace($s)) { return '-' }
+    $v = $s -replace '\|', '\|' -replace '\r?\n', ' '
+    $v = $v.Trim()
+    if ($s.Contains('\') -and -not $v.Contains('`')) { return '`' + $v + '`' }
+    return $v
 }
 
 # --- Tabla de codigos de STOP mas comunes -------------------------------------
@@ -684,79 +707,92 @@ function Get-Minidumps {
 }
 
 # --- Escritura de una entrada -------------------------------------------------
+#  El informe es MARKDOWN. Cada pantallazo es un titulo de nivel 2, sus datos van
+#  en tabla y el mensaje crudo del sistema en un bloque de codigo. Toda celda
+#  pasa por MD() (barra vertical y rutas con contrabarra).
 function Format-Entrada($ev, $indice, $info, $dumps) {
     $sb = New-Object System.Text.StringBuilder
-    [void]$sb.AppendLine('================================================================================')
-    [void]$sb.AppendLine("  BLUESCREEN  #$indice")
-    [void]$sb.AppendLine('================================================================================')
-    [void]$sb.AppendLine(("Fecha / Hora : {0:yyyy-MM-dd HH:mm:ss}  ({1})" -f $ev.Cuando, $info.ZonaHoraria))
-    [void]$sb.AppendLine("Equipo       : $($info.Equipo)")
-    [void]$sb.AppendLine("Usuario      : $($info.Usuario)")
-    [void]$sb.AppendLine("Sistema      : $($info.SO)")
-    [void]$sb.AppendLine("Hardware     : $($info.Fabricante)  |  RAM $($info.RAM_GB) GB  |  Serie $($info.Serie)")
-    [void]$sb.AppendLine("Origen       : $($ev.Fuente)")
+    [void]$sb.AppendLine(("## Pantallazo #{0} - {1:yyyy-MM-dd HH:mm:ss}" -f $indice, $ev.Cuando))
+    [void]$sb.AppendLine('')
+    [void]$sb.AppendLine('| Dato | Valor |')
+    [void]$sb.AppendLine('| --- | --- |')
+    [void]$sb.AppendLine(("| Fecha / hora | {0:yyyy-MM-dd HH:mm:ss} ({1}) |" -f $ev.Cuando, (MD $info.ZonaHoraria)))
+    [void]$sb.AppendLine("| Equipo | $(MD $info.Equipo) |")
+    [void]$sb.AppendLine("| Usuario | $(MD $info.Usuario) |")
+    [void]$sb.AppendLine("| Sistema | $(MD $info.SO) |")
+    [void]$sb.AppendLine("| Hardware | $(MD $info.Fabricante) - RAM $($info.RAM_GB) GB - Serie $(MD $info.Serie) |")
+    [void]$sb.AppendLine("| Origen | $(MD $ev.Fuente) |")
     if ($ev.Stop) {
-        [void]$sb.AppendLine("Stop code    : $($ev.Stop)  $(Nombre-Stop $ev.Stop)")
+        [void]$sb.AppendLine("| Stop code | $(MD $ev.Stop)  $(MD (Nombre-Stop $ev.Stop)) |")
     }
     if ($ev.Params) {
-        [void]$sb.AppendLine("Parametros   : $($ev.Params)")
+        [void]$sb.AppendLine("| Parametros | $(MD $ev.Params) |")
     }
 
     # Localiza y analiza el volcado (.dmp) de este pantallazo
     $dump = Buscar-Dump $ev $dumps
     $analisis = $null
     if ($dump) {
-        [void]$sb.AppendLine("Archivo dump : $($dump.FullName)  ($([math]::Round($dump.Length/1KB)) KB, $($dump.LastWriteTime.ToString('yyyy-MM-dd HH:mm')))")
+        [void]$sb.AppendLine("| Archivo dump | $(MD $dump.FullName) ($([math]::Round($dump.Length/1KB)) KB, $($dump.LastWriteTime.ToString('yyyy-MM-dd HH:mm'))) |")
         try { $analisis = Analiza-Dump $dump $ev.Stop } catch { }
     } elseif ($ev.Dump) {
         $existe = if (Test-Path $ev.Dump) { 'existe' } else { 'YA NO existe (se sobrescribio)' }
-        [void]$sb.AppendLine("Archivo dump : $($ev.Dump)  ($existe)")
+        [void]$sb.AppendLine("| Archivo dump | $(MD $ev.Dump) ($existe) |")
     }
+    [void]$sb.AppendLine('')
 
     # ---------------- Bloque del causante (facil de ubicar) -------------------
+    #  Sigue llamandose CAUSANTE DEL ERROR para que quien lo buscaba en el .txt
+    #  viejo lo siga encontrando igual; ahora es un titulo de Markdown.
     $stopParaGuia = if ($analisis -and $analisis.Stop) { $analisis.Stop } else { $ev.Stop }
+    [void]$sb.AppendLine('### CAUSANTE DEL ERROR')
     [void]$sb.AppendLine('')
-    [void]$sb.AppendLine('/****CAUSANTE DEL ERROR****/')
+    [void]$sb.AppendLine('| Dato | Valor |')
+    [void]$sb.AppendLine('| --- | --- |')
     if ($analisis -and $analisis.Culpable) {
         $c = $analisis.Culpable
-        [void]$sb.AppendLine("  Probable causante : $($c.Nombre)")
-        [void]$sb.AppendLine("  Descripcion       : $($c.Descripcion)")
-        [void]$sb.AppendLine("  Fabricante        : $($c.Compania)")
-        [void]$sb.AppendLine("  Version           : $($c.Version)")
-        [void]$sb.AppendLine("  Ubicacion         : $($c.Ruta)")
-        [void]$sb.AppendLine("  Confianza         : $($analisis.Confianza)")
+        [void]$sb.AppendLine("| Probable causante | **$(MD $c.Nombre)** |")
+        [void]$sb.AppendLine("| Descripcion | $(MD $c.Descripcion) |")
+        [void]$sb.AppendLine("| Fabricante | $(MD $c.Compania) |")
+        [void]$sb.AppendLine("| Version | $(MD $c.Version) |")
+        [void]$sb.AppendLine("| Ubicacion | $(MD $c.Ruta) |")
+        [void]$sb.AppendLine("| Confianza | $(MD $analisis.Confianza) |")
     } elseif ($analisis -and $analisis.Nota) {
-        [void]$sb.AppendLine("  Probable causante : $($analisis.Nota)")
+        [void]$sb.AppendLine("| Probable causante | $(MD $analisis.Nota) |")
     } else {
-        [void]$sb.AppendLine("  Probable causante : no se pudo analizar un .dmp (revisa el stop code y la guia de abajo).")
+        [void]$sb.AppendLine("| Probable causante | no se pudo analizar un .dmp (revisa el stop code y la guia de abajo). |")
     }
     # POR QUE se le acusa. Sin esto, "confianza alta" y "confianza baja" son
     # etiquetas opacas: la diferencia entre "estaba en la pila de llamadas" y
     # "su nombre aparece suelto en el archivo" es la que decide si vale la pena
     # desinstalar un driver.
     if ($analisis -and $analisis.Evidencia) {
+        $n = 0
         foreach ($e in @($analisis.Evidencia | Where-Object { $_ })) {
-            [void]$sb.AppendLine("  Por que            : $e")
+            $n++
+            $etiqueta = if ($n -eq 1) { 'Por que' } else { "Por que ($n)" }
+            [void]$sb.AppendLine("| $etiqueta | $(MD $e) |")
         }
     }
     # La nota se imprime tambien cuando SI hubo culpable (trae el detalle del
     # volcado); arriba solo sale cuando no hay a quien senalar.
     if ($analisis -and $analisis.Culpable -and $analisis.Nota) {
-        [void]$sb.AppendLine("  Nota              : $($analisis.Nota)")
+        [void]$sb.AppendLine("| Nota | $(MD $analisis.Nota) |")
     }
     if ($analisis -and $analisis.FaultAddr) {
-        [void]$sb.AppendLine("  Direccion de fallo: $($analisis.FaultAddr)")
+        [void]$sb.AppendLine("| Direccion de fallo | $(MD $analisis.FaultAddr) |")
     }
     if ($analisis -and $analisis.Formato) {
-        [void]$sb.AppendLine("  Volcado           : $($analisis.Formato)")
+        [void]$sb.AppendLine("| Volcado | $(MD $analisis.Formato) |")
     }
     if ($analisis -and $analisis.Pila -and $analisis.Pila.Count -gt 0) {
-        [void]$sb.AppendLine("  Pila de llamadas  : $((@($analisis.Pila) | Select-Object -First 8) -join ' -> ')")
+        [void]$sb.AppendLine("| Pila de llamadas | $(MD ((@($analisis.Pila) | Select-Object -First 8) -join ' -> ')) |")
     }
     if ($analisis -and $analisis.Descargados -and $analisis.Descargados.Count -gt 0) {
-        [void]$sb.AppendLine("  Se descargaban    : $((@($analisis.Descargados) | Select-Object -First 8) -join ', ')")
+        [void]$sb.AppendLine("| Se descargaban | $(MD ((@($analisis.Descargados) | Select-Object -First 8) -join ', ')) |")
     }
-    [void]$sb.AppendLine("  Como solucionarlo : $(Guia-Bugcheck $stopParaGuia)")
+    [void]$sb.AppendLine("| Como solucionarlo | $(MD (Guia-Bugcheck $stopParaGuia)) |")
+    [void]$sb.AppendLine('')
     # OJO: cuando HAY culpable, el primer sospechoso ES el culpable (asi lo
     # arma Analiza-Dump) y repetirlo aqui seria confuso. Cuando no lo hay, la
     # lista son todos sospechosos y no se salta ninguno.
@@ -764,19 +800,23 @@ function Format-Entrada($ev, $indice, $info, $dumps) {
         $otros = @($analisis.Sospechosos)
         if ($analisis.Culpable -and $otros.Count -gt 0) { $otros = @($otros | Select-Object -Skip 1) }
         if ($otros.Count -gt 0) {
-            [void]$sb.AppendLine('  Otros drivers de terceros (sospechosos secundarios, SIN prueba):')
+            [void]$sb.AppendLine('Otros drivers de terceros (sospechosos secundarios, SIN prueba):')
+            [void]$sb.AppendLine('')
             foreach ($s in ($otros | Select-Object -First 10)) {
-                [void]$sb.AppendLine("      - $($s.Nombre)  [$($s.Compania)]  v$($s.Version)")
+                [void]$sb.AppendLine("- **$(MD $s.Nombre)** - $(MD $s.Compania) - v$(MD $s.Version)")
             }
+            [void]$sb.AppendLine('')
         }
     }
-    [void]$sb.AppendLine('/****FIN CAUSANTE****/')
-    [void]$sb.AppendLine('')
 
-    [void]$sb.AppendLine('--- Detalle crudo del evento ---------------------------------------------------')
+    [void]$sb.AppendLine('Detalle crudo del evento:')
+    [void]$sb.AppendLine('')
+    [void]$sb.AppendLine('```text')
     foreach ($linea in ($ev.Mensaje -split "`r?`n")) {
-        [void]$sb.AppendLine($linea)
+        # Una valla dentro del propio mensaje partiria el bloque en dos.
+        [void]$sb.AppendLine(($linea -replace '^```', "'''"))
     }
+    [void]$sb.AppendLine('```')
     [void]$sb.AppendLine('')
     return $sb.ToString()
 }
@@ -946,12 +986,24 @@ $dumps = Get-Minidumps
 $primeraVez = -not (Test-Path $Archivo)
 if ($primeraVez) {
     $cab = @()
-    $cab += 'REGISTRO DE PANTALLAZOS AZULES (BSOD)'
-    $cab += "Equipo   : $($info.Equipo)"
-    $cab += "Sistema  : $($info.SO)"
-    $cab += "Hardware : $($info.Fabricante)  |  RAM $($info.RAM_GB) GB"
-    $cab += "Creado   : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+    $cab += '# Registro de pantallazos azules (BSOD)'
+    $cab += ''
+    $cab += '| Dato | Valor |'
+    $cab += '| --- | --- |'
+    $cab += "| Equipo | $(MD $info.Equipo) |"
+    $cab += "| Sistema | $(MD $info.SO) |"
+    $cab += "| Hardware | $(MD $info.Fabricante) - RAM $($info.RAM_GB) GB |"
+    $cab += "| Creado | $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') |"
+    $cab += ''
     $cab += 'Este archivo se va llenando solo cada vez que corre bluescreen.bat / la tarea programada.'
+    # Antes el informe se llamaba .txt. Si ese archivo sigue ahi, se dice donde
+    # quedo: el historial se rehizo entero aqui, pero nadie tiene que adivinar
+    # que es ese otro archivo suelto en C:\.
+    $viejoTxt = ($Archivo -replace '\.[^.\\]+$', '') + '.txt'
+    if (Test-Path $viejoTxt) {
+        $cab += ''
+        $cab += "> El informe anterior en texto plano quedo en ``$viejoTxt``; este .md lo reemplaza y trae todo el historial."
+    }
     $cab += ''
     Set-Content -Path $Archivo -Value ($cab -join "`r`n") -Encoding UTF8
 }
@@ -960,7 +1012,7 @@ if ($primeraVez) {
 $indiceBase = 0
 if (-not $primeraVez) {
     try {
-        $ya = Select-String -Path $Archivo -Pattern 'BLUESCREEN  #' -ErrorAction SilentlyContinue
+        $ya = Select-String -Path $Archivo -Pattern '^## Pantallazo #' -ErrorAction SilentlyContinue
         $indiceBase = ($ya | Measure-Object).Count
     } catch { $indiceBase = 0 }
 }
@@ -982,18 +1034,22 @@ if (($nuevos | Measure-Object).Count -eq 0) {
 # Anexo: inventario de archivos de volcado presentes (se reescribe cada corrida)
 if ($dumps -and $dumps.Count -gt 0) {
     $sb = New-Object System.Text.StringBuilder
+    [void]$sb.AppendLine('# Archivos de volcado (.dmp) presentes ahora en el disco')
     [void]$sb.AppendLine('')
-    [void]$sb.AppendLine('--- Archivos de volcado (.dmp) presentes ahora en el disco --------------------')
     [void]$sb.AppendLine("Actualizado: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
+    [void]$sb.AppendLine('')
+    [void]$sb.AppendLine('| Cuando | Tamano | Archivo |')
+    [void]$sb.AppendLine('| --- | --- | --- |')
     foreach ($d in $dumps) {
-        [void]$sb.AppendLine(("  {0:yyyy-MM-dd HH:mm}  {1,10:N0} bytes  {2}" -f $d.LastWriteTime, $d.Length, $d.FullName))
+        [void]$sb.AppendLine(("| {0:yyyy-MM-dd HH:mm} | {1:N0} bytes | {2} |" -f $d.LastWriteTime, $d.Length, (MD $d.FullName)))
     }
-    $anexo = "$Archivo.dumps.txt"
+    # Hermano del informe, con el mismo nombre base: bluescreen.dumps.md
+    $anexo = ($Archivo -replace '\.[^.\\]+$', '') + '.dumps.md'
     Set-Content -Path $anexo -Value $sb.ToString() -Encoding UTF8
 }
 
 Log ''
 Log "Listo. Archivo: $Archivo" 'Cyan'
 $total = 0
-try { $total = ((Select-String -Path $Archivo -Pattern 'BLUESCREEN  #' -ErrorAction SilentlyContinue) | Measure-Object).Count } catch {}
+try { $total = ((Select-String -Path $Archivo -Pattern '^## Pantallazo #' -ErrorAction SilentlyContinue) | Measure-Object).Count } catch {}
 Log "Total de pantallazos registrados hasta ahora: $total" 'Cyan'

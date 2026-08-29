@@ -4,7 +4,7 @@
 # POR QUE: el mismo codigo que lee el .dmp y senala al driver culpable vive en
 # DOS archivos (herramientas\bluescreen\bluescreen.ps1 y
 # backend\collector\errores_windows.ps1). Si uno se corrige y el otro no, el
-# C:\bluescreen.txt y la pestana Historial de Errores acusan a drivers distintos
+# C:\bluescreen.md y la pestana Historial de Errores acusan a drivers distintos
 # del mismo pantallazo, que es peor que no decir nada.
 #
 # Se corre solo en el workflow del instalador; a mano:  pwsh construir\verificar_bluescreen.ps1
