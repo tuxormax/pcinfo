@@ -28,16 +28,44 @@ trap 'rm -rf "$STAGE"' EXIT
 
 export PATH="$HOME/go-sdk/go/bin:$HOME/flutter/bin:$PATH"
 
-echo ">> Compilando backend Go (linux/amd64)..."
+# TODO se compila dentro de un Ubuntu 22.04 (ver construir/entorno_jammy.sh).
+# Compilar en el equipo (Mint 22.1 = Ubuntu 24.04) produce un binario que NO
+# ARRANCA en Mint 21.x: pide simbolos de GLib 2.80 que en GLib 2.72 no existen,
+# y muere sin mostrar nada. Al reves si funciona, asi que se usa la base vieja.
+# shellcheck source=entorno_jammy.sh
+. "$ROOT/construir/entorno_jammy.sh"
+jammy_preparar
+
+echo ">> Compilando backend Go (linux/amd64) en Ubuntu 22.04..."
 # -X main.build* = versión/revisión dentro del backend: /healthz la publica y la
 # GUI detecta así un backend viejo ocupando el puerto tras actualizar.
-( cd "$BACKEND_DIR" && GOOS=linux GOARCH=amd64 go build \
-    -ldflags="-s -w -X main.buildVersion=$VERSION -X main.buildRevision=$REVISION" \
-    -o "$STAGE/pcinfo-backend" . )
+jammy_usuario "$ROOT" "cd '$BACKEND_DIR' && GOOS=linux GOARCH=amd64 go build \
+    -ldflags=\"-s -w -X main.buildVersion=$VERSION -X main.buildRevision=$REVISION\" \
+    -o '$ROOT/pcinfo-backend.tmp' ."
+mv "$ROOT/pcinfo-backend.tmp" "$STAGE/pcinfo-backend"
 
-echo ">> Compilando GUI Flutter (release)..."
-( cd "$APP_DIR" && flutter build linux --release )
+echo ">> Compilando GUI Flutter (release) en Ubuntu 22.04..."
+# flutter clean: la cache de CMake guarda rutas y compilador del ultimo entorno.
+# Si quedo una compilacion hecha en el equipo, se reusaria y volveria a colarse
+# la GLib nueva.
+jammy_usuario "$ROOT" "cd '$APP_DIR' && flutter clean >/dev/null && flutter build linux --release"
 BUNDLE="$APP_DIR/build/linux/x64/release/bundle"
+
+echo ">> Verificando que nada pida simbolos que Ubuntu 22.04 no tenga..."
+# Red de seguridad: ldd -r resuelve TODOS los simbolos contra las librerias del
+# Ubuntu 22.04 del entorno. Si falta uno, el .deb no llega a generarse en vez de
+# entregar un programa que no abre.
+FALLOS="$(jammy_usuario "$ROOT" "
+  for f in '$BUNDLE/pcinfo' '$BUNDLE'/lib/*.so '$STAGE/pcinfo-backend'; do
+    [ -f \"\$f\" ] || continue
+    LD_LIBRARY_PATH='$BUNDLE/lib' ldd -r \"\$f\" 2>&1 | grep -iE 'not found|undefined symbol' | sed \"s|^|\$(basename \$f): |\"
+  done" || true)"
+if [ -n "$FALLOS" ]; then
+  echo "!! El binario pide cosas que Ubuntu 22.04 no tiene; NO se genera el .deb:" >&2
+  echo "$FALLOS" >&2
+  exit 1
+fi
+echo ">> Verificado: corre en Mint 21.x y en Mint 22.x."
 
 echo ">> Armando árbol del paquete .deb..."
 PKG="$STAGE/pkg"
@@ -91,6 +119,15 @@ User=root
 WantedBy=multi-user.target
 EOF
 
+# Version minima de las librerias contra las que se acaba de compilar. Sin esto,
+# en un equipo demasiado viejo el paquete se instala y luego el programa no abre
+# sin decir por que; declarandolas, el instalador lo rechaza con un mensaje claro.
+# (En Ubuntu 24.04 los paquetes se llaman ...t64, pero declaran "Provides" con su
+# version, asi que estas dependencias se satisfacen igual.)
+GTK_MIN="$(jammy_usuario "$ROOT" 'pkg-config --modversion gtk+-3.0')"
+GLIB_MIN="$(jammy_usuario "$ROOT" 'pkg-config --modversion glib-2.0')"
+echo ">> Requiere GTK >= $GTK_MIN y GLib >= $GLIB_MIN"
+
 # Metadatos del paquete.
 cat > "$PKG/DEBIAN/control" <<EOF
 Package: pcinfo
@@ -99,7 +136,7 @@ Architecture: $ARCH
 Maintainer: tuxor <tuxor.max@gmail.com>
 Section: utils
 Priority: optional
-Depends: libgtk-3-0, smartmontools, dmidecode
+Depends: libgtk-3-0 (>= $GTK_MIN), libglib2.0-0 (>= $GLIB_MIN), smartmontools, dmidecode
 Description: PCInfo - inventario de hardware
  Monitor/inventario de hardware multiplataforma (CPU, RAM, tarjeta madre,
  GPU y discos con salud S.M.A.R.T.). GUI Flutter + backend Go.

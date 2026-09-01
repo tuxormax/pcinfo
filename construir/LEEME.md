@@ -22,12 +22,32 @@ bash construir/construir_linux.sh --sin-publicar  # solo construye
 Publicar requiere `gh` autenticado; si falta, el script avisa e imprime el
 `gh release upload` para hacerlo a mano.
 
-Requiere `flutter` (desktop Linux), `go` y `dpkg-deb`. El paquete:
+### ⛔ Se compila dentro de un Ubuntu 22.04, no en el equipo
+
+`construir_linux.sh` **no compila en el equipo de desarrollo**: lo hace dentro de
+un Ubuntu 22.04 que arma `construir/entorno_jammy.sh` (rootfs oficial + `bwrap`,
+**sin sudo ni Docker**; la primera vez baja ~30 MB + ~400 MB de paquetes y queda
+cacheado en `~/.cache/pcinfo/jammy`).
+
+El motivo: un binario compilado contra una librería **nueva** no arranca donde
+está la **vieja**. Compilando en Mint 22.1 (GLib 2.80) el ejecutable pedía
+`g_once_init_enter_pointer`, ausente en Mint 21.3 (GLib 2.72), y la app **moría
+sin abrir ventana ni mostrar mensaje**. Compilando contra la base más vieja que
+se soporta, el mismo `.deb` sirve para Mint 21.x **y** 22.x.
+
+Antes de empaquetar, el script resuelve con `ldd -r` todos los símbolos contra
+las librerías de esa base y **aborta sin generar el `.deb`** si falta alguno.
+
+Requiere `flutter` (desktop Linux), `go`, `dpkg-deb` y `bwrap` (`bubblewrap`).
+El paquete:
 - instala la GUI en `/opt/pcinfo/app` + lanzador `/usr/bin/pcinfo` + entrada de menú;
 - instala el backend en `/opt/pcinfo/backend` y lo registra como servicio
   systemd **`pcinfo-backend.service`** (corre como root → acceso a `dmidecode`
   y `smartctl` para RAM por ranura y S.M.A.R.T.);
-- depende de `smartmontools` y `dmidecode` (se instalan solos con apt).
+- depende de `smartmontools`, `dmidecode` y de las versiones mínimas de GTK/GLib
+  contra las que se compiló (`libgtk-3-0 (>= 3.24.33)`, `libglib2.0-0 (>= 2.72.4)`),
+  para que un equipo demasiado viejo lo rechace con un mensaje claro en vez de
+  instalar un programa que no abre.
 
 Instalar / desinstalar:
 ```bash
