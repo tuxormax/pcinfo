@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'services/backend_launcher.dart';
+import 'services/arranques_service.dart';
 import 'services/bateria_service.dart';
 import 'services/controladores_service.dart';
 import 'services/errores_service.dart';
@@ -63,6 +64,7 @@ class _PcInfoAppState extends State<PcInfoApp> with WidgetsBindingObserver {
         softwareService: HttpSoftwareService(),
         controladoresService: HttpControladoresService(),
         bateriaService: HttpBateriaService(),
+        arranquesService: HttpArranquesService(),
         launcher: widget.launcher,
       ),
     );

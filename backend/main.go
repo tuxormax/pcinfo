@@ -50,6 +50,8 @@ func runServer(addr string) {
 	mux.HandleFunc("/hardware", protege("/hardware", handleHardware))
 	mux.HandleFunc("/discos", protege("/discos", handleDiscos))
 	mux.HandleFunc("/errores", protege("/errores", handleErrores))
+	mux.HandleFunc("/arranques", protege("/arranques", handleArranques))
+	mux.HandleFunc("/arranques/diario", protege("/arranques/diario", handleDiarioPersistente))
 	mux.HandleFunc("/software", protege("/software", handleSoftware))
 	mux.HandleFunc("/bateria", protege("/bateria", handleBateria))
 	mux.HandleFunc("/controladores", protege("/controladores", handleControladores))
@@ -162,6 +164,26 @@ func handleDiscos(w http.ResponseWriter, r *http.Request) {
 // leer los errores de un equipo que ya no arranca desde un medio de rescate.
 func handleErrores(w http.ResponseWriter, r *http.Request) {
 	responde(w, "/errores", collector.CollectErrors(r.URL.Query().Get("raiz")))
+}
+
+// handleArranques sirve "Encendidos y apagados": el historial de sesiones del
+// equipo (con cuáles terminaron de golpe), las tareas que el equipo ejecuta solo
+// y los programas que se lanzan al iniciar sesión. Va aparte de /hardware porque
+// recorre el diario del sistema y consulta a systemd unidad por unidad.
+func handleArranques(w http.ResponseWriter, _ *http.Request) {
+	responde(w, "/arranques", collector.CollectBoots())
+}
+
+// handleDiarioPersistente activa el diario permanente del sistema. Es de los
+// POQUÍSIMOS endpoints que MODIFICAN el equipo, así que —como los de
+// controladores— exige POST: un GET puede dispararlo el navegador o un
+// precargado, y reiniciar journald no es algo que deba pasar por accidente.
+func handleDiarioPersistente(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		fallo(w, http.StatusMethodNotAllowed, "esta operación necesita POST")
+		return
+	}
+	responde(w, "/arranques/diario", collector.ActivaDiarioPersistente())
 }
 
 // handleSoftware sirve el "Software instalado". Va aparte de /hardware porque

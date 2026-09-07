@@ -4,12 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import '../version.dart';
+import '../models/arranques.dart';
 import '../models/bateria.dart';
 import '../models/controladores.dart';
 import '../models/errores.dart';
 import '../models/hardware.dart';
 import '../models/software.dart';
 import '../services/backend_http.dart';
+import '../services/arranques_service.dart';
 import '../services/bateria_service.dart';
 import '../services/backend_launcher.dart';
 import '../services/controladores_service.dart';
@@ -19,6 +21,7 @@ import '../services/software_service.dart';
 import '../theme.dart';
 import '../utils/format.dart';
 import '../utils/report.dart';
+import 'arranques_page.dart';
 import 'bateria_page.dart';
 import 'controladores_page.dart';
 import 'discos_page.dart';
@@ -42,6 +45,9 @@ class DashboardPage extends StatefulWidget {
   /// Fuente de la pestaña "Batería" (GET /bateria). Null = pestaña sin datos.
   final BateriaService? bateriaService;
 
+  /// Fuente de "Encendidos y apagados" (GET /arranques). Null = sin datos.
+  final ArranquesService? arranquesService;
+
   /// Launcher del backend. Solo se usa para "Reintentar como administrador"
   /// (Windows) cuando el SMART salió vacío por falta de elevación. Puede ser null
   /// (p. ej. en pruebas con el mock).
@@ -54,6 +60,7 @@ class DashboardPage extends StatefulWidget {
     this.softwareService,
     this.controladoresService,
     this.bateriaService,
+    this.arranquesService,
     this.launcher,
   });
 
@@ -65,7 +72,7 @@ class _DashboardPageState extends State<DashboardPage> {
   late Future<HardwareInfo> _future;
 
   /// Pestaña activa: 0 = Hardware, 1 = Historial de Errores, 2 = Software,
-  /// 3 = Controladores, 4 = Batería, 5 = Discos.
+  /// 3 = Controladores, 4 = Batería, 5 = Discos, 6 = Encendidos.
   int _tab = 0;
 
   static const _tabHardwareIdx = 0;
@@ -74,6 +81,7 @@ class _DashboardPageState extends State<DashboardPage> {
   static const _tabControladoresIdx = 3;
   static const _tabBateriaIdx = 4;
   static const _tabDiscosIdx = 5;
+  static const _tabArranquesIdx = 6;
 
   /// El historial de errores se pide SOLO al abrir su pestaña: en Windows
   /// recorre 30 días de registro de eventos y analiza los volcados, así que
@@ -90,6 +98,10 @@ class _DashboardPageState extends State<DashboardPage> {
   /// informe de batería, y eso se lleva unos segundos.
   Future<BateriaInfo>? _bateriaFuture;
 
+  /// Los encendidos también van aparte: recorren el registro de accesos, el
+  /// diario del sistema y consultan a systemd unidad por unidad.
+  Future<ArranquesInfo>? _arranquesFuture;
+
   /// Últimos datos cargados de cada pestaña (para el botón Guardar y para la
   /// barra superior, que se dibuja fuera del FutureBuilder).
   HardwareInfo? _hw;
@@ -97,6 +109,7 @@ class _DashboardPageState extends State<DashboardPage> {
   SoftwareInfo? _software;
   ControladoresInfo? _controladores;
   BateriaInfo? _bateria;
+  ArranquesInfo? _arranques;
 
   /// true mientras se reintenta elevar el backend (UAC en curso).
   bool _elevating = false;
@@ -197,6 +210,16 @@ class _DashboardPageState extends State<DashboardPage> {
     }).catchError((Object _) {});
   }
 
+  void _cargaArranques() {
+    final svc = widget.arranquesService;
+    if (svc == null) return;
+    final f = svc.load();
+    _arranquesFuture = f;
+    f.then((v) {
+      if (mounted) setState(() => _arranques = v);
+    }).catchError((Object _) {});
+  }
+
   /// Fuerza la lectura de salud de un disco clasificado como memoria extraíble.
   /// Existe para el gabinete externo que se declara removible: ahí la salud sí
   /// se puede leer, pero por el tipo de medio no se sondea sola.
@@ -254,6 +277,9 @@ class _DashboardPageState extends State<DashboardPage> {
         case _tabBateriaIdx:
           _bateria = null;
           _cargaBateria();
+        case _tabArranquesIdx:
+          _arranques = null;
+          _cargaArranques();
         case _tabDiscosIdx:
           // La salud de los discos viaja con el inventario: se recarga entero.
           _cargaHardware();
@@ -275,6 +301,8 @@ class _DashboardPageState extends State<DashboardPage> {
           if (_controladoresFuture == null) _cargaControladores();
         case _tabBateriaIdx:
           if (_bateriaFuture == null) _cargaBateria();
+        case _tabArranquesIdx:
+          if (_arranquesFuture == null) _cargaArranques();
       }
     });
   }
@@ -441,6 +469,7 @@ class _DashboardPageState extends State<DashboardPage> {
         _tabControladoresIdx => _tabControladores(),
         _tabBateriaIdx => _tabBateria(),
         _tabDiscosIdx => _tabDiscos(),
+        _tabArranquesIdx => _tabArranques(),
         _ => _tabHardware(),
       };
 
@@ -628,6 +657,36 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
+  Widget _tabArranques() {
+    if (widget.arranquesService == null) {
+      return _mensajeCentrado(
+        Icons.help_outline_rounded,
+        'Encendidos no disponibles',
+        'Esta ventana se abrió sin conexión al servicio de PCInfo.',
+      );
+    }
+    return FutureBuilder<ArranquesInfo>(
+      future: _arranquesFuture,
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return _cargando('Leyendo el historial de encendidos y apagados…');
+        }
+        if (snap.hasError) {
+          return _estadoFallo(
+              'No se pudo leer el historial de encendidos', snap.error);
+        }
+        return ArranquesPage(
+          data: snap.data!,
+          onActivarDiario: widget.arranquesService?.activarDiario,
+          onRecargar: () => setState(() {
+            _arranques = null;
+            _cargaArranques();
+          }),
+        );
+      },
+    );
+  }
+
   /// Botón "Reintentar como administrador" (solo Windows y solo si hay launcher).
   /// Todo el módulo de controladores escribe en el equipo y necesita elevación,
   /// así que sin este botón la pestaña sería un callejón sin salida.
@@ -736,7 +795,7 @@ class _DashboardPageState extends State<DashboardPage> {
         border: Border(bottom: BorderSide(color: AppColors.border)),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      // Desplazable en horizontal: con cinco pestañas la fila ya no cabe en una
+      // Desplazable en horizontal: con tantas pestañas la fila ya no cabe en una
       // ventana estrecha, y sin esto Flutter pinta la franja de desbordamiento.
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
@@ -750,6 +809,8 @@ class _DashboardPageState extends State<DashboardPage> {
                 Icons.settings_input_component_rounded, 'Controladores'),
             _tabBoton(_tabBateriaIdx, Icons.battery_5_bar_rounded, 'Batería'),
             _tabBoton(_tabDiscosIdx, Icons.storage_rounded, 'Discos'),
+            _tabBoton(_tabArranquesIdx, Icons.power_settings_new_rounded,
+                'Encendidos y apagados'),
           ],
         ),
       ),
@@ -946,6 +1007,7 @@ class _DashboardPageState extends State<DashboardPage> {
       _tabControladoresIdx => _controladores != null,
       _tabBateriaIdx => _bateria != null,
       _tabDiscosIdx => _hw != null && !_discosCargando,
+      _tabArranquesIdx => _arranques != null,
       // Hardware: hasta que llegue la salud de los discos el reporte saldría
       // sin S.M.A.R.T. y parecería que el equipo no la reporta.
       _ => _hw != null && !_discosCargando,
@@ -987,6 +1049,7 @@ class _DashboardPageState extends State<DashboardPage> {
           await saveControladoresReport(_controladores!, equipo),
         _tabBateriaIdx => await saveBateriaReport(_bateria!, equipo),
         _tabDiscosIdx => await saveDiscosReport(_hw!.disks, equipo),
+        _tabArranquesIdx => await saveArranquesReport(_arranques!, equipo),
         _ => await saveReport(_hw!),
       };
       if (path == null) return; // el usuario cerró el selector: no guardó nada

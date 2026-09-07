@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
 
+import '../models/arranques.dart';
 import '../models/bateria.dart';
 import '../models/controladores.dart';
 import '../models/errores.dart';
@@ -39,6 +40,18 @@ Future<String?> saveErroresReport(ErroresInfo err, String equipo) {
   return _guardaConDialogo(
     texto: buildErroresReport(err, equipo),
     nombre: 'PCInfo_Errores_${host}_${_fileStamp()}.md',
+    extension: 'md',
+  );
+}
+
+/// Guarda "Encendidos y apagados" en un .md: las sesiones del equipo con cómo
+/// terminó cada una, las tareas automáticas y los programas de inicio, tal como
+/// se ven en la pestaña. Devuelve la ruta escrita, o null si se canceló.
+Future<String?> saveArranquesReport(ArranquesInfo arr, String equipo) {
+  final host = _safe(equipo.isEmpty ? 'equipo' : equipo);
+  return _guardaConDialogo(
+    texto: buildArranquesReport(arr, equipo),
+    nombre: 'PCInfo_Encendidos_${host}_${_fileStamp()}.md',
     extension: 'md',
   );
 }
@@ -1047,4 +1060,166 @@ String buildDiscosReport(List<DiskInfo> discos, String equipo) {
 
   _pie(b);
   return b.toString();
+}
+
+
+/// Construye "Encendidos y apagados" en Markdown, espejo de la pestaña
+/// `arranques_page.dart`. Si se agrega o quita un dato allí, reflejarlo aquí
+/// (misma regla de concordancia que el resto de los reportes).
+String buildArranquesReport(ArranquesInfo arr, String equipo) {
+  final b = StringBuffer();
+  _cabecera(b, 'Encendidos y apagados', equipo);
+
+  _tabla(b, ['Dato', 'Valor']);
+  _fila(b, ['Sistema', arr.os]);
+  _fila(b, ['Fuente', arr.source]);
+  _fila(b, ['Periodo analizado', 'últimos ${arr.scanDays} días']);
+  _fila(b, ['Administrador/root', arr.elevated ? 'sí' : 'no']);
+  b.writeln();
+
+  if (arr.reason.isNotEmpty) {
+    b
+      ..writeln('> ⚠️ ${_md(arr.reason)}')
+      ..writeln();
+  }
+
+  // El resumen va primero: quien reciba el reporte tiene que ver de una si el
+  // equipo se está apagando mal, no deducirlo contando filas.
+  b
+    ..writeln('## Resumen')
+    ..writeln()
+    ..writeln(_md(arr.resumen))
+    ..writeln();
+  _tabla(b, ['Concepto', 'Cuántos']);
+  _fila(b, ['Encendidos registrados', '${arr.sessions.length}']);
+  _fila(b, ['Apagados normales', '${arr.normales}']);
+  _fila(b, ['Reinicios', '${arr.reinicios}']);
+  _fila(b, ['Apagones bruscos', '${arr.bruscos}']);
+  _fila(b, ['Tareas automáticas propias', '${arr.tareasPropias.length}']);
+  _fila(b, ['Tareas que fallaron', '${arr.tareasFallidas.length}']);
+  _fila(b, ['Programas al iniciar sesión', '${arr.startup.length}']);
+  b.writeln();
+
+  b
+    ..writeln('## Encendidos y apagados (${arr.sessions.length})')
+    ..writeln();
+  if (arr.sessionsNote.isNotEmpty) {
+    b
+      ..writeln('> ${_md(arr.sessionsNote)}')
+      ..writeln();
+  }
+  if (arr.sessions.isEmpty) {
+    b
+      ..writeln('_No hay historial de encendidos disponible._')
+      ..writeln();
+  } else {
+    // Mismo agrupado que la pantalla (día · encendió · se apagó), en columnas
+    // para que la tabla se siga pudiendo ordenar y pegar entera.
+    _tabla(b, [
+      'Día', 'Encendió', 'Se apagó', 'Estuvo encendido', 'Cómo terminó', 'Núcleo',
+    ]);
+    for (final g in arr.sesionesPorDia) {
+      for (final (i, s) in g.sesiones.indexed) {
+        _fila(b, [
+          i == 0 ? fechaLarga(g.dia) : '',
+          s.horaInicio,
+          s.enCurso
+              ? 'sigue encendido'
+              // El mismo letrero que la pantalla: lo que no ocurrió se dice, no
+              // se deja en blanco para que lo adivine quien lea el reporte.
+              : (s.fueBrusco
+                  ? 'NO SE REALIZÓ EL APAGADO'
+                  : s.horaFin + (s.apagadoOtroDia ? ' del ${s.diaFinCorto}' : '')),
+          s.duracion,
+          FinSesion.etiqueta(s.ended),
+          s.kernel,
+        ]);
+      }
+    }
+    b.writeln();
+
+    // El detalle solo de los cortes bruscos: del resto no hay nada que contar.
+    final cortes = arr.sessions.where((s) => s.fueBrusco).toList();
+    if (cortes.isNotEmpty) {
+      b
+        ..writeln('### Detalle de los apagones bruscos (${cortes.length})')
+        ..writeln();
+      for (final s in cortes) {
+        b
+          ..writeln('**Sesión del ${_md(s.start)}**')
+          ..writeln()
+          ..writeln(_md(s.note))
+          ..writeln();
+        if (s.lastLine.isNotEmpty) {
+          b
+            ..writeln('Última línea registrada antes del corte:')
+            ..writeln()
+            ..writeln(_bloque(s.lastLine));
+        }
+      }
+    }
+  }
+
+  b
+    ..writeln('## Tareas automáticas (${arr.tasks.length})')
+    ..writeln();
+  if (arr.tasksNote.isNotEmpty) {
+    b
+      ..writeln('> ${_md(arr.tasksNote)}')
+      ..writeln();
+  }
+  _seccionTareas(b, 'Añadidas a este equipo', arr.tareasPropias);
+  _seccionTareas(b, 'Vienen con el sistema', arr.tareasDelSistema);
+
+  b
+    ..writeln('## Programas al iniciar sesión (${arr.startup.length})')
+    ..writeln();
+  if (arr.startupNote.isNotEmpty) {
+    b
+      ..writeln('> ${_md(arr.startupNote)}')
+      ..writeln();
+  }
+  _seccionInicio(b, 'De este usuario', arr.inicioPropio);
+  _seccionInicio(b, 'Del escritorio, para todos los usuarios', arr.inicioDelSistema);
+
+  _pie(b);
+  return b.toString();
+}
+
+void _seccionTareas(StringBuffer b, String titulo, List<TareaAutomatica> items) {
+  if (items.isEmpty) return;
+  b
+    ..writeln('### $titulo (${items.length})')
+    ..writeln();
+  _tabla(b, ['Tarea', 'Tipo', 'Cuándo', 'Última vez', 'Resultado', 'Estado', 'Ejecuta']);
+  for (final t in items) {
+    _fila(b, [
+      t.name,
+      TipoTarea.etiqueta(t.kind),
+      t.trigger,
+      t.ultimaVezTexto,
+      t.result,
+      EstadoTarea.etiqueta(t.state),
+      t.command,
+    ]);
+  }
+  b.writeln();
+}
+
+void _seccionInicio(StringBuffer b, String titulo, List<ProgramaInicio> items) {
+  if (items.isEmpty) return;
+  b
+    ..writeln('### $titulo (${items.length})')
+    ..writeln();
+  _tabla(b, ['Programa', 'Estado', 'Corriendo ahora', 'Ejecuta', 'Archivo']);
+  for (final p in items) {
+    _fila(b, [
+      p.name,
+      p.enabled ? 'activo' : 'desactivado',
+      p.running ? 'sí' : 'no',
+      p.command,
+      p.source,
+    ]);
+  }
+  b.writeln();
 }
