@@ -58,6 +58,8 @@ void main() {
     expect(md, contains('| SATA con disco | 2 |'));
     expect(md, contains('| SATA libres | 4 |'));
     expect(md, contains('Ranuras M.2'));
+    // Con una M.2 ocupada y una PCIe libre de tres, el resumen los cuenta.
+    expect(md, contains('| Ranuras PCIe | 2 (1 libre) |'));
     // La ranura ocupada dice QUÉ la ocupa, que es lo que evita abrir el equipo.
     expect(md, contains('/dev/nvme0n1 — WD SN570'));
     // Y el detalle de qué disco está en qué conector.
@@ -110,6 +112,27 @@ void main() {
     );
     final md = buildReport(_equipo(board));
     expect(md, contains('no declara sus ranuras'));
+  });
+
+  test('si no se sabe qué ranuras están ocupadas, no dice "0 libres"', () {
+    const board = BoardInfo(
+      vendor: 'ASUSTeK COMPUTER INC.',
+      product: 'PRIME B450M-A',
+      version: '',
+      biosVendor: '',
+      biosVersion: '',
+      biosDate: '',
+      formFactor: '',
+      sataDeclared: 6,
+      sataUsed: 2,
+      portsSource: 'catalogo',
+      // Del catálogo salen las ranuras, pero sin firmware nadie sabe si están
+      // ocupadas: decir "0 libres" se leería como "no cabe nada más".
+      slots: [ExpansionSlot(label: 'M.2_1', kind: 'm2', spec: 'llave M', source: 'catalogo')],
+    );
+    final md = buildReport(_equipo(board));
+    expect(md, contains('sin dato de ocupación'));
+    expect(md, isNot(contains('| Ranuras M.2 | 1 (0 libres) |')));
   });
 
   test('cada disco dice en qué puerto está enchufado', () {

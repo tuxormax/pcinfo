@@ -402,6 +402,17 @@ class BoardInfo {
 
   /// true si hay algo que enseñar en la ficha de ranuras y puertos.
   bool get tieneExpansion => slots.isNotEmpty || sataTotal > 0;
+
+  /// Resumen de un grupo de ranuras: "3 (1 libre)". Si NINGUNA tiene estado
+  /// conocido no se dice "0 libres" —que se leería como "está todo ocupado"—
+  /// sino que no se pudo averiguar.
+  static String resumenRanuras(List<ExpansionSlot> rs) {
+    if (rs.isEmpty) return '0';
+    final conEstado = rs.where((s) => s.state.isNotEmpty).length;
+    if (conEstado == 0) return '${rs.length} (sin dato de ocupación)';
+    final libres = rs.where((s) => s.libre).length;
+    return '${rs.length} ($libres libre${libres == 1 ? "" : "s"})';
+  }
 }
 
 /// Una ranura de expansión de la placa: PCIe (gráfica, controladora, red) o M.2

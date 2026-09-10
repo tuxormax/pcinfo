@@ -1194,15 +1194,11 @@ class _DashboardPageState extends State<DashboardPage> {
 
     final m2 = b.m2Slots;
     if (m2.isNotEmpty) {
-      final libres = m2.where((s) => s.libre).length;
-      rows.add(SpecRow('Ranuras M.2', '${m2.length} ($libres libre'
-          '${libres == 1 ? "" : "s"})'));
+      rows.add(SpecRow('Ranuras M.2', BoardInfo.resumenRanuras(m2)));
     }
     final pcie = b.pcieSlots;
     if (pcie.isNotEmpty) {
-      final libres = pcie.where((s) => s.libre).length;
-      rows.add(SpecRow('Ranuras PCIe', '${pcie.length} ($libres libre'
-          '${libres == 1 ? "" : "s"})'));
+      rows.add(SpecRow('Ranuras PCIe', BoardInfo.resumenRanuras(pcie)));
     }
     if (rows.isEmpty) {
       rows.add(const SpecRow('Estado', 'No disponible'));

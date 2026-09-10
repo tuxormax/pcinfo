@@ -232,17 +232,11 @@ void _ranurasYPuertos(StringBuffer b, BoardInfo bd) {
   }
   final m2 = bd.m2Slots;
   if (m2.isNotEmpty) {
-    _fila(b, [
-      'Ranuras M.2',
-      '${m2.length} (${m2.where((s) => s.libre).length} libres)'
-    ]);
+    _fila(b, ['Ranuras M.2', BoardInfo.resumenRanuras(m2)]);
   }
   final pcie = bd.pcieSlots;
   if (pcie.isNotEmpty) {
-    _fila(b, [
-      'Ranuras PCIe',
-      '${pcie.length} (${pcie.where((s) => s.libre).length} libres)'
-    ]);
+    _fila(b, ['Ranuras PCIe', BoardInfo.resumenRanuras(pcie)]);
   }
   b.writeln();
 
