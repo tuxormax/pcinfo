@@ -202,6 +202,85 @@ String _bloque(String texto) {
   return b.toString();
 }
 
+/// Sección "Ranuras y puertos": qué sitios de ampliación tiene la placa y
+/// cuáles quedan libres. Responde lo que el inventario no decía —cuántos SATA,
+/// si hay M.2, si queda un PCIe— sin tener que abrir el gabinete.
+void _ranurasYPuertos(StringBuffer b, BoardInfo bd) {
+  if (!bd.tieneExpansion) {
+    b
+      ..writeln('## Ranuras y puertos')
+      ..writeln()
+      ..writeln('_El firmware de esta placa no declara sus ranuras y el modelo '
+          'no está en el catálogo verificado._')
+      ..writeln();
+    return;
+  }
+
+  b
+    ..writeln('## Ranuras y puertos')
+    ..writeln();
+  _tabla(b, ['Dato', 'Valor']);
+  if (bd.sataTotal > 0) {
+    _fila(b, [
+      'Puertos SATA',
+      bd.sataVerificado
+          ? '${bd.sataTotal} conectores'
+          : '${bd.sataTotal} puertos (los que presenta el chipset)'
+    ]);
+    _fila(b, ['SATA con disco', '${bd.sataUsed}']);
+    if (bd.sataFree >= 0) _fila(b, ['SATA libres', '${bd.sataFree}']);
+  }
+  final m2 = bd.m2Slots;
+  if (m2.isNotEmpty) {
+    _fila(b, [
+      'Ranuras M.2',
+      '${m2.length} (${m2.where((s) => s.libre).length} libres)'
+    ]);
+  }
+  final pcie = bd.pcieSlots;
+  if (pcie.isNotEmpty) {
+    _fila(b, [
+      'Ranuras PCIe',
+      '${pcie.length} (${pcie.where((s) => s.libre).length} libres)'
+    ]);
+  }
+  b.writeln();
+
+  if (bd.portsNote.isNotEmpty) {
+    b
+      ..writeln('> ℹ️ ${_md(bd.portsNote)}')
+      ..writeln();
+  }
+
+  if (bd.portsSource != 'catalogo') {
+    b
+      ..writeln('> ⚠️ Ranuras y puertos según el firmware; el chipset puede '
+          'exponer más puertos de los que la placa trae cableados (modelo no '
+          'verificado en el catálogo).')
+      ..writeln();
+  }
+
+  if (bd.slots.isNotEmpty) {
+    _tabla(b, ['Ranura', 'Admite', 'Estado']);
+    for (final s in bd.slots) {
+      _fila(b, [s.label, s.spec, s.estadoTexto]);
+    }
+    b.writeln();
+  }
+
+  // Detalle de los conectores SATA con disco: en Linux se sabe el número de
+  // puerto de cada uno; en Windows solo el tipo de conexión, así que la tabla
+  // se omite entera en vez de salir vacía.
+  final ocupados = bd.sataPorts.where((p) => p.used).toList();
+  if (ocupados.isNotEmpty) {
+    _tabla(b, ['Puerto SATA', 'Disco']);
+    for (final p in ocupados) {
+      _fila(b, [p.label, p.usedBy]);
+    }
+    b.writeln();
+  }
+}
+
 /// Construye el reporte de hardware en Markdown, espejo de las fichas del
 /// dashboard.
 String buildReport(HardwareInfo hw) {
@@ -249,6 +328,8 @@ String buildReport(HardwareInfo hw) {
   kv('BIOS', '${bd.biosVendor} ${bd.biosVersion}'.trim());
   kv('Fecha BIOS', bd.biosDate);
   b.writeln();
+
+  _ranurasYPuertos(b, bd);
 
   // RAM
   final m = hw.memory;
@@ -332,6 +413,7 @@ String buildReport(HardwareInfo hw) {
       kv('Dispositivo', d.name);
       kv('Serie', d.serial);
       kv('Bus', d.bus.toUpperCase());
+      if (d.port.isNotEmpty) kv('Conectado en', d.port);
       kv('Capacidad', formatDiskCap(d.sizeBytes));
       if (d.hasUsage) {
         kv('Ocupado', '${formatGB(d.usedBytes)} (${d.usedPercent.round()}%)');

@@ -18,6 +18,8 @@ Version concreta o anteriores: **[todas las descargas](https://github.com/tuxorm
 
 App de **inventario de hardware** multiplataforma (**Linux** y **Windows**): CPU, tarjeta madre, RAM, GPU, almacenamiento y sistema operativo. Sin temperaturas — solo información del equipo.
 
+Además de lo que hay puesto, dice **qué sitio queda libre**: cuántos conectores **SATA** trae la placa y cuántos siguen vacíos, qué ranuras **M.2** y **PCIe** tiene y cuáles están ocupadas, y **en qué puerto está enchufado cada disco**. Así se sabe si al equipo le cabe otro disco o una tarjeta sin abrir el gabinete. Los datos salen de un catálogo de placas verificado contra la hoja del fabricante y, cuando la placa no está catalogada, del firmware — diciéndolo.
+
 Incluye además la pestaña **Historial de Errores**: lee lo que registró el sistema operativo (pantallazos azules y registro de eventos en Windows; journald y mensajes del kernel en Linux) y lo explica en español — qué pasó, qué lo provocó (incluido el **driver culpable** deducido del volcado de memoria en los BSOD) y cómo resolverlo.
 
 Y dos pestañas más:

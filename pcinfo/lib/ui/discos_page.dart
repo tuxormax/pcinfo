@@ -391,6 +391,7 @@ class DiscosPage extends StatelessWidget {
         ],
       if (d.serial.isNotEmpty) ['Número de serie', d.serial],
       ['Dispositivo', d.name],
+      if (d.port.isNotEmpty) ['Conectado en', d.port],
       if (d.readBytes > 0) ['Datos leídos', formatBytes(d.readBytes)],
     ];
     return _tarjeta(

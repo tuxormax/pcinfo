@@ -913,6 +913,8 @@ class _DashboardPageState extends State<DashboardPage> {
                       const SizedBox(height: gap),
                       _boardCard(hw.board),
                       const SizedBox(height: gap),
+                      _portsCard(hw.board),
+                      const SizedBox(height: gap),
                       _ramCard(hw.memory),
                       for (final gc in gpuCards) ...[
                         const SizedBox(height: gap),
@@ -929,6 +931,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   _systemCard(hw.system),
                   _cpuCard(hw.cpu),
                   _boardCard(hw.board),
+                  _portsCard(hw.board),
                   _ramCard(hw.memory),
                   ...gpuCards,
                 ];
@@ -1170,6 +1173,111 @@ class _DashboardPageState extends State<DashboardPage> {
         SpecRow('BIOS', '${b.biosVendor} ${b.biosVersion}'.trim()),
         SpecRow('Fecha BIOS', b.biosDate),
       ],
+    );
+  }
+
+  /// Ficha "Ranuras y puertos": qué sitios de ampliación tiene la placa y
+  /// cuáles quedan libres. Es la pregunta de taller que el inventario no
+  /// respondía —"¿le cabe otro disco?", "¿tiene M.2?"— porque solo enseñaba lo
+  /// que ya está conectado.
+  Widget _portsCard(BoardInfo b) {
+    final rows = <SpecRow>[];
+
+    if (b.sataTotal > 0) {
+      final det = b.sataVerificado
+          ? '${b.sataTotal} conectores'
+          : '${b.sataTotal} puertos (del chipset)';
+      rows.add(SpecRow('Puertos SATA', det));
+      rows.add(SpecRow('SATA con disco', '${b.sataUsed}'));
+      if (b.sataFree >= 0) rows.add(SpecRow('SATA libres', '${b.sataFree}'));
+    }
+
+    final m2 = b.m2Slots;
+    if (m2.isNotEmpty) {
+      final libres = m2.where((s) => s.libre).length;
+      rows.add(SpecRow('Ranuras M.2', '${m2.length} ($libres libre'
+          '${libres == 1 ? "" : "s"})'));
+    }
+    final pcie = b.pcieSlots;
+    if (pcie.isNotEmpty) {
+      final libres = pcie.where((s) => s.libre).length;
+      rows.add(SpecRow('Ranuras PCIe', '${pcie.length} ($libres libre'
+          '${libres == 1 ? "" : "s"})'));
+    }
+    if (rows.isEmpty) {
+      rows.add(const SpecRow('Estado', 'No disponible'));
+    }
+
+    return SpecCard(
+      icon: Icons.settings_input_component_rounded,
+      accent: AppColors.ports,
+      title: 'Ranuras y puertos',
+      rows: rows,
+      footer: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _slotsExpansion(b),
+          if (b.portsNote.isNotEmpty) _avisoPuertos(b.portsNote),
+          if (b.slots.isEmpty && b.sataTotal == 0)
+            _avisoPuertos(
+                'El firmware de esta placa no declara sus ranuras y el modelo '
+                'no está en el catálogo verificado.')
+          else if (b.portsSource != 'catalogo')
+            _avisoPuertos(
+                'Ranuras y puertos según el firmware; el chipset puede exponer '
+                'más puertos de los que la placa trae cableados (modelo no '
+                'verificado en el catálogo).'),
+        ],
+      ),
+    );
+  }
+
+  /// Lista de ranuras, una por línea, con su estado. Las ocupadas dicen QUÉ las
+  /// ocupa; las que no se pudieron leer dicen "Sin dato" en vez de "Libre".
+  Widget _slotsExpansion(BoardInfo b) {
+    if (b.slots.isEmpty) return const SizedBox.shrink();
+    final rows = <Widget>[];
+    for (final s in b.slots) {
+      final etiqueta = s.label == s.spec ? s.spec : '${s.label}  ·  ${s.spec}';
+      // Quién ocupa la ranura va a la IZQUIERDA, con el resto del texto: a la
+      // derecha solo cabe una palabra sin que se salga en pantalla estrecha.
+      final izq = s.ocupada && s.usedBy.isNotEmpty ? '$etiqueta  ·  ${s.usedBy}' : etiqueta;
+      rows.add(_slotTile(
+        icon: s.ocupada ? Icons.check_box_rounded : Icons.crop_square_rounded,
+        iconColor: s.ocupada ? AppColors.ports : AppColors.textLow,
+        left: izq,
+        right: s.ocupada ? 'Ocupada' : (s.libre ? 'Libre' : 'Sin dato'),
+        rightColor: s.ocupada ? AppColors.textHi : AppColors.textLow,
+        dimmed: !s.ocupada,
+      ));
+    }
+    return Column(children: rows);
+  }
+
+  /// Aviso al pie de la ficha de ranuras (mismo estilo que el de la RAM).
+  Widget _avisoPuertos(String texto) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.info_outline_rounded,
+              size: 14, color: AppColors.textLow),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              texto,
+              style: const TextStyle(
+                color: AppColors.textLow,
+                fontSize: kFont - 1,
+                fontStyle: FontStyle.italic,
+                height: 1.3,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1509,7 +1617,8 @@ class _DashboardPageState extends State<DashboardPage> {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      '${d.name}   ·   Serie: ${d.serial}   ·   Bus: ${d.bus.toUpperCase()}',
+                      '${d.name}   ·   Serie: ${d.serial}   ·   Bus: ${d.bus.toUpperCase()}'
+                      '${d.port.isEmpty ? "" : "   ·   Conectado en: ${d.port}"}',
                       style: const TextStyle(
                           color: AppColors.textLow, fontSize: kFont),
                     ),

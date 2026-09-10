@@ -43,3 +43,11 @@ CLAUDE.md
 
 # Memoria de Claude (solo local, no se sube)
 memoria-claude/
+
+# Caché de los scripts del catálogo de placas (herramientas/catalogo)
+herramientas/catalogo/cache/
+herramientas/catalogo/pdf/
+herramientas/catalogo/*_raw*.json
+herramientas/catalogo/*_spec.json
+herramientas/catalogo/specs.json
+herramientas/catalogo/__pycache__/

@@ -33,13 +33,23 @@ func collect(conSmart bool) HardwareInfo {
 	// La placa se recoge primero: la memoria la necesita para consultar el
 	// catálogo de placas (ranuras y capacidad máxima verificadas).
 	board := safe("board", collectBoard)
+	disks := safe("disks", func() []DiskInfo { return collectDisks(conSmart, "") })
+	gpu := safe("gpu", collectGPU)
+
+	// Ranuras y puertos van al final: necesitan los discos y la gráfica para
+	// decir QUÉ ocupa cada sitio (ver ranuras.go).
+	safe("ranuras", func() struct{} {
+		enrichBoardPorts(&board, disks, gpu)
+		return struct{}{}
+	})
+
 	return HardwareInfo{
 		System: safe("system", collectSystem),
 		CPU:    safe("cpu", collectCPU),
 		Board:  board,
 		Memory: safe("memory", func() MemoryInfo { return collectMemory(board) }),
-		GPU:    safe("gpu", collectGPU),
-		Disks:  safe("disks", func() []DiskInfo { return collectDisks(conSmart, "") }),
+		GPU:    gpu,
+		Disks:  disks,
 		Diag:   safe("diag", collectDiag),
 	}
 }

@@ -23,6 +23,7 @@ class AppColors {
   static const gpu = Color(0xFFB07CFF);
   static const disk = Color(0xFFF2768D);
   static const system = Color(0xFF4FD1C5);
+  static const ports = Color(0xFF8FBF5A); // ranuras y puertos de la placa
 }
 
 ThemeData buildTheme() {

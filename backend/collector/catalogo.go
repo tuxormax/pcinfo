@@ -30,12 +30,42 @@ const urlCatalogo = "https://raw.githubusercontent.com/tuxormax/pcinfo/main/back
 
 // PlacaSpec es una fila del catálogo. Ranuras y MaxGiB en 0 = dato desconocido
 // (no se sobrescribe lo que dijo el firmware).
+//
+// Sata/M2/PCIe son las ESPECIFICACIONES DE EXPANSIÓN de la placa: cuántos
+// conectores SATA trae y qué ranuras M.2 y PCIe tiene. Igual que con las
+// ranuras de RAM, el firmware no sirve para esto: declara los puertos que el
+// CHIPSET presenta (un equipo de pruebas expone 12 puertos ata con 6 conectores
+// en la placa) y hay firmware que ni siquiera declara las ranuras. Vacíos = no
+// verificado todavía: el backend cae al firmware y la GUI lo avisa.
 type PlacaSpec struct {
-	Fabricante string `json:"fabricante"`
-	Modelo     string `json:"modelo"`
-	Ranuras    int    `json:"ranuras"`
-	MaxGiB     int    `json:"maxGiB"`
-	Fuente     string `json:"fuente"`
+	Fabricante string       `json:"fabricante"`
+	Modelo     string       `json:"modelo"`
+	Ranuras    int          `json:"ranuras"`
+	MaxGiB     int          `json:"maxGiB"`
+	Sata       int          `json:"sata,omitempty"`
+	M2         []RanuraSpec `json:"m2,omitempty"`
+	PCIe       []RanuraSpec `json:"pcie,omitempty"`
+	// Notas son las advertencias de la hoja de datos que cambian lo que se
+	// puede poner: casi todas las placas con M.2 apagan un par de puertos SATA
+	// al usarlo, o bajan la x16 a x8 si se ocupa otra ranura. Sin eso, la cuenta
+	// de sitios libres es correcta y aun así lleva a un montaje que no arranca.
+	Notas  string `json:"notas,omitempty"`
+	Fuente string `json:"fuente"`
+	// FuentePuertos es la página de la que salieron sata/m2/pcie, cuando no es
+	// la misma de la que salieron las ranuras de RAM. Solo para poder auditar el
+	// dato años después; el backend no la usa.
+	FuentePuertos string `json:"fuentePuertos,omitempty"`
+}
+
+// RanuraSpec es una ranura declarada en la hoja de datos: la etiqueta que lleva
+// serigrafiada la placa y lo que admite.
+type RanuraSpec struct {
+	Label string `json:"label"` // "M.2_1", "PCIEX16_1"
+	Spec  string `json:"spec"`  // "PCIe 3.0 x4 / SATA, 2242-2280"
+	// WiFi marca las M.2 de llave A/E, que son para el módulo inalámbrico y NO
+	// admiten un SSD. Contarlas como sitio para un disco manda a comprar algo
+	// que no entra.
+	WiFi bool `json:"wifi,omitempty"`
 }
 
 var (

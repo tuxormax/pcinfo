@@ -59,6 +59,11 @@ func collectDisks(conSmart bool, forzarUSB string) []DiskInfo {
 	// decidir a cuáles se les sondea el S.M.A.R.T.
 	marcaMediosWindows(disks)
 
+	// Dónde está enchufado cada disco (puerto SATA, M.2, USB). Va antes del
+	// S.M.A.R.T. para que el dato esté ya en la primera fase del arranque, que
+	// es la que pinta la pantalla.
+	asignaPuertos(disks)
+
 	if !conSmart {
 		return disks
 	}

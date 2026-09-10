@@ -105,6 +105,10 @@ class DiskInfo {
   final String serial;
   final String bus; // "nvme", "sata", "usb"
 
+  /// Dónde está enchufado: "SATA 3", "M.2 / PCIe (nvme0n1)", "USB". Vacío si el
+  /// sistema no lo dice (en Windows solo se sabe el tipo de conexión).
+  final String port;
+
   // true si el MEDIO es extraíble (memoria USB, tarjeta SD, lector). Esos no
   // reportan S.M.A.R.T. y tardan en contestar que no, así que el backend no se
   // los pregunta salvo que el usuario lo pida a mano. Un SSD/NVMe dentro de un
@@ -147,6 +151,7 @@ class DiskInfo {
     required this.type,
     required this.serial,
     required this.bus,
+    this.port = '',
     this.removable = false,
     this.usedBytes = 0,
     this.availBytes = 0,
@@ -172,6 +177,7 @@ class DiskInfo {
         type: j['type'] ?? '',
         serial: j['serial'] ?? '',
         bus: j['bus'] ?? '',
+        port: j['port'] ?? '',
         removable: j['removable'] ?? false,
         usedBytes: (j['usedBytes'] ?? 0) as int,
         availBytes: (j['availBytes'] ?? 0) as int,
@@ -313,6 +319,29 @@ class BoardInfo {
   final String biosDate;
   final String formFactor; // tamaño: "ATX", "Micro-ATX", "Mini-ITX", etc.
 
+  /// Ranuras de expansión de la placa (PCIe, M.2), con si están libres.
+  final List<ExpansionSlot> slots;
+
+  /// Puertos SATA que ve el sistema. OJO: son los que presenta la CONTROLADORA,
+  /// no los conectores de la placa (un chipset puede exponer 12 y la placa
+  /// cablear 6). Para la cuenta real está [sataDeclared].
+  final List<SataPort> sataPorts;
+
+  /// Conectores SATA que trae la placa según el catálogo verificado. 0 = placa
+  /// no catalogada todavía.
+  final int sataDeclared;
+
+  /// Conectores SATA con un disco puesto ahora mismo.
+  final int sataUsed;
+
+  /// De dónde salieron ranuras y puertos: "catalogo" (hoja de datos),
+  /// "firmware" (SMBIOS, miente en algunas placas) o "" (no se pudo leer).
+  final String portsSource;
+
+  /// Advertencia de la hoja de datos sobre carriles compartidos ("al usar el
+  /// M.2 se apagan los SATA 5 y 6"). Vacía si no aplica o no está catalogada.
+  final String portsNote;
+
   const BoardInfo({
     required this.vendor,
     required this.product,
@@ -321,6 +350,12 @@ class BoardInfo {
     required this.biosVersion,
     required this.biosDate,
     required this.formFactor,
+    this.slots = const [],
+    this.sataPorts = const [],
+    this.sataDeclared = 0,
+    this.sataUsed = 0,
+    this.portsSource = '',
+    this.portsNote = '',
   });
 
   factory BoardInfo.fromJson(Map<String, dynamic> j) => BoardInfo(
@@ -331,6 +366,99 @@ class BoardInfo {
         biosVersion: j['biosVersion'] ?? '',
         biosDate: j['biosDate'] ?? '',
         formFactor: j['formFactor'] ?? '',
+        slots: (j['slots'] as List?)
+                ?.map((e) => ExpansionSlot.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            const [],
+        sataPorts: (j['sataPorts'] as List?)
+                ?.map((e) => SataPort.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            const [],
+        sataDeclared: (j['sataDeclared'] ?? 0) as int,
+        sataUsed: (j['sataUsed'] ?? 0) as int,
+        portsSource: j['portsSource'] ?? '',
+        portsNote: j['portsNote'] ?? '',
+      );
+
+  /// Conectores SATA a mostrar: los de la placa si está catalogada; si no, los
+  /// que ve el sistema (que pueden ser más que los cableados).
+  int get sataTotal => sataDeclared > 0 ? sataDeclared : sataPorts.length;
+
+  /// Conectores SATA libres. -1 si no se conoce el total.
+  int get sataFree => sataTotal > 0 ? (sataTotal - sataUsed).clamp(0, 99) : -1;
+
+  /// true si la cuenta de conectores SATA sale del catálogo verificado (dato de
+  /// fábrica) y no de lo que presenta el chipset.
+  bool get sataVerificado => sataDeclared > 0;
+
+  /// Ranuras M.2 para SSD (las de WiFi no cuentan: llevan otra llave y no
+  /// admiten un disco).
+  List<ExpansionSlot> get m2Slots =>
+      slots.where((s) => s.kind == 'm2').toList();
+
+  /// Ranuras PCIe (para gráfica, controladora, red…).
+  List<ExpansionSlot> get pcieSlots =>
+      slots.where((s) => s.kind == 'pcie').toList();
+
+  /// true si hay algo que enseñar en la ficha de ranuras y puertos.
+  bool get tieneExpansion => slots.isNotEmpty || sataTotal > 0;
+}
+
+/// Una ranura de expansión de la placa: PCIe (gráfica, controladora, red) o M.2
+/// (SSD NVMe o SATA).
+class ExpansionSlot {
+  final String label; // serigrafía: "PCIEX16_1", "M.2_1"
+  final String kind; // "pcie" | "m2" | "m2wifi" | "pci" | "otra"
+  final String spec; // "PCIe 3.0 x16", "M.2 llave M (PCIe x4 / NVMe)"
+
+  /// "ocupada" | "libre" | "" (no se pudo saber). El vacío se muestra como
+  /// "sin dato", nunca como libre: mandar a alguien con una tarjeta a una
+  /// ranura que quizá esté ocupada es peor que no decir nada.
+  final String state;
+  final String usedBy; // qué la ocupa, si se averiguó
+  final String source; // "catalogo" | "firmware"
+
+  const ExpansionSlot({
+    this.label = '',
+    this.kind = '',
+    this.spec = '',
+    this.state = '',
+    this.usedBy = '',
+    this.source = '',
+  });
+
+  factory ExpansionSlot.fromJson(Map<String, dynamic> j) => ExpansionSlot(
+        label: j['label'] ?? '',
+        kind: j['kind'] ?? '',
+        spec: j['spec'] ?? '',
+        state: j['state'] ?? '',
+        usedBy: j['usedBy'] ?? '',
+        source: j['source'] ?? '',
+      );
+
+  bool get ocupada => state == 'ocupada';
+  bool get libre => state == 'libre';
+
+  /// Texto del estado para la ficha y el reporte.
+  String get estadoTexto {
+    if (ocupada) return usedBy.isNotEmpty ? 'Ocupada — $usedBy' : 'Ocupada';
+    if (libre) return 'Libre';
+    return 'Sin dato';
+  }
+}
+
+/// Un conector SATA y qué disco cuelga de él.
+class SataPort {
+  final String label; // "SATA 3" (orden del sistema, no serigrafía)
+  final bool used;
+  final String usedBy;
+
+  const SataPort({this.label = '', this.used = false, this.usedBy = ''});
+
+  factory SataPort.fromJson(Map<String, dynamic> j) => SataPort(
+        label: j['label'] ?? '',
+        used: j['used'] ?? false,
+        usedBy: j['usedBy'] ?? '',
       );
 }
 
