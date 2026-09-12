@@ -113,29 +113,117 @@ func TestDiskutilConErrorDarwin(t *testing.T) {
 	}
 }
 
+func TestDiscoUSBDarwin(t *testing.T) {
+	// Disco USB real: gabinete JMicron de 2 TB (el de tuxor), capturado el
+	// 12-sep-2026 con el disco conectado.
+	entrada := duEntrada{DeviceIdentifier: "disk4", Size: 2000398934016}
+	di, ok := discoDesdeInfo(entrada, leeMuestra(t, "diskutil_info_disk4_usb.plist"), nil)
+	if !ok {
+		t.Fatal("un disco USB es hardware y tiene que salir en el inventario")
+	}
+	if di.Name != "/dev/disk4" {
+		t.Errorf("dispositivo: %q", di.Name)
+	}
+	// ⭐ MediaName llega RECORTADO en los gabinetes USB ("Tech"); el nombre del
+	// IORegistry trae el completo ("JMicron Tech Media").
+	if di.Model != "JMicron Tech" {
+		t.Errorf("modelo: %q — se esperaba el nombre completo del IORegistry, no el recortado", di.Model)
+	}
+	if di.Bus != "usb" || di.Port != "USB" {
+		t.Errorf("bus=%q «Conectado en»=%q", di.Bus, di.Port)
+	}
+	// ⛔ diskutil NO manda SolidState en este disco: el tipo se queda vacío en
+	// vez de afirmar "HDD".
+	if di.Type != "" {
+		t.Errorf("tipo: %q — sin el dato de diskutil no se puede afirmar si es sólido o mecánico", di.Type)
+	}
+	if di.SizeBytes != 2000398934016 {
+		t.Errorf("tamaño: %d", di.SizeBytes)
+	}
+	// Es un disco externo, pero el MEDIO no es extraíble (no es una memoria USB
+	// ni una tarjeta): si se marcara removible, la GUI ni le ofrecería revisar
+	// la salud.
+	if di.Removable {
+		t.Error("un disco en gabinete USB no es «medio extraíble»")
+	}
+}
+
+func TestDiscoQueNoContestaDarwin(t *testing.T) {
+	// Un disco USB puede dejar colgado a `diskutil info` (macOS esperando un
+	// permiso). ⛔ Ese disco NO debe desaparecer del inventario: se muestra con
+	// lo que dio `diskutil list` y sin inventar modelo, tipo ni bus.
+	e := duEntrada{
+		DeviceIdentifier: "disk4",
+		Content:          "GUID_partition_scheme",
+		Size:             2000398934016,
+		Partitions: []duParticion{
+			{DeviceIdentifier: "disk4s1", Content: "Microsoft Reserved", Size: 134217728},
+			{DeviceIdentifier: "disk4s2", Content: "Microsoft Basic Data", Size: 2000263659520,
+				MountPoint: "/Volumes/no-existe-en-la-prueba"},
+		},
+	}
+	di, ok := discoDesdeLista(e, nil)
+	if !ok {
+		t.Fatal("el disco tenía que aparecer aunque diskutil info no contestara")
+	}
+	if di.Name != "/dev/disk4" {
+		t.Errorf("dispositivo: %q — hace falta para poder sondearle el S.M.A.R.T.", di.Name)
+	}
+	if di.SizeBytes != 2000398934016 {
+		t.Errorf("tamaño: %d — lo da la lista, no hace falta el info", di.SizeBytes)
+	}
+	if di.Model != "" || di.Type != "" || di.Bus != "" || di.Port != "" {
+		t.Errorf("sin `diskutil info` no se sabe el modelo/tipo/bus y NO se inventan: %+v", di)
+	}
+	if di.LifePercentUsed != -1 {
+		t.Error("el desgaste tiene que quedar en -1 (desconocido), no en 0")
+	}
+
+	// Un disco sin tamaño no es un disco.
+	if _, ok := discoDesdeLista(duEntrada{DeviceIdentifier: "disk9"}, nil); ok {
+		t.Error("una entrada sin tamaño no debe entrar al inventario")
+	}
+}
+
 func TestTipoYBusDarwin(t *testing.T) {
+	si, no := true, false
 	casos := []struct {
 		bus    string
-		ssd    bool
+		ssd    *bool // nil = diskutil no manda la clave (típico en USB)
 		tipo   string
 		busInt string
 	}{
-		{"Apple Fabric", true, "NVMe SSD", "nvme"},
-		{"PCI-Express", true, "NVMe SSD", "nvme"},
-		{"SATA", true, "SATA SSD", "sata"},
-		{"SATA", false, "HDD", "sata"},
-		{"USB", false, "HDD", "usb"},
-		{"USB", true, "SSD", "usb"},
-		{"Thunderbolt", true, "SSD", "usb"},
-		{"Secure Digital", false, "Tarjeta SD", "mmc"},
+		{"Apple Fabric", &si, "NVMe SSD", "nvme"},
+		{"PCI-Express", &si, "NVMe SSD", "nvme"},
+		{"SATA", &si, "SATA SSD", "sata"},
+		{"SATA", &no, "HDD", "sata"},
+		{"USB", &no, "HDD", "usb"},
+		{"USB", &si, "SSD", "usb"},
+		{"Thunderbolt", &si, "SSD", "usb"},
+		{"Secure Digital", &no, "Tarjeta SD", "mmc"},
+		// ⛔ Lo importante: sin el dato, el tipo se queda VACÍO. Antes se leía
+		// como "no es sólido" y la ficha afirmaba "HDD" de un disco USB del que
+		// no se sabe nada.
+		{"USB", nil, "", "usb"},
+		{"SATA", nil, "", "sata"},
 	}
 	for _, c := range casos {
 		tipo, bus := tipoYBusDarwin(duInfo{BusProtocol: c.bus, SolidState: c.ssd})
 		if tipo != c.tipo || bus != c.busInt {
 			t.Errorf("%s (ssd=%v): dio (%q,%q), esperaba (%q,%q)",
-				c.bus, c.ssd, tipo, bus, c.tipo, c.busInt)
+				c.bus, ssdTexto(c.ssd), tipo, bus, c.tipo, c.busInt)
 		}
 	}
+}
+
+func ssdTexto(b *bool) string {
+	if b == nil {
+		return "sin dato"
+	}
+	if *b {
+		return "sólido"
+	}
+	return "mecánico"
 }
 
 func TestInstantaneaAPFSDarwin(t *testing.T) {

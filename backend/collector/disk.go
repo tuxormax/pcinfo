@@ -18,7 +18,7 @@ func collectDisks(conSmart bool, forzarUSB string) []DiskInfo {
 	// por una opción invertida, y `diskutil info` sin plazo se cuelga con discos
 	// externos). Ver disk_darwin.go.
 	if runtime.GOOS == "darwin" {
-		return collectDisksDarwin(conSmart)
+		return collectDisksDarwin(conSmart, forzarUSB)
 	}
 
 	disks := []DiskInfo{}

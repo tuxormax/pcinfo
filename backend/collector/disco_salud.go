@@ -54,6 +54,13 @@ func interpretaDisco(d *DiskInfo) {
 			"no informa de su salud, así que no hay nada que revisar."
 		return
 	case !d.SmartAvailable:
+		// macOS tiene sus propios motivos: los genéricos mandan usar `apt` o
+		// ejecutar como root, y ninguna de las dos cosas aplica allí.
+		// Impl en disco_salud_darwin.go; en el resto devuelve "".
+		if m := motivoSinSaludDarwin(d); m != "" {
+			d.Verdict = m
+			return
+		}
 		d.Verdict = motivoSinSalud()
 		return
 	}

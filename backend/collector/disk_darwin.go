@@ -4,7 +4,9 @@ package collector
 
 import (
 	"context"
+	"fmt"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 )
@@ -29,8 +31,9 @@ const plazoDiskutil = 6 * time.Second
 
 // collectDisksDarwin arma la lista de discos en macOS. [conSmart]=false devuelve
 // solo lo inmediato para pintar la pantalla; la salud se pide aparte, igual que
-// en las otras plataformas.
-func collectDisksDarwin(conSmart bool) []DiskInfo {
+// en las otras plataformas. [forzarUSB] es el dispositivo de un disco externo
+// que el usuario mandó sondear a mano desde la pestaña Discos.
+func collectDisksDarwin(conSmart bool, forzarUSB string) []DiskInfo {
 	disks := []DiskInfo{}
 
 	salidaLista, err := diskutil("list")
@@ -47,9 +50,13 @@ func collectDisksDarwin(conSmart bool) []DiskInfo {
 	for _, e := range fisicos {
 		salidaInfo, err := diskutil("info", e.DeviceIdentifier)
 		if err != nil {
-			// No contestó a tiempo (típico: volumen externo esperando permiso).
-			// Se salta con aviso: mejor un disco de menos que el inventario colgado.
+			// No contestó a tiempo (típico: disco USB esperando un permiso del
+			// sistema). ⛔ NO se descarta el disco: se muestra con lo que sí se
+			// sabe por `diskutil list` y sin inventar modelo ni bus.
 			warn("diskutil info "+e.DeviceIdentifier, err)
+			if di, ok := discoDesdeLista(e, contenedores); ok {
+				disks = append(disks, di)
+			}
 			continue
 		}
 		di, ok := discoDesdeInfo(e, salidaInfo, contenedores)
@@ -76,6 +83,28 @@ func collectDisksDarwin(conSmart bool) []DiskInfo {
 		}(&disks[i])
 	}
 	wg.Wait()
+
+	// ⛔ AQUÍ NO SE SONDEAN TIPOS DE PUENTE USB, y no es un olvido.
+	// En Windows, un disco en gabinete externo sí entrega su salud si se le habla
+	// con `-d sat` (o usbjmicron, usbasm1051…), y para eso está probeSmartUSB.
+	// En macOS **ninguno de esos tipos puede funcionar**: la documentación de
+	// smartmontools para Darwin dice que el soporte SCSI no está implementado, y
+	// se comprobó con el disco de 2 TB de tuxor el 12-sep-2026 —`/dev/disk4`
+	// contesta *"Operation not supported by device"* y cada `-d <tipo>` responde
+	// *"Not a device of type 'scsi'"*. Sondear los cinco tipos serían **20
+	// segundos de espera por cada consulta** para un resultado que se sabe de
+	// antemano. El porqué se le explica al usuario en la ficha del disco
+	// (disco_salud_darwin.go).
+	// [forzarUSB] se acepta por concordancia con las otras plataformas, pero aquí
+	// no hay nada que forzar: el límite es del sistema, no del tiempo de espera.
+	var log strings.Builder
+	fmt.Fprintf(&log, "macOS · smartctl bin: %s · forzar=%q\n", smartctlBin(), forzarUSB)
+	for i := range disks {
+		fmt.Fprintf(&log, "%s: smart=%v modelo=%q bus=%q tipo=%q\n",
+			disks[i].Name, disks[i].SmartAvailable, disks[i].Model,
+			disks[i].Bus, disks[i].Type)
+	}
+	writeSmartDebug(log.String())
 
 	for i := range disks {
 		interpretaDisco(&disks[i])

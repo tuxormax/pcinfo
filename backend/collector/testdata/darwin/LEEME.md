@@ -14,6 +14,8 @@ a capturar, **anonimiza igual antes de subir**.
 |---|---|
 | `diskutil_list.plist` | `diskutil list -plist` |
 | `diskutil_info_diskN.plist` | `diskutil info -plist diskN` |
+| `diskutil_info_disk4_usb.plist` | igual, con el disco USB de 2 TB conectado (gabinete JMicron) |
+| `smartctl_json_disk4_usb.json` | `smartctl --json=c -a /dev/disk4` — la respuesta de que **no se puede** |
 | `smartctl_a_disk0.txt` · `smartctl_json_disk0.json` | `smartctl -a /dev/disk0` (con `--json=c`) |
 | `smartctl_scan.txt` | `smartctl --scan` |
 | `sp_SPHardwareDataType.json` · `sp_SPDisplaysDataType.json` | `system_profiler -json <tipo>` |
@@ -29,3 +31,12 @@ a capturar, **anonimiza igual antes de subir**.
 - `diskutil info disk0 -plist` **falla**: el `-plist` va justo después del verbo.
 - `diskutil` ya trae él mismo `SMARTStatus` y algunos atributos NVMe, por si
   algún día no se pudiera empaquetar `smartctl`.
+- ⛔ **Por USB no hay salud en macOS y no es cosa de PCInfo**: `/dev/disk4`
+  contesta *"Operation not supported by device"* y cada `-d <tipo>` responde
+  *"Not a device of type 'scsi'"*. La documentación de smartmontools para Darwin
+  lo dice: el soporte SCSI no está implementado y haría falta instalar el *SAT
+  SMART Driver*. `diskutil` coincide: `SMARTStatus: Not Supported`.
+- En un gabinete USB, `MediaName` llega **recortado** ("Tech") y el nombre
+  completo está en `IORegistryEntryName` ("JMicron Tech Media").
+- Un disco USB **puede no mandar `SolidState`**: eso es "no se sabe", no "no es
+  SSD".
