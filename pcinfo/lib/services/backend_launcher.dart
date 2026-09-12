@@ -50,6 +50,12 @@ class BackendInfo {
 /// autodestruye al cerrarse la GUI. `stop()` mata además el backend no elevado que
 /// sí lanzamos nosotros. En Linux ensureRunning ve el /healthz del servicio root y
 /// no lanza nada.
+///
+/// macOS: como el portable de Windows, el backend va DENTRO del `.app`
+/// (`Contents/MacOS/pcinfo-backend`, junto al ejecutable) y se lanza como proceso
+/// hijo: no hay servicio ni elevación. Sin elevación no habrá S.M.A.R.T. del disco,
+/// igual que en el Windows sin UAC — y en un Apple Silicon puede no haberlo de
+/// ninguna manera (ver la memoria del proyecto).
 class BackendLauncher {
   /// Puerto/host fijo del backend (debe coincidir con HttpHardwareService y los
   /// instaladores: 127.0.0.1:51247).
@@ -268,6 +274,7 @@ class BackendLauncher {
   /// layouts de instalación y el de desarrollo:
   ///   - Windows / portable: pcinfo-backend.exe en la misma carpeta.
   ///   - Linux .deb: GUI en /opt/pcinfo/app, backend en /opt/pcinfo/backend.
+  ///   - macOS `.app`: Contents/MacOS/pcinfo-backend (misma carpeta, 1er candidato).
   ///   - Repo (flutter run): backend compilado en la carpeta `backend`.
   File? _locateBinary() {
     final exe = File(Platform.resolvedExecutable);
@@ -280,6 +287,22 @@ class BackendLauncher {
     for (final p in candidates) {
       final f = File(p);
       if (f.existsSync()) return f;
+    }
+    // macOS en desarrollo (`flutter run -d macos`): el ejecutable vive dentro de
+    // build/macos/.../PCInfo.app/Contents/MacOS/, así que el backend compilado en
+    // el repo no cae en ninguno de los dos sitios de arriba. Se sube por los
+    // directorios padre buscando `backend/pcinfo-backend`. En el `.app` entregado
+    // esto no se usa: allí el backend va junto al ejecutable (1er candidato).
+    if (Platform.isMacOS) {
+      var d = dir;
+      for (var i = 0; i < 12; i++) {
+        final f = File(
+          '${d.path}${Platform.pathSeparator}backend${Platform.pathSeparator}$name',
+        );
+        if (f.existsSync()) return f;
+        if (d.path == d.parent.path) break;
+        d = d.parent;
+      }
     }
     return null;
   }
