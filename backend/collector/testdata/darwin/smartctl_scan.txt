@@ -1,0 +1,1 @@
+IOService:/AppleARMPE/arm-io@10F00000/AppleH16GFamilyIO/ans@81600000/AppleASCWrapV6/iop-ans-nub/RTBuddy(ANS2)/RTBuddyService/AppleANS3CGv2Controller/NS_01@1 -d nvme # IOService:/AppleARMPE/arm-io@10F00000/AppleH16GFamilyIO/ans@81600000/AppleASCWrapV6/iop-ans-nub/RTBuddy(ANS2)/RTBuddyService/AppleANS3CGv2Controller/NS_01@1, NVMe device

@@ -21,6 +21,9 @@ func collectGPU() GPUInfo {
 	// fabricante y versión de driver. En Linux, ghw (lee PCI) va bien.
 	if runtime.GOOS == "windows" {
 		out.Cards = windowsGPUCards()
+	} else if runtime.GOOS == "darwin" {
+		// En darwin ghw no implementa GPU: se lee con system_profiler.
+		out.Cards = darwinGPUCards()
 	} else {
 		info, err := ghw.GPU()
 		if err != nil || info == nil {

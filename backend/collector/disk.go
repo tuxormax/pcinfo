@@ -14,6 +14,13 @@ import (
 // salud aparte con CollectDiscos (ver /discos en main.go). Leer S.M.A.R.T. es lo
 // único lento del inventario y depende de discos que pueden no contestar.
 func collectDisks(conSmart bool, forzarUSB string) []DiskInfo {
+	// macOS tiene colector propio: ghw no sirve ahí (soporte de bloques apagado
+	// por una opción invertida, y `diskutil info` sin plazo se cuelga con discos
+	// externos). Ver disk_darwin.go.
+	if runtime.GOOS == "darwin" {
+		return collectDisksDarwin(conSmart)
+	}
+
 	disks := []DiskInfo{}
 
 	info, err := ghw.Block()

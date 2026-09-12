@@ -29,6 +29,11 @@ func collectBoard() BoardInfo {
 	// BIOS. afinaBIOS la sustituye por la de verdad. En Linux no hace nada.
 	afinaBIOS(&out)
 
+	// macOS: no hay DMI, así que todo lo de arriba vino vacío. El modelo del
+	// equipo, la serie y el firmware salen de system_profiler. Impl en
+	// placa_darwin.go; en el resto de plataformas no hace nada.
+	placaDarwin(&out)
+
 	// Form factor: DMI no expone ATX/Micro-ATX de la PLACA, pero sí el tipo de
 	// CHASIS (Desktop/Tower/Notebook/…) vía ghw.Chassis (SMBIOS tipo 3 en Linux,
 	// WMI en Windows). Es el dato real más cercano; antes quedaba "".

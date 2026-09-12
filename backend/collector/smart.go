@@ -66,8 +66,15 @@ var (
 // en el PATH (dependencia smartmontools del .deb). En Windows NO hay smartctl en
 // el PATH, así que el instalador lo empaqueta junto al backend; lo buscamos en la
 // carpeta del propio ejecutable (síntoma si falta: "SIN SMART" en todos los discos).
+// En macOS pasa lo mismo que en Windows por otro motivo: una app abierta desde el
+// Finder recibe un PATH mínimo que NO incluye /opt/homebrew/bin, así que el
+// smartctl instalado con Homebrew no se encontraría (ver resolveSmartctlDarwin).
 func resolveSmartctl() {
 	smartctlOnce.Do(func() {
+		if runtime.GOOS == "darwin" {
+			resolveSmartctlDarwin()
+			return
+		}
 		if runtime.GOOS != "windows" {
 			if _, err := exec.LookPath("smartctl"); err == nil {
 				smartctlFound = true

@@ -23,6 +23,10 @@ func collectSystem() SystemInfo {
 		// Nombre comercial (Windows 11 Pro 24H2) + build (10.0.26100.1742) vía
 		// WMI + registro; ghw no lo expone. Impl en system_windows.go.
 		windowsSystem(&s)
+	case "darwin":
+		// Nombre comercial + compilación con sw_vers, kernel con uname.
+		// Impl en system_darwin.go.
+		darwinSystem(&s)
 	default:
 		s.Distro = runtime.GOOS
 	}
