@@ -643,10 +643,27 @@ func normSerial(s string) string {
 
 // writeSmartDebug escribe el log de diagnóstico junto al ejecutable del backend
 // (best-effort; corre elevado en Windows, así que puede escribir en Program Files).
+//
+// ⛔ En macOS NO puede ir junto al ejecutable: ese archivo vive DENTRO del .app
+// firmado (Contents/MacOS/), y escribir ahí en cada arranque invalida la firma
+// —`codesign --verify --deep` empieza a fallar con "a sealed resource is
+// missing or invalid" después del primer uso, aunque el .app siga abriendo
+// igual. Se comprobó al armar el universal el 12-Sep-2026: el .app recién
+// firmado verificaba limpio, y dejaba de hacerlo en cuanto se abría una vez.
+// En macOS el log va a la carpeta estándar de logs de la app, fuera del bundle.
 func writeSmartDebug(content string) {
 	exe, err := os.Executable()
 	if err != nil {
 		return
 	}
-	_ = os.WriteFile(filepath.Join(filepath.Dir(exe), "smart-debug.log"), []byte(content), 0o644)
+	ruta := filepath.Join(filepath.Dir(exe), "smart-debug.log")
+	if runtime.GOOS == "darwin" {
+		if home, err := os.UserHomeDir(); err == nil {
+			dir := filepath.Join(home, "Library", "Logs", "PCInfo")
+			if os.MkdirAll(dir, 0o755) == nil {
+				ruta = filepath.Join(dir, "smart-debug.log")
+			}
+		}
+	}
+	_ = os.WriteFile(ruta, []byte(content), 0o644)
 }

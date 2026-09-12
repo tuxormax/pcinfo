@@ -38,6 +38,11 @@ backend/pcinfo-backend.exe
 # borran). Nada de esta carpeta va al repositorio.
 instaladores/
 
+# cache-macos/ guarda binarios de terceros bajados para armar el universal
+# (smartctl x86_64, ver construir_macos.sh). Son binarios, no codigo: se
+# descargan solos la primera vez que alguien construye en un Mac nuevo.
+construir/cache-macos/
+
 .claude/
 CLAUDE.md
 
