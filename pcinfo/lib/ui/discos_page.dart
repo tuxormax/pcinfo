@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/hardware.dart';
+import '../models/incidencias.dart';
 import '../theme.dart';
 import '../utils/format.dart';
 
@@ -22,6 +23,14 @@ const _rojo = Color(0xFFF2768D);
 class DiscosPage extends StatelessWidget {
   final List<DiskInfo> discos;
 
+  /// Lo que le ha PASADO a cada disco según el registro del sistema. Llega
+  /// aparte y más tarde que la salud: consultar el registro cuesta segundos.
+  /// null = todavía no se ha pedido.
+  final IncidenciasDiscos? incidencias;
+
+  /// true mientras se lee el registro del sistema.
+  final bool cargandoIncidencias;
+
   /// true mientras la salud sigue leyéndose (segunda fase del arranque).
   final bool cargando;
 
@@ -37,6 +46,8 @@ class DiscosPage extends StatelessWidget {
   const DiscosPage({
     super.key,
     required this.discos,
+    this.incidencias,
+    this.cargandoIncidencias = false,
     this.cargando = false,
     this.avisoAccion,
     this.onForzar,
@@ -45,7 +56,14 @@ class DiscosPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (discos.isEmpty) {
+    // ⛔ Ojo con el caso "no hay discos": si el único disco del equipo se acaba
+    // de desconectar, sus incidencias son justo lo que el usuario necesita ver.
+    // Antes esta salida temprana se las comía y la pantalla quedaba en "no se
+    // encontró ningún disco", escondiendo el motivo del problema.
+    final ausentes = (incidencias?.ausentes ?? const <IncidenciaDisco>[])
+        .where((i) => i.hayAlgo)
+        .toList();
+    if (discos.isEmpty && ausentes.isEmpty) {
       return _mensaje(
         Icons.storage_rounded,
         cargando ? 'Buscando los discos…' : 'No se encontró ningún disco',
@@ -62,7 +80,45 @@ class DiscosPage extends StatelessWidget {
           _disco(d),
           const SizedBox(height: 18),
         ],
+        // Discos que YA NO están puestos pero que dejaron incidencias. Se
+        // muestran al final porque es justo lo que hace falta cuando un disco
+        // acaba de irse: sin esto, el disco que dio el problema desaparece de
+        // la pantalla y con él todo lo que se sabía de él.
+        for (final in_ in ausentes) ...[
+          _incidencias(in_, ausente: true),
+          const SizedBox(height: 18),
+        ],
+        if (cargandoIncidencias) _leyendoRegistro(),
       ],
+    );
+  }
+
+  Widget _leyendoRegistro() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: const Row(
+        children: [
+          SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(
+                strokeWidth: 2, color: AppColors.accent),
+          ),
+          SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Buscando en el registro del sistema si estos discos han dado '
+              'errores… tarda unos segundos.',
+              style: TextStyle(color: AppColors.textMid, fontSize: kFont),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -108,6 +164,10 @@ class DiscosPage extends StatelessWidget {
         if (d.notes.isNotEmpty) ...[
           const SizedBox(height: 12),
           _explicaciones(d),
+        ],
+        if (_incidenciaDe(d) case final inc? when inc.hayAlgo) ...[
+          const SizedBox(height: 12),
+          _incidencias(inc),
         ],
         const SizedBox(height: 12),
         _ficha(d),
@@ -442,6 +502,155 @@ class DiscosPage extends StatelessWidget {
           : const Icon(Icons.monitor_heart_rounded, size: 16),
       label: Text(ocupado ? 'Preguntando…' : 'Leer salud igual'),
     );
+  }
+
+  // ---- Lo que le ha PASADO al disco (registro del sistema) ----
+  //
+  // Por qué esta tarjeta existe: la salud S.M.A.R.T. es lo que el disco opina
+  // de sí mismo, y hay discos que no la dan —por USB en macOS es imposible—.
+  // Esto es lo que el sistema VIO fallar, y muchas veces dice más: en qué punto
+  // del disco falló la lectura, cuántas veces se fue del bus y cuántas hubo que
+  // repararle el sistema de archivos.
+
+  IncidenciaDisco? _incidenciaDe(DiskInfo d) => incidencias?.de(d.name);
+
+  Widget _incidencias(IncidenciaDisco inc, {bool ausente = false}) {
+    final grave = inc.falloInterno ||
+        (inc.peorZona?.sectores ?? 0) >= 100 ||
+        inc.desconexiones > 0;
+    final color = grave ? _rojo : _ambar;
+
+    return _tarjeta(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Wrap y no Row: en una ventana estrecha el distintivo baja a la
+          // línea siguiente en vez de salirse de la pantalla (regla del
+          // proyecto: nada se sale en un equipo chico).
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.report_problem_outlined,
+                      size: 17, color: AppColors.accent),
+                  const SizedBox(width: 9),
+                  Text(
+                    ausente
+                        ? 'Incidencias de ${inc.titulo}'
+                        : 'Incidencias registradas',
+                    style: const TextStyle(
+                        color: AppColors.textHi,
+                        fontSize: kFont + 1,
+                        fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+              if (ausente) _distintivo('YA NO ESTÁ CONECTADO', AppColors.textMid),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SelectableText(
+            inc.veredicto,
+            style: TextStyle(color: color, fontSize: kFont + 1, height: 1.45),
+          ),
+          const SizedBox(height: 14),
+          // Los números, que es lo que se busca de un vistazo.
+          Wrap(
+            spacing: 26,
+            runSpacing: 12,
+            children: [
+              if (inc.erroresES > 0)
+                _cifra(Icons.error_outline_rounded, 'Errores de lectura/escritura',
+                    _miles(inc.erroresES), 'un disco sano no da ninguno'),
+              if (inc.sectoresMalos > 0)
+                _cifra(Icons.grid_off_rounded, 'Posiciones que fallaron',
+                    _miles(inc.sectoresMalos), 'sitios distintos del disco'),
+              if (inc.desconexiones > 0)
+                _cifra(Icons.usb_off_rounded, 'Se fue del bus',
+                    '${inc.desconexiones}', 'sin que nadie lo expulsara'),
+              if (inc.reparaciones > 0)
+                _cifra(Icons.build_outlined, 'Reparaciones del sistema de archivos',
+                    '${inc.reparaciones}', 'las hizo el sistema solo'),
+            ],
+          ),
+          if (inc.zonas.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            const Divider(height: 1, color: AppColors.border),
+            const SizedBox(height: 12),
+            Text('Dónde falló',
+                style: const TextStyle(
+                    color: AppColors.textHi,
+                    fontSize: kFont,
+                    fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            for (final z in inc.zonas.take(6)) _zona(z),
+          ],
+          if (inc.notas.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Divider(height: 1, color: AppColors.border),
+            for (final n in inc.notas) _nota(n),
+          ],
+          if (inc.primera.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            SelectableText(
+              'Desde ${inc.primera} hasta ${inc.ultima}'
+              '${incidencias?.fuente.isNotEmpty == true ? "  ·  fuente: ${incidencias!.fuente}" : ""}',
+              style: const TextStyle(color: AppColors.textLow, fontSize: kFont - 2),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Un tramo del disco con fallos. Se dice en GB porque es la única forma de
+  /// que el usuario lo ubique: "el sector 2 176 016 128" no le dice nada.
+  Widget _zona(ZonaDanada z) {
+    final ancho = (z.hastaGB - z.desdeGB).abs();
+    final donde = ancho < 0.05
+        ? 'en el GB ${z.desdeGB.toStringAsFixed(1)}'
+        : 'del GB ${z.desdeGB.toStringAsFixed(1)} al ${z.hastaGB.toStringAsFixed(1)}';
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 3),
+            child: Icon(Icons.circle, size: 7, color: AppColors.textLow),
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: SelectableText(
+              '$donde — ${_miles(z.sectores)} posición(es), '
+              '${_tamano(z.mbIlegibles)} que no se pudieron leer',
+              style: const TextStyle(
+                  color: AppColors.textMid, fontSize: kFont, height: 1.4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _miles(int n) {
+    final t = n.toString();
+    final b = StringBuffer();
+    for (var i = 0; i < t.length; i++) {
+      if (i > 0 && (t.length - i) % 3 == 0) b.write(' ');
+      b.write(t[i]);
+    }
+    return b.toString();
+  }
+
+  static String _tamano(double mb) {
+    if (mb >= 1024) return '${(mb / 1024).toStringAsFixed(1)} GB';
+    if (mb >= 1) return '${mb.toStringAsFixed(0)} MB';
+    return '${(mb * 1024).toStringAsFixed(0)} KB';
   }
 
   Widget _tarjeta({required Widget child, EdgeInsets? padding}) {

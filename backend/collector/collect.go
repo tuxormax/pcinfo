@@ -29,6 +29,29 @@ func CollectDiscos(forzarUSB string) []DiskInfo {
 	return safe("disks", func() []DiskInfo { return collectDisks(true, forzarUSB) })
 }
 
+// CollectIncidencias devuelve lo que le ha PASADO a cada disco según el registro
+// del sistema: errores de lectura/escritura y en qué posición del disco, veces
+// que se fue del bus y veces que hubo que reparar su sistema de archivos.
+//
+// Va en su propio endpoint porque la consulta al registro es lenta (~6 s por 24
+// horas) y porque es la respuesta a una pregunta distinta: el S.M.A.R.T. dice lo
+// que el disco opina de sí mismo, esto dice lo que el sistema VIO fallar. En un
+// disco USB de macOS es además la única fuente que hay.
+func CollectIncidencias(horas int) IncidenciasDiscos {
+	if horas <= 0 {
+		horas = 24
+	}
+	if horas > 24*30 {
+		horas = 24 * 30
+	}
+	// Los discos se piden SIN S.M.A.R.T.: aquí solo hacen falta sus nombres y
+	// modelos para emparejarlos con lo que dice el registro.
+	discos := safe("disks", func() []DiskInfo { return collectDisks(false, "") })
+	return safe("incidencias", func() IncidenciasDiscos {
+		return collectIncidenciasDarwin(horas, discos)
+	})
+}
+
 func collect(conSmart bool) HardwareInfo {
 	// La placa se recoge primero: la memoria la necesita para consultar el
 	// catálogo de placas (ranuras y capacidad máxima verificadas).

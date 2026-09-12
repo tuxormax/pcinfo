@@ -9,6 +9,7 @@ import '../models/bateria.dart';
 import '../models/controladores.dart';
 import '../models/errores.dart';
 import '../models/hardware.dart';
+import '../models/incidencias.dart';
 import '../models/software.dart';
 import '../services/backend_http.dart';
 import '../services/arranques_service.dart';
@@ -210,6 +211,19 @@ class _DashboardPageState extends State<DashboardPage> {
     }).catchError((Object _) {});
   }
 
+  /// Incidencias de disco (registro del sistema). Se piden al abrir la pestaña
+  /// Discos, no antes: la consulta al registro cuesta segundos.
+  IncidenciasDiscos? _incidencias;
+  Future<IncidenciasDiscos>? _incidenciasFuture;
+
+  void _cargaIncidencias() {
+    final f = widget.service.loadIncidencias();
+    _incidenciasFuture = f;
+    f.then((v) {
+      if (mounted) setState(() => _incidencias = v);
+    }).catchError((Object _) {});
+  }
+
   void _cargaArranques() {
     final svc = widget.arranquesService;
     if (svc == null) return;
@@ -283,6 +297,8 @@ class _DashboardPageState extends State<DashboardPage> {
         case _tabDiscosIdx:
           // La salud de los discos viaja con el inventario: se recarga entero.
           _cargaHardware();
+          _incidencias = null;
+          _cargaIncidencias();
         default:
           _cargaHardware();
       }
@@ -303,6 +319,8 @@ class _DashboardPageState extends State<DashboardPage> {
           if (_bateriaFuture == null) _cargaBateria();
         case _tabArranquesIdx:
           if (_arranquesFuture == null) _cargaArranques();
+        case _tabDiscosIdx:
+          if (_incidenciasFuture == null) _cargaIncidencias();
       }
     });
   }
@@ -625,6 +643,8 @@ class _DashboardPageState extends State<DashboardPage> {
                 !hw.diag.elevated;
         return DiscosPage(
           discos: hw.disks,
+          incidencias: _incidencias,
+          cargandoIncidencias: _incidencias == null && _incidenciasFuture != null,
           cargando: _discosCargando,
           avisoAccion: _botonElevar(faltaAdmin),
           onForzar: _forzarSalud,

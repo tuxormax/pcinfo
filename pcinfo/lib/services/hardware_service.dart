@@ -1,4 +1,5 @@
 import '../models/hardware.dart';
+import '../models/incidencias.dart';
 import 'backend_http.dart';
 
 /// Fuente de datos de hardware.
@@ -16,6 +17,16 @@ abstract class HardwareService {
   /// salud aunque se haya clasificado como memoria extraíble (lo pide el botón
   /// "Leer salud igual" cuando un gabinete externo se declara removible).
   Future<List<DiskInfo>> loadDiscos({String forzar = ''});
+
+  /// Tercera fase, solo cuando el usuario abre la pestaña Discos: lo que le ha
+  /// PASADO a cada disco según el registro del sistema (errores de lectura y
+  /// escritura, desconexiones, reparaciones del sistema de archivos).
+  ///
+  /// Va aparte porque consultar el registro cuesta segundos —unos 6 s por 24 h
+  /// en un Apple Silicon— y porque contesta otra pregunta: el S.M.A.R.T. es lo
+  /// que el disco opina de sí mismo; esto es lo que el sistema vio fallar. En un
+  /// disco USB de macOS, además, es la ÚNICA fuente de salud que existe.
+  Future<IncidenciasDiscos> loadIncidencias({int horas = 24});
 }
 
 /// Consume el backend Go (GET /hardware en localhost). Si no responde y se
@@ -31,6 +42,9 @@ class HttpHardwareService implements HardwareService {
 
   /// Endpoint de la segunda fase (los discos con S.M.A.R.T.).
   Uri get _endpointDiscos => endpoint.replace(path: '/discos');
+
+  /// Endpoint del historial de incidencias de disco.
+  Uri get _endpointIncidencias => endpoint.replace(path: '/discos/incidencias');
 
   @override
   Future<HardwareInfo> load() async {
@@ -73,12 +87,37 @@ class HttpHardwareService implements HardwareService {
       rethrow;
     }
   }
+
+  @override
+  Future<IncidenciasDiscos> loadIncidencias({int horas = 24}) async {
+    try {
+      final json = await pideJson(
+        _endpointIncidencias
+            .replace(queryParameters: {'horas': '\$horas'}),
+        espera: const Duration(seconds: 90),
+        que: 'al leer el historial de incidencias de los discos',
+      );
+      return IncidenciasDiscos.fromJson(json);
+    } catch (e) {
+      if (fallback != null) return fallback!.loadIncidencias(horas: horas);
+      rethrow;
+    }
+  }
 }
 
 class MockHardwareService implements HardwareService {
   @override
   Future<List<DiskInfo>> loadDiscos({String forzar = ''}) async =>
       (await load()).disks;
+
+  @override
+  Future<IncidenciasDiscos> loadIncidencias({int horas = 24}) async =>
+      const IncidenciasDiscos(
+        disponible: true,
+        fuente: 'datos de ejemplo',
+        horas: 24,
+        discos: [],
+      );
 
   @override
   Future<HardwareInfo> load() async {

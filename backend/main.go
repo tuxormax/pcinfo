@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"runtime/debug"
+	"strconv"
 	"time"
 
 	"pcinfo-backend/collector"
@@ -49,6 +50,7 @@ func runServer(addr string) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/hardware", protege("/hardware", handleHardware))
 	mux.HandleFunc("/discos", protege("/discos", handleDiscos))
+	mux.HandleFunc("/discos/incidencias", protege("/discos/incidencias", handleIncidencias))
 	mux.HandleFunc("/errores", protege("/errores", handleErrores))
 	mux.HandleFunc("/arranques", protege("/arranques", handleArranques))
 	mux.HandleFunc("/arranques/diario", protege("/arranques/diario", handleDiarioPersistente))
@@ -153,6 +155,19 @@ func handleDiscos(w http.ResponseWriter, r *http.Request) {
 	responde(w, "/discos", map[string]any{
 		"discos": collector.CollectDiscos(r.URL.Query().Get("forzar")),
 	})
+}
+
+// handleIncidencias sirve lo que le ha PASADO a cada disco según el registro del
+// sistema: errores de lectura/escritura con la posición exacta del disco,
+// desconexiones y reparaciones del sistema de archivos. Va aparte de /discos
+// porque la consulta al registro es lenta (~6 s por 24 h) y porque contesta otra
+// pregunta: el S.M.A.R.T. es lo que el disco opina de sí mismo; esto es lo que el
+// sistema vio fallar. En un disco USB de macOS, además, es la única fuente.
+//
+// Parámetro opcional ?horas=N (por omisión 24, máximo 720).
+func handleIncidencias(w http.ResponseWriter, r *http.Request) {
+	horas, _ := strconv.Atoi(r.URL.Query().Get("horas"))
+	responde(w, "/discos/incidencias", collector.CollectIncidencias(horas))
 }
 
 // handleErrores sirve el "Historial de Errores": pantallazos azules y registro de
