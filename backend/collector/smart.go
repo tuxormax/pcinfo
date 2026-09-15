@@ -108,10 +108,11 @@ func smartctlAvailable() bool {
 
 // ataAttr es una fila de la tabla de atributos S.M.A.R.T. ATA.
 type ataAttr struct {
-	ID    int    `json:"id"`
-	Name  string `json:"name"`
-	Value int    `json:"value"` // valor normalizado (0-100), no el raw
-	Raw   struct {
+	ID     int    `json:"id"`
+	Name   string `json:"name"`
+	Value  int    `json:"value"`  // valor normalizado (0-100), no el raw
+	Thresh int    `json:"thresh"` // umbral de falla que define el propio disco (0 = no define uno)
+	Raw    struct {
 		Value int64 `json:"value"`
 	} `json:"raw"`
 }
@@ -277,14 +278,42 @@ var chequeosATA = []chequeoATA{
 		"El disco ya reemplazó sectores dañados por otros de reserva. Consecuencia: desgaste en marcha; si el número crece, el disco fallará."},
 	{196, "warning", "Eventos de reasignación",
 		"El disco intentó mover datos desde sectores dañados a los de reserva. Consecuencia: señal de sectores defectuosos en aumento."},
-	{199, "warning", "Errores CRC UltraDMA",
-		"Fallos de integridad al transferir datos por el bus. Consecuencia: casi siempre es el cable o la conexión USB, no el disco; revisa o cambia el cable/gabinete."},
+	// 199 (Errores CRC UltraDMA) NO va aquí: un error aislado de cable/USB es
+	// normal y no dice nada del disco. Se evalúa aparte, contra el umbral que
+	// el propio disco reporta (mismo criterio que CrystalDiskInfo) — ver
+	// idCRCUltraDMA más abajo.
 	{10, "warning", "Reintentos de giro",
 		"El motor tardó en alcanzar su velocidad (solo discos mecánicos). Consecuencia: desgaste mecánico; posible falla del motor."},
 	{11, "warning", "Reintentos de calibración",
 		"El disco tuvo que recalibrar los cabezales (solo discos mecánicos). Consecuencia: posible problema mecánico."},
 	{188, "warning", "Comandos expirados",
 		"Operaciones que no terminaron a tiempo. Consecuencia: puede indicar problemas de alimentación, cable o del propio disco."},
+}
+
+// idCRCUltraDMA es el atributo 199 (UDMA_CRC_Error_Count): errores de
+// integridad al transferir datos por el bus (cable, puerto, gabinete USB).
+const idCRCUltraDMA = 199
+
+// chequeoCRCUltraDMA evalúa el atributo 199 con el criterio real de SMART:
+// el disco falla cuando su valor normalizado cae al umbral (o por debajo) que
+// EL PROPIO DISCO define — no con que el contador de errores sea mayor a
+// cero. Un tropiezo aislado del cable/USB es normal y no baja el normalizado
+// ni de cerca; por eso CrystalDiskInfo lo deja en "Bueno" con el mismo disco
+// que antes mostrábamos "CON DESGASTE". Si el disco no define umbral
+// (Thresh == 0, común en varios Toshiba/WD), el atributo es solo informativo
+// y nunca dispara aviso, igual que en cualquier lector SMART estándar.
+func chequeoCRCUltraDMA(tabla []ataAttr) (DiskIssue, bool) {
+	for _, a := range tabla {
+		if a.ID != idCRCUltraDMA {
+			continue
+		}
+		if a.Thresh <= 0 || a.Value > a.Thresh {
+			return DiskIssue{}, false
+		}
+		return DiskIssue{"warning", "Errores CRC UltraDMA",
+			fmt.Sprintf("Fallos de integridad al transferir datos por el bus. Consecuencia: casi siempre es el cable o la conexión USB, no el disco; revisa o cambia el cable/gabinete (valor: %d).", a.Raw.Value)}, true
+	}
+	return DiskIssue{}, false
 }
 
 // evalDiskHealth deriva la salud del disco de los atributos SMART (no solo del
@@ -312,6 +341,9 @@ func evalDiskHealth(di *DiskInfo, s smartJSON) {
 				issues = append(issues, DiskIssue{c.severity, c.titulo,
 					fmt.Sprintf("%s (valor: %d).", c.detalle, v)})
 			}
+		}
+		if is, ok := chequeoCRCUltraDMA(s.ATA.Table); ok {
+			issues = append(issues, is)
 		}
 	case s.NVMeLog != nil:
 		n := s.NVMeLog
@@ -499,6 +531,9 @@ func enrichSmartWindows(disks []DiskInfo, forzarUSB string) {
 			ok := false
 			if idx >= 0 {
 				ok = parseSmartInto(&disks[idx], out)
+				if ok {
+					aplicaModeloSerieReal(&disks[idx], meta)
+				}
 			}
 			fmt.Fprintf(&log, "dev %s (-d %s): serial=%q modelo=%q → disco #%d smart=%v\n",
 				d.Name, d.Type, meta.SerialNumber, meta.ModelName, idx, ok)
@@ -539,6 +574,19 @@ func smartctlParalelo(n int, corre func(i int) []byte) [][]byte {
 // ED600); los usb* son puentes específicos (JMicron, ASMedia, Prolific…).
 var tiposSMARTWindowsUSB = []string{"sat", "usbjmicron", "usbasm1051", "usbprolific", "usbsunplus"}
 
+// aplicaModeloSerieReal sobreescribe el modelo/serie del disco con los que
+// smartctl leyó de verdad. Hace falta cuando el disco cuelga de un puente
+// (USB, RAID) que al sistema operativo le da un nombre genérico del propio
+// puente —p. ej. "JMicron Tech SCSI Disk Device"— en vez del disco real.
+func aplicaModeloSerieReal(d *DiskInfo, meta smartJSON) {
+	if m := strings.TrimSpace(meta.ModelName); m != "" {
+		d.Model = m
+	}
+	if s := strings.TrimSpace(meta.SerialNumber); s != "" {
+		d.Serial = s
+	}
+}
+
 // probeSmartUSB reintenta el SMART de los discos que quedaron sin él, hablando
 // directo con su ruta física \\.\PHYSICALDRIVEn (no hace falta emparejar por
 // serie: se sondea ESE disco). Un puente USB oculta el modelo/serie reales —ghw
@@ -575,12 +623,7 @@ func probeSmartUSB(disks []DiskInfo, log *strings.Builder, forzarUSB string) {
 				}
 				var meta smartJSON
 				if json.Unmarshal(out, &meta) == nil {
-					if m := strings.TrimSpace(meta.ModelName); m != "" {
-						d.Model = m
-					}
-					if s := strings.TrimSpace(meta.SerialNumber); s != "" {
-						d.Serial = s
-					}
+					aplicaModeloSerieReal(d, meta)
 				}
 				fmt.Fprintf(&linea, "usb %s (-d %s): SMART OK modelo=%q\n", d.Name, dt, d.Model)
 				break

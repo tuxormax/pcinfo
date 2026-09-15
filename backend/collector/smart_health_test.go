@@ -31,7 +31,11 @@ func TestEvalDiskHealth(t *testing.T) {
 		{"sectores pendientes → peligro", ataTable(map[int]int64{197: 3}), "fail", 1},
 		{"no corregibles → peligro", ataTable(map[int]int64{198: 1}), "fail", 1},
 		{"reasignados → advertencia", ataTable(map[int]int64{5: 8}), "warning", 1},
-		{"solo CRC → advertencia (cable)", ataTable(map[int]int64{199: 120}), "warning", 1},
+		// CRC UltraDMA (199) ya NO se evalúa por raw>0: un tropiezo aislado del
+		// cable/USB es normal. Sin que el disco defina un umbral real (caso de
+		// ataTable, que no toca Value/Thresh), no debe avisar — ver
+		// TestChequeoCRCUltraDMA para el caso donde SÍ cruza el umbral real.
+		{"solo CRC sin umbral real → sano", ataTable(map[int]int64{199: 120}), "good", 0},
 		{"pendientes + reasignados → peligro, 2 problemas",
 			ataTable(map[int]int64{5: 4, 197: 2}), "fail", 2},
 		// Los atributos ruidosos NO deben generar falso positivo.
@@ -57,6 +61,32 @@ func TestEvalDiskHealthSmartFailed(t *testing.T) {
 	evalDiskHealth(&di, s)
 	if di.HealthLevel != "fail" {
 		t.Errorf("SMART FAILED debe dar nivel fail, dio %q", di.HealthLevel)
+	}
+}
+
+// TestChequeoCRCUltraDMA prueba el atributo 199 contra el criterio real de
+// SMART (valor normalizado vs. umbral del propio disco), no solo raw>0: es el
+// caso real que reportó tuxor — un HDD Toshiba en gabinete USB/JMicron con 1
+// solo error CRC, que CrystalDiskInfo deja en "Bueno" porque el umbral que
+// reporta ESE disco para este atributo es 0 (no crossable).
+func TestChequeoCRCUltraDMA(t *testing.T) {
+	casos := []struct {
+		nombre        string
+		value, thresh int
+		raw           int64
+		quieroAviso   bool
+	}{
+		{"disco no define umbral (Toshiba real) → sin aviso pese a raw>0", 200, 0, 1, false},
+		{"valor por encima del umbral real → sin aviso", 80, 20, 5, false},
+		{"valor cruzó el umbral real → aviso", 15, 20, 500, true},
+	}
+	for _, c := range casos {
+		tabla := []ataAttr{{ID: idCRCUltraDMA, Value: c.value, Thresh: c.thresh}}
+		tabla[0].Raw.Value = c.raw
+		_, ok := chequeoCRCUltraDMA(tabla)
+		if ok != c.quieroAviso {
+			t.Errorf("%s: aviso=%v, quiero %v", c.nombre, ok, c.quieroAviso)
+		}
 	}
 }
 
