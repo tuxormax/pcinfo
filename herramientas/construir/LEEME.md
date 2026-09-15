@@ -14,8 +14,8 @@ ignorada por git) y lo sube al release de esa revisión.
 Se construye localmente:
 
 ```bash
-bash construir/construir_linux.sh                 # construye y publica en el release
-bash construir/construir_linux.sh --sin-publicar  # solo construye
+bash herramientas/construir/construir_linux.sh                 # construye y publica en el release
+bash herramientas/construir/construir_linux.sh --sin-publicar  # solo construye
 # → instaladores/pcinfo_v1.2_rev-31.deb  +  release v1.2-rev31
 ```
 
@@ -25,7 +25,7 @@ Publicar requiere `gh` autenticado; si falta, el script avisa e imprime el
 ### ⛔ Se compila dentro de un Ubuntu 22.04, no en el equipo
 
 `construir_linux.sh` **no compila en el equipo de desarrollo**: lo hace dentro de
-un Ubuntu 22.04 que arma `construir/entorno_jammy.sh` (rootfs oficial + `bwrap`,
+un Ubuntu 22.04 que arma `herramientas/construir/entorno_jammy.sh` (rootfs oficial + `bwrap`,
 **sin sudo ni Docker**; la primera vez baja ~30 MB + ~400 MB de paquetes y queda
 cacheado en `~/.cache/pcinfo/jammy`).
 

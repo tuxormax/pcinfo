@@ -9,7 +9,7 @@
 set -euo pipefail
 
 ARCH="amd64"
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # raíz del repo
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"   # raíz del repo (script en herramientas/construir/)
 APP_DIR="$ROOT/pcinfo"
 
 # Versión y revisión desde version.dart (única fuente de verdad, igual que el
@@ -28,12 +28,12 @@ trap 'rm -rf "$STAGE"' EXIT
 
 export PATH="$HOME/go-sdk/go/bin:$HOME/flutter/bin:$PATH"
 
-# TODO se compila dentro de un Ubuntu 22.04 (ver construir/entorno_jammy.sh).
+# TODO se compila dentro de un Ubuntu 22.04 (ver herramientas/construir/entorno_jammy.sh).
 # Compilar en el equipo (Mint 22.1 = Ubuntu 24.04) produce un binario que NO
 # ARRANCA en Mint 21.x: pide simbolos de GLib 2.80 que en GLib 2.72 no existen,
 # y muere sin mostrar nada. Al reves si funciona, asi que se usa la base vieja.
 # shellcheck source=entorno_jammy.sh
-. "$ROOT/construir/entorno_jammy.sh"
+. "$ROOT/herramientas/construir/entorno_jammy.sh"
 jammy_preparar
 
 echo ">> Compilando backend Go (linux/amd64) en Ubuntu 22.04..."

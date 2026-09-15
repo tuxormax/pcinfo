@@ -17,7 +17,7 @@
 # (fakeroot tapa los chown que un usuario normal no puede hacer) y el usuario
 # normal para compilar. No hace falta sudo ni demonio de contenedores.
 #
-# Uso:  source construir/entorno_jammy.sh   (define jammy_root y jammy_usuario)
+# Uso:  source herramientas/construir/entorno_jammy.sh   (define jammy_root y jammy_usuario)
 #       PCINFO_ROOTFS=/otra/ruta para cambiar donde vive el entorno.
 
 JAMMY_ROOTFS="${PCINFO_ROOTFS:-$HOME/.cache/pcinfo/jammy}"

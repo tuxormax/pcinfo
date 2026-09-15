@@ -10,7 +10,7 @@ name: Instalador Windows
 # Los releases NO se borran: son el único lugar de descarga de los instaladores
 # (el repo ya no lleva carpeta instaladores/). El release de cada revisión queda
 # publicado como histórico. El .deb de Linux se sube al MISMO release desde
-# construir/construir_linux.sh, por eso el tag no es "win-*" sino v<ver>-rev<rev>.
+# herramientas/construir/construir_linux.sh, por eso el tag no es "win-*" sino v<ver>-rev<rev>.
 
 on:
   # SOLO disparo manual (como SIGARN): el instalador NUNCA se publica solo en
@@ -119,7 +119,7 @@ jobs:
           Copy-Item "backend\pcinfo-backend.exe" $dest -Force
           Copy-Item "backend\smartctl.exe"       $dest -Force
           Copy-Item "backend\drivedb.h"          $dest -Force
-          Copy-Item "construir\LEEME_PORTABLE.txt" "$dest\LEEME.txt" -Force
+          Copy-Item "herramientas\construir\LEEME_PORTABLE.txt" "$dest\LEEME.txt" -Force
           if (-not (Test-Path "$dest\pcinfo.exe"))         { throw "falta pcinfo.exe en el portable" }
           if (-not (Test-Path "$dest\pcinfo-backend.exe")) { throw "falta el backend en el portable" }
           New-Item -ItemType Directory -Force -Path instaladores | Out-Null
@@ -132,10 +132,10 @@ jobs:
       # acusarían a drivers distintos del mismo pantallazo.
       - name: Verificar la herramienta bluescreen
         shell: pwsh
-        run: pwsh -NoProfile -File construir/verificar_bluescreen.ps1
+        run: pwsh -NoProfile -File herramientas/construir/verificar_bluescreen.ps1
 
       - name: Descargar VC++ Redistributable
-        run: Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "construir\vc_redist.x64.exe"
+        run: Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "herramientas\construir\vc_redist.x64.exe"
 
       - name: Generar instalador con Inno Setup
         run: |
@@ -144,11 +144,11 @@ jobs:
             "/DSourceBackend=${{ github.workspace }}\backend\pcinfo-backend.exe" `
             "/DSourceSmartctl=${{ github.workspace }}\backend\smartctl.exe" `
             "/DSourceDrivedb=${{ github.workspace }}\backend\drivedb.h" `
-            "/DVcRedist=${{ github.workspace }}\construir\vc_redist.x64.exe" `
+            "/DVcRedist=${{ github.workspace }}\herramientas\construir\vc_redist.x64.exe" `
             "/DOutDir=${{ github.workspace }}\instaladores" `
             "/DBaseName=$env:PCINFO_NAME" `
             "/DAppVer=$env:VERSION" `
-            "${{ github.workspace }}\construir\instalador_windows.iss"
+            "${{ github.workspace }}\herramientas\construir\instalador_windows.iss"
 
       # Publicar en GitHub Release (NO artifact): los release assets no consumen
       # la cuota de almacenamiento de Actions. El release se conserva: NO se

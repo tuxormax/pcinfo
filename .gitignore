@@ -33,7 +33,7 @@ Thumbs.db
 backend/pcinfo-backend
 backend/pcinfo-backend.exe
 
-# instaladores/ es solo una carpeta LOCAL de salida de los scripts de construir/.
+# instaladores/ es solo una carpeta LOCAL de salida de los scripts de herramientas/construir/.
 # Los instaladores publicados viven en GitHub Releases (y ahi se quedan, no se
 # borran). Nada de esta carpeta va al repositorio.
 instaladores/
@@ -41,7 +41,7 @@ instaladores/
 # cache-macos/ guarda binarios de terceros bajados para armar el universal
 # (smartctl x86_64, ver construir_macos.sh). Son binarios, no codigo: se
 # descargan solos la primera vez que alguien construye en un Mac nuevo.
-construir/cache-macos/
+herramientas/construir/cache-macos/
 
 .claude/
 CLAUDE.md

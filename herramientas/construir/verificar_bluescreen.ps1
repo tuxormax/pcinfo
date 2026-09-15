@@ -7,10 +7,10 @@
 # C:\bluescreen.md y la pestana Historial de Errores acusan a drivers distintos
 # del mismo pantallazo, que es peor que no decir nada.
 #
-# Se corre solo en el workflow del instalador; a mano:  pwsh construir\verificar_bluescreen.ps1
+# Se corre solo en el workflow del instalador; a mano:  pwsh herramientas\construir\verificar_bluescreen.ps1
 
 $ErrorActionPreference = 'Stop'
-$raiz = Split-Path -Parent $PSScriptRoot
+$raiz = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)   # script en herramientas\construir\
 $bs   = Join-Path $raiz 'herramientas\bluescreen\bluescreen.ps1'
 $bat  = Join-Path $raiz 'herramientas\bluescreen\bluescreen.bat'
 $pci  = Join-Path $raiz 'backend\collector\errores_windows.ps1'

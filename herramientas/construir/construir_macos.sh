@@ -3,7 +3,7 @@
 # .app y un solo .dmg que corren en cualquier Mac) y lo deja listo para copiar,
 # pegar e instalar. SOLO corre en un Mac (Flutter para macOS exige Xcode).
 #
-# Uso:  bash construir/construir_macos.sh [--sin-dmg] [--refrescar-smartctl]
+# Uso:  bash herramientas/construir/construir_macos.sh [--sin-dmg] [--refrescar-smartctl]
 #
 # Qué deja en instaladores/ (carpeta local, no va al repositorio):
 #   PCInfo.app                        la aplicación lista para usar
@@ -26,14 +26,14 @@
 #     macOS). La salida: bajar DIRECTO la bottle x86_64 oficial de smartmontools
 #     desde el registro de bottles de Homebrew (ghcr.io, mismo sitio de donde
 #     `brew` los baja) sin pasar por `brew install`. Se cachea en
-#     construir/cache-macos/ para no volver a bajarla en cada build.
+#     herramientas/construir/cache-macos/ para no volver a bajarla en cada build.
 set -euo pipefail
 
-RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"   # script en herramientas/construir/
 APP_DIR="$RAIZ/pcinfo"
 BACK_DIR="$RAIZ/backend"
 SALIDA="$RAIZ/instaladores"
-CACHE="$RAIZ/construir/cache-macos"
+CACHE="$RAIZ/herramientas/construir/cache-macos"
 HACER_DMG=1
 REFRESCAR_SMARTCTL=0
 for arg in "$@"; do

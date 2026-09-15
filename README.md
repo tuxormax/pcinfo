@@ -54,7 +54,7 @@ Notas:
 - En Windows el requisito mínimo es **Windows 10**; Windows 7 y 8 no son compatibles.
 - La lectura de salud S.M.A.R.T. de los discos pide permisos de administrador/root; el resto del inventario funciona sin ellos.
 - La pestaña **Controladores** necesita administrador entera (respaldar y restaurar escriben en el sistema). Si PCInfo no lo tiene, la propia pestaña ofrece el botón *Reintentar como administrador*.
-- ¿Prefieres compilarlo tú mismo? Ver **[construir/LEEME.md](construir/LEEME.md)**.
+- ¿Prefieres compilarlo tú mismo? Ver **[herramientas/construir/LEEME.md](herramientas/construir/LEEME.md)**.
 
 ## Diagnosticar un equipo que ya no arranca
 
