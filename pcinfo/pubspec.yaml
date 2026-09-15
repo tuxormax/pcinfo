@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.7.0+46
+version: 1.9.0+47
 
 environment:
   sdk: ^3.9.2
@@ -39,6 +39,11 @@ dependencies:
   # Controladores: el respaldo suele ir a una USB para llevarlo a otro equipo,
   # así que la carpeta se elige SIEMPRE a mano.
   file_selector: ^1.0.3
+  # Pestaña Red: ping ICMP (diagnóstico de Internet) y consulta UPnP al
+  # router (WAN real, para detectar CGNAT). Mismas deps que RedScan (proyecto
+  # primo), que ya las prueba a diario en Linux.
+  dart_ping: ^9.0.1
+  upnp2: ^3.0.12
 
 dev_dependencies:
   flutter_test:

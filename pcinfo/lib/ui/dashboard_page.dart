@@ -11,6 +11,7 @@ import '../models/errores.dart';
 import '../models/hardware.dart';
 import '../models/incidencias.dart';
 import '../models/software.dart';
+import '../models/tienda.dart';
 import '../services/backend_http.dart';
 import '../services/arranques_service.dart';
 import '../services/bateria_service.dart';
@@ -18,7 +19,9 @@ import '../services/backend_launcher.dart';
 import '../services/controladores_service.dart';
 import '../services/errores_service.dart';
 import '../services/hardware_service.dart';
+import '../services/red_service.dart';
 import '../services/software_service.dart';
+import '../services/tienda_service.dart';
 import '../theme.dart';
 import '../utils/format.dart';
 import '../utils/report.dart';
@@ -27,7 +30,9 @@ import 'bateria_page.dart';
 import 'controladores_page.dart';
 import 'discos_page.dart';
 import 'errores_page.dart';
+import 'red_page.dart';
 import 'software_page.dart';
+import 'tienda_page.dart';
 import 'widgets/spec_card.dart';
 
 class DashboardPage extends StatefulWidget {
@@ -49,6 +54,12 @@ class DashboardPage extends StatefulWidget {
   /// Fuente de "Encendidos y apagados" (GET /arranques). Null = sin datos.
   final ArranquesService? arranquesService;
 
+  /// Fuente de la pestaña "Red" (GET /red). Null = pestaña sin datos.
+  final RedService? redService;
+
+  /// Fuente de la pestaña "Tienda Windows" (GET/POST /tienda).
+  final TiendaService? tiendaService;
+
   /// Launcher del backend. Solo se usa para "Reintentar como administrador"
   /// (Windows) cuando el SMART salió vacío por falta de elevación. Puede ser null
   /// (p. ej. en pruebas con el mock).
@@ -62,6 +73,8 @@ class DashboardPage extends StatefulWidget {
     this.controladoresService,
     this.bateriaService,
     this.arranquesService,
+    this.redService,
+    this.tiendaService,
     this.launcher,
   });
 
@@ -73,7 +86,8 @@ class _DashboardPageState extends State<DashboardPage> {
   late Future<HardwareInfo> _future;
 
   /// Pestaña activa: 0 = Hardware, 1 = Historial de Errores, 2 = Software,
-  /// 3 = Controladores, 4 = Batería, 5 = Discos, 6 = Encendidos.
+  /// 3 = Controladores, 4 = Batería, 5 = Discos, 6 = Encendidos, 7 = Red,
+  /// 8 = Tienda Windows.
   int _tab = 0;
 
   static const _tabHardwareIdx = 0;
@@ -83,6 +97,8 @@ class _DashboardPageState extends State<DashboardPage> {
   static const _tabBateriaIdx = 4;
   static const _tabDiscosIdx = 5;
   static const _tabArranquesIdx = 6;
+  static const _tabRedIdx = 7;
+  static const _tabTiendaIdx = 8;
 
   /// El historial de errores se pide SOLO al abrir su pestaña: en Windows
   /// recorre 30 días de registro de eventos y analiza los volcados, así que
@@ -94,6 +110,7 @@ class _DashboardPageState extends State<DashboardPage> {
   /// la Tienda tarda segundos, y listar los controladores lanza PowerShell.
   Future<SoftwareInfo>? _softwareFuture;
   Future<ControladoresInfo>? _controladoresFuture;
+  Future<TiendaInfo>? _tiendaFuture;
 
   /// La batería también: en Windows hay que pedirle a powercfg que genere su
   /// informe de batería, y eso se lleva unos segundos.
@@ -201,6 +218,12 @@ class _DashboardPageState extends State<DashboardPage> {
     }).catchError((Object _) {});
   }
 
+  void _cargaTienda() {
+    final svc = widget.tiendaService;
+    if (svc == null) return;
+    _tiendaFuture = svc.load();
+  }
+
   void _cargaBateria() {
     final svc = widget.bateriaService;
     if (svc == null) return;
@@ -288,6 +311,8 @@ class _DashboardPageState extends State<DashboardPage> {
         case _tabControladoresIdx:
           _controladores = null;
           _cargaControladores();
+        case _tabTiendaIdx:
+          _cargaTienda();
         case _tabBateriaIdx:
           _bateria = null;
           _cargaBateria();
@@ -315,6 +340,8 @@ class _DashboardPageState extends State<DashboardPage> {
           if (_softwareFuture == null) _cargaSoftware();
         case _tabControladoresIdx:
           if (_controladoresFuture == null) _cargaControladores();
+        case _tabTiendaIdx:
+          if (_tiendaFuture == null) _cargaTienda();
         case _tabBateriaIdx:
           if (_bateriaFuture == null) _cargaBateria();
         case _tabArranquesIdx:
@@ -344,6 +371,7 @@ class _DashboardPageState extends State<DashboardPage> {
         // Los controladores no se pueden ni LISTAR sin administrador: tras
         // elevar hay que volver a pedirlos o la pestaña seguiría vacía.
         if (_controladoresFuture != null) _cargaControladores();
+        if (_tiendaFuture != null) _cargaTienda();
       });
     } else {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -488,6 +516,8 @@ class _DashboardPageState extends State<DashboardPage> {
         _tabBateriaIdx => _tabBateria(),
         _tabDiscosIdx => _tabDiscos(),
         _tabArranquesIdx => _tabArranques(),
+        _tabRedIdx => _tabRed(),
+        _tabTiendaIdx => _tabTienda(),
         _ => _tabHardware(),
       };
 
@@ -707,6 +737,55 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
+  /// Pestaña "Tienda Windows": instala apps de la Microsoft Store. Mismo
+  /// patrón que Controladores (segundo módulo que escribe en el sistema):
+  /// necesita administrador y ofrece el mismo botón de elevar.
+  Widget _tabTienda() {
+    final svc = widget.tiendaService;
+    if (svc == null) {
+      return _mensajeCentrado(
+        Icons.help_outline_rounded,
+        'Tienda Windows no disponible',
+        'Esta ventana se abrió sin conexión al servicio de PCInfo.',
+      );
+    }
+    return FutureBuilder<TiendaInfo>(
+      future: _tiendaFuture,
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return _cargando('Leyendo el catálogo de la Tienda…');
+        }
+        if (snap.hasError) {
+          return _estadoFallo('No se pudo leer la Tienda Windows', snap.error);
+        }
+        final data = snap.data!;
+        return TiendaPage(
+          data: data,
+          service: svc,
+          onRecargar: () => setState(_cargaTienda),
+          avisoAccion: _botonElevar(data.supported && !data.elevated),
+        );
+      },
+    );
+  }
+
+  /// Pestaña "Red": diagnóstico de Internet y test de velocidad. Es la única
+  /// pestaña, junto con Controladores, con su propia gestión de estado (el
+  /// widget se encarga de leer /red y correr las pruebas por su cuenta): no
+  /// hay un "reporte" único que combinar con el resto, así que no participa
+  /// del botón Guardar global.
+  Widget _tabRed() {
+    final svc = widget.redService;
+    if (svc == null) {
+      return _mensajeCentrado(
+        Icons.help_outline_rounded,
+        'Red no disponible',
+        'Esta ventana se abrió sin conexión al servicio de PCInfo.',
+      );
+    }
+    return RedPage(service: svc);
+  }
+
   /// Botón "Reintentar como administrador" (solo Windows y solo si hay launcher).
   /// Todo el módulo de controladores escribe en el equipo y necesita elevación,
   /// así que sin este botón la pestaña sería un callejón sin salida.
@@ -831,6 +910,14 @@ class _DashboardPageState extends State<DashboardPage> {
             _tabBoton(_tabDiscosIdx, Icons.storage_rounded, 'Discos'),
             _tabBoton(_tabArranquesIdx, Icons.power_settings_new_rounded,
                 'Encendidos y apagados'),
+            _tabBoton(_tabRedIdx, Icons.lan_rounded, 'Red'),
+            // Solo Windows: a diferencia de Controladores (que sí se deja ver
+            // en Linux con su aviso "solo Windows"), aquí ni siquiera vale la
+            // pena mostrar el botón — instalar apps de la Tienda no existe
+            // como concepto fuera de Windows.
+            if (Platform.isWindows)
+              _tabBoton(
+                  _tabTiendaIdx, Icons.storefront_rounded, 'Tienda Windows'),
           ],
         ),
       ),
@@ -1031,6 +1118,10 @@ class _DashboardPageState extends State<DashboardPage> {
       _tabBateriaIdx => _bateria != null,
       _tabDiscosIdx => _hw != null && !_discosCargando,
       _tabArranquesIdx => _arranques != null,
+      // Red tiene su propio "Copiar diagnóstico"; Tienda no genera un
+      // reporte (es una tarea de instalación, no un inventario): ninguna
+      // participa del botón Guardar global.
+      _tabRedIdx || _tabTiendaIdx => false,
       // Hardware: hasta que llegue la salud de los discos el reporte saldría
       // sin S.M.A.R.T. y parecería que el equipo no la reporta.
       _ => _hw != null && !_discosCargando,

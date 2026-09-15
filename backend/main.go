@@ -56,11 +56,17 @@ func runServer(addr string) {
 	mux.HandleFunc("/arranques/diario", protege("/arranques/diario", handleDiarioPersistente))
 	mux.HandleFunc("/software", protege("/software", handleSoftware))
 	mux.HandleFunc("/bateria", protege("/bateria", handleBateria))
+	mux.HandleFunc("/red", protege("/red", handleRed))
 	mux.HandleFunc("/controladores", protege("/controladores", handleControladores))
 	mux.HandleFunc("/controladores/tarea", protege("/controladores/tarea", handleTarea))
 	mux.HandleFunc("/controladores/respaldar", protege("/controladores/respaldar", handleRespaldar))
 	mux.HandleFunc("/controladores/restaurar", protege("/controladores/restaurar", handleRestaurar))
 	mux.HandleFunc("/controladores/cancelar", protege("/controladores/cancelar", handleCancelar))
+	mux.HandleFunc("/tienda", protege("/tienda", handleTienda))
+	mux.HandleFunc("/tienda/buscar", protege("/tienda/buscar", handleTiendaBuscar))
+	mux.HandleFunc("/tienda/instalar", protege("/tienda/instalar", handleTiendaInstalar))
+	mux.HandleFunc("/tienda/tarea", protege("/tienda/tarea", handleTiendaTarea))
+	mux.HandleFunc("/tienda/cancelar", protege("/tienda/cancelar", handleTiendaCancelar))
 	mux.HandleFunc("/healthz", handleHealth)
 
 	srv := &http.Server{
@@ -215,6 +221,13 @@ func handleBateria(w http.ResponseWriter, _ *http.Request) {
 	responde(w, "/bateria", collector.CollectBattery())
 }
 
+// handleRed sirve lo único que el diagnóstico de red necesita del sistema
+// operativo: la IP local y la puerta de enlace. El resto de las pruebas
+// (ping, DNS, velocidad, UPnP) las hace la GUI directamente por socket.
+func handleRed(w http.ResponseWriter, _ *http.Request) {
+	responde(w, "/red", collector.CollectRed())
+}
+
 // handleControladores sirve el inventario de controladores de terceros y redes
 // WiFi guardadas (pestaña "Controladores"). Solo Windows: en Linux responde con
 // Supported=false y el motivo.
@@ -265,6 +278,58 @@ func handleCancelar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	responde(w, "/controladores/cancelar", map[string]any{"ok": collector.CancelaTarea()})
+}
+
+// handleTienda sirve el catálogo de apps y si se puede instalar (pestaña
+// "Tienda Windows"). Solo Windows: en el resto responde Supported=false.
+func handleTienda(w http.ResponseWriter, _ *http.Request) {
+	responde(w, "/tienda", collector.CollectTienda())
+}
+
+// handleTiendaBuscar consulta el buscador de la Store por nombre (?q=...).
+func handleTiendaBuscar(w http.ResponseWriter, r *http.Request) {
+	apps, err := collector.BuscarTienda(r.URL.Query().Get("q"))
+	if err != nil {
+		fallo(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	responde(w, "/tienda/buscar", map[string]any{"apps": apps})
+}
+
+// handleTiendaTarea informa del avance de la instalación en curso (o de la
+// última). La GUI lo consulta cada segundo mientras corre.
+func handleTiendaTarea(w http.ResponseWriter, _ *http.Request) {
+	responde(w, "/tienda/tarea", collector.EstadoTareaTienda())
+}
+
+// handleTiendaInstalar arranca la instalación y devuelve su estado inicial.
+// POR POST a propósito, como Controladores: instalar software no es algo que
+// deba pasar por accidente con un GET.
+func handleTiendaInstalar(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		fallo(w, http.StatusMethodNotAllowed, "esta operación necesita POST")
+		return
+	}
+	var p collector.PeticionInstalar
+	if err := json.NewDecoder(io.LimitReader(r.Body, 256*1024)).Decode(&p); err != nil {
+		fallo(w, http.StatusBadRequest, "no se entendió la petición: "+err.Error())
+		return
+	}
+	info, err := collector.IniciaInstalacion(p)
+	if err != nil {
+		fallo(w, http.StatusConflict, err.Error())
+		return
+	}
+	responde(w, "/tienda/instalar", info)
+}
+
+// handleTiendaCancelar aborta la instalación en curso.
+func handleTiendaCancelar(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		fallo(w, http.StatusMethodNotAllowed, "esta operación necesita POST")
+		return
+	}
+	responde(w, "/tienda/cancelar", map[string]any{"ok": collector.CancelaTareaTienda()})
 }
 
 // fallo responde un error de negocio en el MISMO formato que usa protege() para

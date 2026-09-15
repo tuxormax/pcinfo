@@ -5,7 +5,9 @@ import 'services/bateria_service.dart';
 import 'services/controladores_service.dart';
 import 'services/errores_service.dart';
 import 'services/hardware_service.dart';
+import 'services/red_service.dart';
 import 'services/software_service.dart';
+import 'services/tienda_service.dart';
 import 'theme.dart';
 import 'ui/dashboard_page.dart';
 
@@ -65,6 +67,8 @@ class _PcInfoAppState extends State<PcInfoApp> with WidgetsBindingObserver {
         controladoresService: HttpControladoresService(),
         bateriaService: HttpBateriaService(),
         arranquesService: HttpArranquesService(),
+        redService: HttpRedService(),
+        tiendaService: HttpTiendaService(),
         launcher: widget.launcher,
       ),
     );
