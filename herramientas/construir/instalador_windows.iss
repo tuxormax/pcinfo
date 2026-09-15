@@ -10,16 +10,16 @@
   #define AppVer "1.1"
 #endif
 #ifndef SourceFlutter
-  #define SourceFlutter "..\pcinfo\build\windows\x64\runner\Release"
+  #define SourceFlutter "..\..\pcinfo\build\windows\x64\runner\Release"
 #endif
 #ifndef SourceBackend
-  #define SourceBackend "..\backend\pcinfo-backend.exe"
+  #define SourceBackend "..\..\backend\pcinfo-backend.exe"
 #endif
 #ifndef SourceSmartctl
-  #define SourceSmartctl "..\backend\smartctl.exe"
+  #define SourceSmartctl "..\..\backend\smartctl.exe"
 #endif
 #ifndef SourceDrivedb
-  #define SourceDrivedb "..\backend\drivedb.h"
+  #define SourceDrivedb "..\..\backend\drivedb.h"
 #endif
 #ifndef OutDir
   #define OutDir "."
@@ -63,8 +63,8 @@ Source: "{#SourceDrivedb}"; DestDir: "{app}"; DestName: "drivedb.h"; Flags: igno
 ; C:\bluescreen.md y, sobre todo, garantiza que Windows llegue a crear el .dmp:
 ; sin volcado, el análisis del culpable de la pestaña Historial de Errores no
 ; tiene nada que leer (caso real: 32 pantallazos y solo 5 volcados).
-Source: "..\herramientas\bluescreen\bluescreen.ps1"; DestDir: "{app}\bluescreen"; Flags: ignoreversion
-Source: "..\herramientas\bluescreen\bluescreen.bat"; DestDir: "{app}\bluescreen"; Flags: ignoreversion
+Source: "..\..\herramientas\bluescreen\bluescreen.ps1"; DestDir: "{app}\bluescreen"; Flags: ignoreversion
+Source: "..\..\herramientas\bluescreen\bluescreen.bat"; DestDir: "{app}\bluescreen"; Flags: ignoreversion
 #ifdef VcRedist
 ; Runtime de Visual C++ empaquetado (la app no arranca sin VCRUNTIME140).
 Source: "{#VcRedist}"; DestDir: "{tmp}"; Flags: deleteafterinstall
