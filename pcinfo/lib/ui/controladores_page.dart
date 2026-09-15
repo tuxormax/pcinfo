@@ -90,6 +90,14 @@ class _ControladoresPageState extends State<ControladoresPage> {
             _panelTarea(_tarea!),
             const SizedBox(height: 14),
           ],
+          // Va PRIMERA, aunque sea la única tarjeta que no hace nada: es la
+          // pregunta con la que el usuario abre esta pestaña ("¿por qué me sale
+          // un dispositivo sin controlador?"), y además es lo único que
+          // funciona sin administrador.
+          if (d.available) ...[
+            _tarjetaPendientes(d),
+            const SizedBox(height: 14),
+          ],
           _tarjetaControladores(d),
           const SizedBox(height: 14),
           _tarjetaWifi(d),
@@ -170,6 +178,119 @@ class _ControladoresPageState extends State<ControladoresPage> {
             child: SelectableText(texto,
                 style: const TextStyle(color: AppColors.textHi, fontSize: kFont)),
           ),
+        ],
+      ),
+    );
+  }
+
+  // ---- Tarjeta de dispositivos sin controlador (solo lectura) ----
+
+  /// Dispositivos que Windows marca con un problema, con la explicación del
+  /// catálogo cuando el caso se reconoce.
+  ///
+  /// NO tiene botones a propósito: aquí no se instala nada. Es la contraparte
+  /// informativa del "triángulo amarillo" del Administrador de dispositivos,
+  /// que en un equipo bien atendido suele ser algo que se dejó así a conciencia.
+  Widget _tarjetaPendientes(ControladoresInfo d) {
+    final explicados = d.pendientesExplicados.length;
+    final subtitulo = d.pendientes.isEmpty
+        ? 'Ningún dispositivo del equipo está sin controlador'
+        : '${d.pendientes.length} con aviso'
+            '${explicados > 0 ? ' · $explicados con explicación' : ''}';
+
+    return _Tarjeta(
+      icono: Icons.help_outline_rounded,
+      color: AppColors.gpu,
+      titulo: 'Dispositivos sin controlador',
+      subtitulo: subtitulo,
+      acciones: const [],
+      hijo: d.pendientes.isEmpty
+          ? _nota('Windows no marca ningún dispositivo como sin controlador, '
+              'deshabilitado ni detenido.')
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _nota('Esta lista solo informa: PCInfo no instala ni quita '
+                    'nada. Varios de estos avisos son normales porque el '
+                    'componente se dejó así a propósito.'),
+                const SizedBox(height: 10),
+                ...d.pendientes.map(_filaPendiente),
+              ],
+            ),
+    );
+  }
+
+  Widget _filaPendiente(DispositivoPendiente p) {
+    final caso = p.conocido;
+    final detalle = <String>[
+      if (p.clase.isNotEmpty) p.clase,
+      p.estado,
+    ].join(' · ');
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SelectableText(p.nombre,
+              style: const TextStyle(
+                  color: AppColors.textHi,
+                  fontSize: kFont,
+                  fontWeight: FontWeight.w600)),
+          Text(detalle,
+              style:
+                  const TextStyle(color: AppColors.textLow, fontSize: kFont)),
+          if (p.hardwareId.isNotEmpty)
+            SelectableText(p.hardwareId,
+                style: const TextStyle(
+                    color: AppColors.textLow, fontSize: kFont)),
+          if (caso != null) ...[
+            const SizedBox(height: 6),
+            _explicacion(caso),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _explicacion(CasoConocido caso) {
+    final color = caso.intencional ? AppColors.accent : _ambar;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 11, 14, 11),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.40)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                  caso.intencional
+                      ? Icons.verified_outlined
+                      : Icons.build_outlined,
+                  size: 16,
+                  color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text('${caso.titular} — ${caso.nombre}',
+                    style: TextStyle(
+                        color: color,
+                        fontSize: kFont,
+                        fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          SelectableText(caso.descripcion,
+              style: const TextStyle(
+                  color: AppColors.textMid, fontSize: kFont, height: 1.4)),
+          const SizedBox(height: 4),
+          SelectableText(caso.motivo,
+              style: const TextStyle(
+                  color: AppColors.textHi, fontSize: kFont, height: 1.4)),
         ],
       ),
     );

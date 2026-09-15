@@ -26,7 +26,10 @@ import (
 var placasEmbebidas []byte
 
 // urlCatalogo es el catálogo publicado en el repo (rama main).
-const urlCatalogo = "https://raw.githubusercontent.com/tuxormax/pcinfo/main/backend/collector/placas.json"
+const (
+	archivoPlacas = "placas.json"
+	urlCatalogo   = "https://raw.githubusercontent.com/tuxormax/pcinfo/main/backend/collector/" + archivoPlacas
+)
 
 // PlacaSpec es una fila del catálogo. Ranuras y MaxGiB en 0 = dato desconocido
 // (no se sobrescribe lo que dijo el firmware).
@@ -79,10 +82,10 @@ func cargaCatalogo() {
 	catalogo = map[string]PlacaSpec{}
 	indexa(placasEmbebidas)
 
-	if b, err := os.ReadFile(rutaCache()); err == nil {
+	if b, err := os.ReadFile(rutaCache(archivoPlacas)); err == nil {
 		indexa(b) // la versión descargada pisa a la embebida
 	}
-	go refrescaCatalogo()
+	go refrescaArchivo(urlCatalogo, rutaCache(archivoPlacas), placasValidas)
 }
 
 // indexa agrega las filas de un JSON al catálogo. Un JSON corrupto se ignora en
@@ -176,27 +179,31 @@ func buscaPlaca(fabricante, modelo string) (PlacaSpec, bool) {
 	return p, ok
 }
 
-// rutaCache es donde se guarda el catálogo descargado
-// (~/.cache/pcinfo/placas.json en Linux, %LOCALAPPDATA%\pcinfo\ en Windows).
-func rutaCache() string {
+// rutaCache es donde se guarda un catálogo descargado
+// (~/.cache/pcinfo/<nombre> en Linux, %LOCALAPPDATA%\pcinfo\ en Windows).
+func rutaCache(nombre string) string {
 	dir, err := os.UserCacheDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(dir, "pcinfo", "placas.json")
+	return filepath.Join(dir, "pcinfo", nombre)
 }
 
-// refrescaCatalogo baja el catálogo del repo y lo guarda en caché para el
-// próximo arranque. Best-effort: sin internet, con timeout o con un JSON
+func placasValidas(b []byte) bool {
+	var placas []PlacaSpec
+	return json.Unmarshal(b, &placas) == nil && len(placas) > 0
+}
+
+// refrescaArchivo baja un catálogo del repo y lo guarda en caché para el
+// próximo arranque. Best-effort: sin internet, con timeout o con un archivo
 // inválido simplemente no hace nada — nunca bloquea ni ensucia la caché con
-// basura (por eso valida el JSON antes de escribirlo).
-func refrescaCatalogo() {
-	ruta := rutaCache()
+// basura (por eso lo valida antes de escribirlo).
+func refrescaArchivo(url, ruta string, valido func([]byte) bool) {
 	if ruta == "" {
 		return
 	}
 	cli := &http.Client{Timeout: 5 * time.Second}
-	resp, err := cli.Get(urlCatalogo)
+	resp, err := cli.Get(url)
 	if err != nil {
 		return // sin internet: se sigue usando el catálogo embebido
 	}
@@ -205,11 +212,7 @@ func refrescaCatalogo() {
 		return
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20)) // tope 8 MB
-	if err != nil {
-		return
-	}
-	var placas []PlacaSpec
-	if err := json.Unmarshal(b, &placas); err != nil || len(placas) == 0 {
+	if err != nil || !valido(b) {
 		return
 	}
 	if err := os.MkdirAll(filepath.Dir(ruta), 0o755); err != nil {

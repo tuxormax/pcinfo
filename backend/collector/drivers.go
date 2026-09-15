@@ -77,6 +77,25 @@ type WifiProfile struct {
 	Password string `json:"password"` // vacío si no se pudo leer (hace falta admin)
 }
 
+// DispositivoPendiente es un aparato que Windows marca con un problema: sin
+// controlador instalado (código 28), deshabilitado (22), detenido (43)…
+//
+// Es información de SOLO LECTURA: PCInfo no instala nada aquí. Está para que el
+// usuario que ve un triángulo amarillo sepa qué es ese aparato y, si es un caso
+// conocido del catálogo, que se dejó así a propósito.
+type DispositivoPendiente struct {
+	Nombre     string `json:"nombre"`     // como lo llama Windows
+	Clase      string `json:"clase"`      // Media, Net, Sistema… vacío = desconocido
+	InstanceID string `json:"instanceId"` // PCI\VEN_10EC&DEV_5227\…
+	HardwareID string `json:"hardwareId"` // el primero, para enseñarlo
+	Codigo     int    `json:"codigo"`     // ConfigManagerErrorCode
+	Estado     string `json:"estado"`     // el código, ya redactado
+
+	// Conocido es la explicación del catálogo, si este dispositivo coincide con
+	// un caso conocido. Vacío = no se reconoce (que es lo normal).
+	Conocido *CasoConocido `json:"conocido,omitempty"`
+}
+
 // DriversReport es la respuesta de GET /controladores.
 type DriversReport struct {
 	OS        string        `json:"os"`
@@ -86,6 +105,9 @@ type DriversReport struct {
 	Reason    string        `json:"reason"`    // aviso o motivo del fallo
 	Drivers   []DriverItem  `json:"drivers"`
 	Wifi      []WifiProfile `json:"wifi"`
+	// Pendientes NO necesita administrador, al revés que el resto del módulo:
+	// sale aunque el inventario de controladores venga vacío.
+	Pendientes []DispositivoPendiente `json:"pendientes"`
 }
 
 // PasoTarea es una línea del registro de avance de una tarea.
@@ -135,6 +157,9 @@ func CollectDrivers() DriversReport {
 	}
 	if rep.Wifi == nil {
 		rep.Wifi = []WifiProfile{}
+	}
+	if rep.Pendientes == nil {
+		rep.Pendientes = []DispositivoPendiente{}
 	}
 	if rep.OS == "" {
 		rep.OS = runtime.GOOS

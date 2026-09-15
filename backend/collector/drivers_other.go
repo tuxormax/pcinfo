@@ -15,16 +15,23 @@ import (
 //
 // Las redes WiFi de Linux (NetworkManager) SÍ se podrían respaldar; se dejó
 // fuera del alcance de esta entrega. Ver la tabla de paridad de la memoria.
+//
+// Los DISPOSITIVOS SIN CONTROLADOR (Pendientes) tampoco aplican fuera de
+// Windows, y no por falta de alcance: no existe el equivalente. Un módulo del
+// kernel o está cargado o no, sin un "código 28" que enseñar, y el catálogo de
+// casos conocidos es de drivers de Windows de punta a punta.
 
 func estadoControladores() DriversReport {
 	return DriversReport{
-		OS:        runtime.GOOS,
-		Supported: false,
-		Elevated:  isElevated(),
-		Drivers:   []DriverItem{},
-		Wifi:      []WifiProfile{},
+		OS:         runtime.GOOS,
+		Supported:  false,
+		Elevated:   isElevated(),
+		Drivers:    []DriverItem{},
+		Wifi:       []WifiProfile{},
+		Pendientes: []DispositivoPendiente{},
 		Reason: "El respaldo de controladores es exclusivo de Windows: en " + runtime.GOOS +
-			" los controladores vienen en el kernel y los gestiona la propia distribución.",
+			" los controladores vienen en el kernel y los gestiona la propia distribución, " +
+			"y tampoco hay dispositivos «sin controlador» que explicar.",
 	}
 }
 

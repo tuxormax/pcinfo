@@ -28,21 +28,25 @@ var scriptDrivers []byte
 // exportación temporal de las redes WiFi es inmediata.
 const timeoutInventarioDrivers = 90 * time.Second
 
-// inventarioCrudo es lo que devuelve drivers_windows.ps1 -Accion Listar.
+// inventarioCrudo es lo que devuelve drivers_windows.ps1 -Accion Listar. En
+// Pendientes el script solo llena lo que sabe Windows; el estado redactado y el
+// cruce con el catálogo se hacen aquí.
 type inventarioCrudo struct {
-	Elevated bool          `json:"elevated"`
-	Reason   string        `json:"reason"`
-	Drivers  []DriverItem  `json:"drivers"`
-	Wifi     []WifiProfile `json:"wifi"`
+	Elevated   bool                   `json:"elevated"`
+	Reason     string                 `json:"reason"`
+	Drivers    []DriverItem           `json:"drivers"`
+	Wifi       []WifiProfile          `json:"wifi"`
+	Pendientes []DispositivoPendiente `json:"pendientes"`
 }
 
 func estadoControladores() DriversReport {
 	rep := DriversReport{
-		OS:        "windows",
-		Supported: true,
-		Elevated:  isElevated(),
-		Drivers:   []DriverItem{},
-		Wifi:      []WifiProfile{},
+		OS:         "windows",
+		Supported:  true,
+		Elevated:   isElevated(),
+		Drivers:    []DriverItem{},
+		Wifi:       []WifiProfile{},
+		Pendientes: []DispositivoPendiente{},
 	}
 
 	salida, err := os.CreateTemp("", "pcinfo-drivers-*.json")
@@ -83,6 +87,7 @@ func estadoControladores() DriversReport {
 	if crudo.Wifi != nil {
 		rep.Wifi = crudo.Wifi
 	}
+	rep.Pendientes = explicaPendientes(crudo.Pendientes)
 	// Sin administrador netsh exporta los perfiles pero NO las contraseñas: se
 	// avisa para que nadie crea que el respaldo servirá para restaurar.
 	if !rep.Elevated && rep.Reason == "" {

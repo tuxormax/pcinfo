@@ -71,6 +71,93 @@ class WifiProfile {
   bool get abierta => auth.toLowerCase() == 'open';
 }
 
+/// Qué se hace con un componente del catálogo de casos conocidos.
+class ViaCaso {
+  static const quitar = 'quitar'; // no se le pone controlador: se quita
+  static const generico = 'generico'; // se deja el de Microsoft a propósito
+  static const fabricante = 'fabricante'; // hace falta uno concreto
+}
+
+/// Explicación de catálogo para un dispositivo que aparece sin controlador.
+/// Espejo de CasoConocido (backend/collector/casos_conocidos.go).
+class CasoConocido {
+  final String id;
+  final String nombre;
+  final String descripcion; // qué ES el aparato, en llano
+  final String via; // ver ViaCaso
+  final String motivo; // por qué está así
+  final String fuente;
+
+  const CasoConocido({
+    this.id = '',
+    this.nombre = '',
+    this.descripcion = '',
+    this.via = '',
+    this.motivo = '',
+    this.fuente = '',
+  });
+
+  factory CasoConocido.fromJson(Map<String, dynamic> j) => CasoConocido(
+        id: j['id'] ?? '',
+        nombre: j['nombre'] ?? '',
+        descripcion: j['descripcion'] ?? '',
+        via: j['via'] ?? '',
+        motivo: j['motivo'] ?? '',
+        fuente: j['fuente'] ?? '',
+      );
+
+  /// Titular de la explicación. Las dos primeras vías dicen "está bien así";
+  /// la tercera dice que de verdad falta algo, y por eso se pinta distinto.
+  String get titular {
+    switch (via) {
+      case ViaCaso.quitar:
+        return 'Está así a propósito';
+      case ViaCaso.generico:
+        return 'Usa el controlador de Windows a propósito';
+      default:
+        return 'Le falta un controlador concreto';
+    }
+  }
+
+  /// ¿Es un "no te preocupes" o un "esto sí hay que atender"?
+  bool get intencional => via == ViaCaso.quitar || via == ViaCaso.generico;
+}
+
+/// Dispositivo que Windows marca con un problema (sin controlador,
+/// deshabilitado, detenido). SOLO LECTURA: PCInfo no instala nada aquí.
+class DispositivoPendiente {
+  final String nombre;
+  final String clase; // vacío = Windows no sabe ni qué es
+  final String instanceId;
+  final String hardwareId;
+  final int codigo; // el "Código 28" del Administrador de dispositivos
+  final String estado; // ese código, ya redactado
+  final CasoConocido? conocido; // null = no se reconoce (lo normal)
+
+  const DispositivoPendiente({
+    this.nombre = '',
+    this.clase = '',
+    this.instanceId = '',
+    this.hardwareId = '',
+    this.codigo = 0,
+    this.estado = '',
+    this.conocido,
+  });
+
+  factory DispositivoPendiente.fromJson(Map<String, dynamic> j) =>
+      DispositivoPendiente(
+        nombre: j['nombre'] ?? '',
+        clase: j['clase'] ?? '',
+        instanceId: j['instanceId'] ?? '',
+        hardwareId: j['hardwareId'] ?? '',
+        codigo: (j['codigo'] ?? 0) as int,
+        estado: j['estado'] ?? '',
+        conocido: j['conocido'] == null
+            ? null
+            : CasoConocido.fromJson(j['conocido'] as Map<String, dynamic>),
+      );
+}
+
 class ControladoresInfo {
   final String os;
   final bool supported; // ¿el módulo existe en este sistema? (solo Windows)
@@ -80,6 +167,10 @@ class ControladoresInfo {
   final List<DriverItem> drivers;
   final List<WifiProfile> wifi;
 
+  /// Dispositivos con problema. A diferencia del resto del módulo, esto NO
+  /// necesita administrador: sale aunque la lista de controladores venga vacía.
+  final List<DispositivoPendiente> pendientes;
+
   const ControladoresInfo({
     this.os = '',
     this.supported = false,
@@ -88,6 +179,7 @@ class ControladoresInfo {
     this.reason = '',
     this.drivers = const [],
     this.wifi = const [],
+    this.pendientes = const [],
   });
 
   factory ControladoresInfo.fromJson(Map<String, dynamic> j) =>
@@ -105,11 +197,20 @@ class ControladoresInfo {
                 ?.map((e) => WifiProfile.fromJson(e as Map<String, dynamic>))
                 .toList() ??
             const [],
+        pendientes: (j['pendientes'] as List?)
+                ?.map((e) =>
+                    DispositivoPendiente.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            const [],
       );
 
   /// ¿Se puede respaldar/restaurar ya mismo? Todo el módulo escribe en el
   /// sistema y necesita administrador.
   bool get puedeOperar => supported && elevated;
+
+  /// Los dispositivos con problema que el catálogo sabe explicar.
+  List<DispositivoPendiente> get pendientesExplicados =>
+      pendientes.where((d) => d.conocido != null).toList();
 }
 
 class PasoTarea {

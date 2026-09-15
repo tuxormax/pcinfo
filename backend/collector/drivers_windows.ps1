@@ -94,12 +94,44 @@ function LeeControladores {
     return , @($controladores)
 }
 
+# Dispositivos que Windows marca con un problema: sin controlador instalado
+# (codigo 28), deshabilitados (22), detenidos (43)... Es lo que en el
+# Administrador de dispositivos sale con el triangulo amarillo.
+#
+# NO necesita administrador, al reves que el resto de este script: sale aunque
+# la lista de controladores venga vacia por falta de permisos.
+#
+# Se usa Win32_PnPEntity y no Get-PnpDevice porque ya trae el arreglo HardwareID
+# en la MISMA consulta: con Get-PnpDevice habria que pedir los IDs uno por uno
+# con Get-PnpDeviceProperty, y eso son cientos de consultas WMI en un equipo
+# viejo. El ID de hardware es ademas la unica via de reconocimiento que no
+# depende del idioma de Windows.
+function LeePendientes {
+    $pendientes = New-Object System.Collections.ArrayList
+    foreach ($aparato in @(Get-CimInstance -ClassName Win32_PnPEntity -ErrorAction SilentlyContinue)) {
+        $codigo = [int]$aparato.ConfigManagerErrorCode
+        if ($codigo -eq 0) { continue }
+        # 45 = el aparato no esta conectado ahora mismo. Es el rastro de algo que
+        # se desconecto (una USB, un dock), no un problema que explicar.
+        if ($codigo -eq 45) { continue }
+        [void]$pendientes.Add([pscustomobject][ordered]@{
+            nombre     = [string]$aparato.Name
+            clase      = [string]$aparato.PNPClass
+            instanceId = [string]$aparato.DeviceID
+            hardwareId = ([string]::Join(' ', @($aparato.HardwareID)))
+            codigo     = $codigo
+        })
+    }
+    return , @($pendientes)
+}
+
 function Inventario {
     $reporte = [ordered]@{
-        elevated = $false
-        drivers  = @()
-        wifi     = @()
-        reason   = ''
+        elevated   = $false
+        drivers    = @()
+        wifi       = @()
+        pendientes = @()
+        reason     = ''
     }
     $identidad = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
     $reporte.elevated = $identidad.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -115,6 +147,9 @@ function Inventario {
     }
     try {
         $reporte.wifi = LeeRedes
+    } catch { }
+    try {
+        $reporte.pendientes = LeePendientes
     } catch { }
 
     $texto = ([pscustomobject]$reporte) | ConvertTo-Json -Depth 5 -Compress

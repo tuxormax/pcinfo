@@ -806,6 +806,8 @@ String buildControladoresMarkdown(ControladoresInfo ctl, String equipo) {
       ..writeln();
   }
 
+  _pendientesMarkdown(b, ctl);
+
   b
     ..writeln('## Controladores de terceros (${ctl.drivers.length})')
     ..writeln();
@@ -860,6 +862,54 @@ String buildControladoresMarkdown(ControladoresInfo ctl, String equipo) {
   }
   b.writeln();
   return b.toString();
+}
+
+/// Sección de dispositivos con problema. Va ANTES que los controladores porque
+/// es lo que se lleva el técnico a leer: qué le falta al equipo y qué de eso
+/// está así a propósito.
+void _pendientesMarkdown(StringBuffer b, ControladoresInfo ctl) {
+  if (!ctl.supported) return;
+
+  b
+    ..writeln('## Dispositivos sin controlador (${ctl.pendientes.length})')
+    ..writeln();
+  if (ctl.pendientes.isEmpty) {
+    b
+      ..writeln(
+        '_Ninguno: Windows no marca ningún dispositivo como sin controlador, '
+        'deshabilitado ni detenido._',
+      )
+      ..writeln();
+    return;
+  }
+
+  b
+    ..writeln('| Dispositivo | Tipo | Qué le pasa | ID de hardware |')
+    ..writeln('| --- | --- | --- | --- |');
+  for (final p in ctl.pendientes) {
+    b.writeln(
+      '| ${_md(p.nombre)} | ${_md(p.clase)} | ${_md(p.estado)} | '
+      '${_md(p.hardwareId)} |',
+    );
+  }
+  b.writeln();
+
+  final explicados = ctl.pendientesExplicados;
+  if (explicados.isEmpty) return;
+
+  b
+    ..writeln('### De estos, ${explicados.length} son casos conocidos')
+    ..writeln();
+  for (final p in explicados) {
+    final caso = p.conocido!;
+    b
+      ..writeln('**${_md(p.nombre)} — ${_md(caso.titular)}: ${_md(caso.nombre)}**')
+      ..writeln()
+      ..writeln('- ${_md(caso.descripcion)}')
+      ..writeln('- ${_md(caso.motivo)}')
+      ..writeln('- _Fuente: ${_md(caso.fuente)}_')
+      ..writeln();
+  }
 }
 
 /// Escapa lo que rompería una celda de tabla Markdown: la barra vertical la
