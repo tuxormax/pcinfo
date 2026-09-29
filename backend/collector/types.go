@@ -115,6 +115,7 @@ type MemoryInfo struct {
 	// SMBIOS, que en algunas placas MIENTE (ranuras fantasma) → la GUI lo marca
 	// con un aviso "según firmware" para no engañar en placas no catalogadas.
 	SlotsVerified bool        `json:"slotsVerified"`
+	SolderedBytes int64       `json:"solderedBytes"` // RAM soldada (0 si no hay); con Soldered=false es un equipo mixto
 	Modules       []MemModule `json:"modules"`
 }
 

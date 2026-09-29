@@ -24,6 +24,7 @@ func collectMemory(board BoardInfo) MemoryInfo {
 	// Detalle de ranuras/módulos por plataforma (Linux: dmidecode; Windows: WMI).
 	// Si falla, la ficha muestra solo los totales.
 	enrichMemory(&out)
+	marcaSoldadas(&out)
 
 	// El catálogo de placas manda sobre el firmware: es un dato verificado
 	// contra la hoja de datos del fabricante.
@@ -37,8 +38,8 @@ func collectMemory(board BoardInfo) MemoryInfo {
 	}
 
 	// Nunca menos ranuras que módulos instalados.
-	if len(out.Modules) > out.TotalSlots {
-		out.TotalSlots = len(out.Modules)
+	if n := modulosEnRanura(out.Modules); n > out.TotalSlots {
+		out.TotalSlots = n
 	}
 	return out
 }
@@ -115,6 +116,66 @@ func parseSpeed(s string) int {
 		return 0
 	}
 	return n
+}
+
+// formatoSoldado es el formato con el que se etiqueta la RAM soldada.
+const formatoSoldado = "Row Of Chips"
+
+// formatoDesconocido dice si el firmware no declaró el tamaño del módulo.
+func formatoDesconocido(ff string) bool {
+	switch strings.ToLower(strings.TrimSpace(ff)) {
+	case "", "unknown", "other", "desconocido":
+		return true
+	}
+	return false
+}
+
+// modulosEnRanura cuenta los módulos que sí van en una ranura (no soldados).
+func modulosEnRanura(mods []MemModule) int {
+	n := 0
+	for _, m := range mods {
+		if !isSoldered(m.FormFactor) {
+			n++
+		}
+	}
+	return n
+}
+
+// marcaSoldadas detecta la RAM soldada que el firmware no declara como "Row of
+// chips" (caso Lenovo: un SODIMM real + 4 GiB soldados sin formato). Si hay al
+// menos un módulo en ranura (DIMM/SODIMM) y otro sin formato, el segundo es
+// soldado: no cuenta como ranura. Soldered queda en true solo si TODA la RAM es
+// soldada; la mezcla se ve por SolderedBytes.
+func marcaSoldadas(out *MemoryInfo) {
+	if len(out.Modules) == 0 {
+		return
+	}
+	enRanura := false
+	for _, m := range out.Modules {
+		if !formatoDesconocido(m.FormFactor) && !isSoldered(m.FormFactor) {
+			enRanura = true
+		}
+	}
+	if enRanura {
+		for i := range out.Modules {
+			if formatoDesconocido(out.Modules[i].FormFactor) {
+				out.Modules[i].FormFactor = formatoSoldado
+			}
+		}
+	}
+	out.SolderedBytes = 0
+	nSold := 0
+	for _, m := range out.Modules {
+		if isSoldered(m.FormFactor) {
+			out.SolderedBytes += m.SizeBytes
+			nSold++
+		}
+	}
+	out.Soldered = nSold == len(out.Modules)
+	// Mezcla: los soldados también ocupan un registro Type 17; se descuentan.
+	if nSold > 0 && !out.Soldered && out.TotalSlots >= nSold {
+		out.TotalSlots -= nSold
+	}
 }
 
 func isSoldered(formFactor string) bool {

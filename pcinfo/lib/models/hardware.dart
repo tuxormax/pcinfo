@@ -478,7 +478,8 @@ class MemoryInfo {
   final int usableBytes;
   final int totalSlots; // ranuras físicas (DMI Tipo 16). 0 = desconocido.
   final int maxCapacityBytes; // capacidad máxima soportada por la placa
-  final bool soldered; // true si la RAM está soldada (no ampliable)
+  final bool soldered; // true si TODA la RAM está soldada (no ampliable)
+  final int solderedBytes; // RAM soldada; con soldered=false es un equipo mixto
   final bool slotsVerified; // true = ranuras/máx del catálogo verificado; false = del firmware (puede mentir)
   final List<MemModule> modules; // solo ranuras ocupadas
 
@@ -489,11 +490,19 @@ class MemoryInfo {
     this.totalSlots = 0,
     this.maxCapacityBytes = 0,
     this.soldered = false,
+    this.solderedBytes = 0,
     this.slotsVerified = false,
   });
 
+  /// Módulos que van en una ranura real (los soldados no cuentan).
+  List<MemModule> get slotModules =>
+      modules.where((m) => !m.isSoldered).toList();
+
+  /// Hay RAM soldada junto a ranuras reales.
+  bool get mixed => !soldered && solderedBytes > 0;
+
   /// Ranuras libres (si se conoce el total). -1 si se desconoce.
-  int get freeSlots => totalSlots > 0 ? totalSlots - modules.length : -1;
+  int get freeSlots => totalSlots > 0 ? totalSlots - slotModules.length : -1;
 
   factory MemoryInfo.fromJson(Map<String, dynamic> j) => MemoryInfo(
         totalBytes: (j['totalBytes'] ?? 0) as int,
@@ -501,6 +510,7 @@ class MemoryInfo {
         totalSlots: (j['totalSlots'] ?? 0) as int,
         maxCapacityBytes: (j['maxCapacityBytes'] ?? 0) as int,
         soldered: j['soldered'] ?? false,
+        solderedBytes: (j['solderedBytes'] ?? 0) as int,
         slotsVerified: j['slotsVerified'] ?? false,
         modules: (j['modules'] as List?)
                 ?.map((e) => MemModule.fromJson(e as Map<String, dynamic>))
@@ -517,6 +527,11 @@ class MemModule {
   final String type; // "DDR4"
   final int speedMhz;
   final String formFactor; // "DIMM", "SODIMM", "Row Of Chips" (soldada)
+
+  bool get isSoldered {
+    final ff = formFactor.toLowerCase();
+    return ff.contains('row of chips') || ff.contains('die');
+  }
 
   const MemModule({
     required this.label,

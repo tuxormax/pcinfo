@@ -1391,15 +1391,24 @@ class _DashboardPageState extends State<DashboardPage> {
   Widget _ramCard(MemoryInfo m) {
     final rows = <SpecRow>[
       SpecRow('Total', formatBytes(m.totalBytes)),
-      SpecRow('Montaje', m.soldered ? 'Soldada (no ampliable)' : 'Ranuras (ampliable)'),
+      SpecRow(
+          'Montaje',
+          m.soldered
+              ? 'Soldada (no ampliable)'
+              : m.mixed
+                  ? 'Mixta (soldada + ranura)'
+                  : 'Ranuras (ampliable)'),
     ];
+    if (m.mixed) {
+      rows.add(SpecRow('RAM soldada', formatBytes(m.solderedBytes)));
+    }
     if (m.totalSlots > 0) {
       final libres = m.freeSlots;
       rows.add(SpecRow('Ranuras',
-          '${m.modules.length} de ${m.totalSlots} ocupadas'));
+          '${m.slotModules.length} de ${m.totalSlots} ocupadas'));
       rows.add(SpecRow('Ranuras libres', '$libres'));
     } else {
-      rows.add(SpecRow('Módulos', '${m.modules.length}'));
+      rows.add(SpecRow('Módulos', '${m.slotModules.length}'));
     }
     if (m.maxCapacityBytes > 0) {
       rows.add(SpecRow('Capacidad máx.', formatBytes(m.maxCapacityBytes)));
@@ -2170,7 +2179,11 @@ class _DashboardPageState extends State<DashboardPage> {
     final rows = <Widget>[];
     // Ranuras ocupadas.
     for (final mod in m.modules) {
-      final ff = mod.formFactor.isEmpty ? '' : '  ·  ${mod.formFactor}';
+      final ff = mod.isSoldered
+          ? '  ·  Soldada'
+          : mod.formFactor.isEmpty
+              ? ''
+              : '  ·  ${mod.formFactor}';
       rows.add(_slotTile(
         icon: Icons.sd_card_rounded,
         iconColor: AppColors.ram,

@@ -330,12 +330,20 @@ String buildReport(HardwareInfo hw) {
   seccion('Memoria RAM');
   _tabla(b, ['Dato', 'Valor']);
   kv('Total', formatBytes(m.totalBytes));
-  kv('Montaje', m.soldered ? 'Soldada (no ampliable)' : 'Ranuras (ampliable)');
+  kv(
+    'Montaje',
+    m.soldered
+        ? 'Soldada (no ampliable)'
+        : m.mixed
+            ? 'Mixta (soldada + ranura)'
+            : 'Ranuras (ampliable)',
+  );
+  if (m.mixed) kv('RAM soldada', formatBytes(m.solderedBytes));
   if (m.totalSlots > 0) {
-    kv('Ranuras', '${m.modules.length} de ${m.totalSlots} ocupadas');
+    kv('Ranuras', '${m.slotModules.length} de ${m.totalSlots} ocupadas');
     kv('Ranuras libres', '${m.freeSlots}');
   } else {
-    kv('Módulos', '${m.modules.length}');
+    kv('Módulos', '${m.slotModules.length}');
   }
   if (m.maxCapacityBytes > 0) {
     kv('Capacidad máx.', formatBytes(m.maxCapacityBytes));
@@ -354,7 +362,7 @@ String buildReport(HardwareInfo hw) {
     for (final mod in m.modules) {
       _fila(b, [
         mod.location,
-        mod.formFactor,
+        mod.isSoldered ? 'Soldada' : mod.formFactor,
         formatBytes(mod.sizeBytes),
         mod.type,
         mod.speedMhz > 0 ? '${mod.speedMhz} MHz' : '',
