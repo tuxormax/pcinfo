@@ -185,48 +185,114 @@ function Invoke-Descarga {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072 -bor 12288 } catch { }
 
-    $req = [System.Net.HttpWebRequest]::Create($Url)
-    $req.UserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
-    $req.Timeout = 60000
-    $req.ReadWriteTimeout = 120000
-    $resp = $req.GetResponse()
-    $entrada = $resp.GetResponseStream()
-    $salida = [System.IO.File]::Create($Destino)
-    try {
-        $buffer = New-Object byte[] 262144
-        while (($n = $entrada.Read($buffer, 0, $buffer.Length)) -gt 0) {
-            $salida.Write($buffer, 0, $n)
+    # Hasta 4 intentos: si la conexion se corta, el siguiente continua desde los
+    # bytes ya bajados (Range) en vez de empezar de cero; si el servidor no acepta
+    # Range, empieza de nuevo.
+    $intentos = 4
+    if (Test-Path -LiteralPath $Destino) { Remove-Item -LiteralPath $Destino -Force -ErrorAction SilentlyContinue }
+    for ($k = 1; $k -le $intentos; $k++) {
+        $resp = $null; $entrada = $null; $salida = $null
+        try {
+            $ya = 0
+            if (Test-Path -LiteralPath $Destino) { $ya = (Get-Item -LiteralPath $Destino).Length }
+            $req = [System.Net.HttpWebRequest]::Create($Url)
+            $req.UserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+            $req.Timeout = 60000
+            $req.ReadWriteTimeout = 120000
+            if ($ya -gt 0) { $req.AddRange([long]$ya) }
+            try {
+                $resp = $req.GetResponse()
+            } catch [System.Net.WebException] {
+                # 416 = ya estaba completo
+                if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 416) { break }
+                throw
+            }
+            $anexar = ($ya -gt 0 -and [int]$resp.StatusCode -eq 206)
+            $entrada = $resp.GetResponseStream()
+            $modo = if ($anexar) { [System.IO.FileMode]::Append } else { [System.IO.FileMode]::Create }
+            $salida = New-Object System.IO.FileStream($Destino, $modo, [System.IO.FileAccess]::Write)
+            $buffer = New-Object byte[] 262144
+            while (($n = $entrada.Read($buffer, 0, $buffer.Length)) -gt 0) {
+                $salida.Write($buffer, 0, $n)
+            }
+            break
+        } catch {
+            if ($k -ge $intentos) { throw }
+            Escribe 'AVISO' ("Descarga interrumpida de {0} ({1}). Reintento {2} de {3}, continuando desde lo ya bajado..." -f $Etiqueta, $_.Exception.Message, ($k + 1), $intentos)
+            Start-Sleep -Seconds 3
+        } finally {
+            if ($salida) { $salida.Close() }
+            if ($entrada) { $entrada.Close() }
+            if ($resp) { $resp.Close() }
         }
-    } finally {
-        $salida.Close(); $entrada.Close(); $resp.Close()
     }
     $mb = [math]::Round((Get-Item $Destino).Length / 1MB, 1)
     Escribe 'OK' ("{0} ({1} MB)" -f $Etiqueta, $mb)
 }
 
-# --- Cache de dependencias (frameworks compartidos) ---------------------
-# Casi cualquier app de la Tienda pide los mismos frameworks (VCLibs, .NET
-# Native Framework/Runtime, UI.Xaml —hay varias versiones mayores distintas,
-# 2.0/2.1/2.4/2.7/2.8, cada una un paquete con nombre propio—,
-# WindowsAppRuntime, Services.Store.Engagement, DirectXRuntime). Sin cache,
-# instalar dos apps seguidas puede bajar ~150 MB de los MISMOS frameworks dos
-# veces. La APP PRINCIPAL nunca se cachea: pesa mucho, es especifica de cada
-# instalacion y no se repite entre apps.
-#
-# Se cachea por el NOMBRE EXACTO del archivo (Nombre_Version_Arch_Publisher,
-# tal cual lo entrega el origen de descarga), nunca por el nombre corto del
-# paquete ("UI.Xaml" sin version): dos apps pueden pedir versiones distintas
-# del MISMO framework, y mezclarlas hace que Add-AppxPackage falle con
-# 0x80073CF3 ("was provided but not used") — el manifiesto de la app exige el
-# juego EXACTO de dependencias que declara, ni una de mas ni una de menos.
-#
-# Carpeta: C:\seismexico\pcinfo\tienda-frameworks — mismo convenio que ya usan
-# las demas herramientas de seismexico (ej. el arreglador guarda su bitacora,
-# respaldo y estado bajo C:\seismexico\<herramienta>): una ruta fija, la MISMA
-# para cualquier cuenta de usuario o nivel de elevacion, facil de encontrar y
-# de limpiar a mano en un equipo de cliente. Sobrevive entre ejecuciones y
-# entre reinstalaciones de PCInfo; no se borra sola. Requiere administrador
-# para crearse bajo la raiz de C:\ — este modulo ya lo exige siempre.
+# Nombres de las dependencias que la app DECLARA en su manifiesto (AppxManifest.xml,
+# dentro del .msix/.appx o, en un bundle, dentro de sus paquetes de aplicacion para
+# esta arquitectura). Windows exige el juego EXACTO: pasarle una de mas da
+# 0x80073CF3 "was provided but not used". Devuelve $null si no se pudo leer (el
+# llamador entonces usa todas las dependencias).
+function Get-NombresDependencias {
+    param([string]$Ruta, [string]$Arch)
+    try {
+        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
+        $nombres = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+        $leeManifiesto = {
+            param($zipOrigen)
+            $e = $zipOrigen.GetEntry('AppxManifest.xml')
+            if (-not $e) { return $false }
+            $sr = New-Object System.IO.StreamReader($e.Open())
+            try { $xml = [xml]$sr.ReadToEnd() } finally { $sr.Close() }
+            foreach ($d in $xml.SelectNodes("//*[local-name()='PackageDependency']")) {
+                $n = $d.GetAttribute('Name'); if ($n) { [void]$nombres.Add($n) }
+            }
+            return $true
+        }
+        $zip = [System.IO.Compression.ZipFile]::OpenRead($Ruta)
+        try {
+            if (& $leeManifiesto $zip) { return , $nombres }
+            $eb = $zip.GetEntry('AppxMetadata/AppxBundleManifest.xml')
+            if (-not $eb) { return $null }
+            $sr = New-Object System.IO.StreamReader($eb.Open())
+            try { $bx = [xml]$sr.ReadToEnd() } finally { $sr.Close() }
+            $leidos = 0
+            foreach ($pk in $bx.SelectNodes("//*[local-name()='Package']")) {
+                $tipo = $pk.GetAttribute('Type')
+                if ($tipo -and $tipo -ne 'application') { continue }
+                $ar = $pk.GetAttribute('Architecture')
+                if ($ar -and $ar -ne 'neutral' -and $ar -ne $Arch) { continue }
+                $ei = $zip.GetEntry($pk.GetAttribute('FileName'))
+                if (-not $ei) { continue }
+                $tmp = [System.IO.Path]::GetTempFileName()
+                try {
+                    $fs = [System.IO.File]::Create($tmp)
+                    try { $st = $ei.Open(); try { $st.CopyTo($fs) } finally { $st.Close() } } finally { $fs.Close() }
+                    $zi = [System.IO.Compression.ZipFile]::OpenRead($tmp)
+                    try { if (& $leeManifiesto $zi) { $leidos++ } } finally { $zi.Dispose() }
+                } finally { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
+            }
+            if ($leidos -eq 0) { return $null }
+            return , $nombres
+        } finally { $zip.Dispose() }
+    } catch { return $null }
+}
+
+# Filtra las dependencias candidatas a las que la app declara.
+function Select-DependenciasApp {
+    param($Deps, [string]$RutaApp, [string]$Arch)
+    $nec = Get-NombresDependencias -Ruta $RutaApp -Arch $Arch
+    if ($null -eq $nec) {
+        Escribe 'AVISO' 'No se pudo leer el manifiesto de la app: se usan todas las dependencias encontradas.'
+        return @($Deps)
+    }
+    $usar = @($Deps | Where-Object { $nec.Contains($_.Paquete) })
+    Escribe 'INFO' ("La app declara {0} dependencia(s); se usan {1} de {2} encontradas." -f $nec.Count, $usar.Count, @($Deps).Count)
+    return $usar
+}
+
 function Get-CarpetaBaseSeis {
     $carpeta = 'C:\seismexico\pcinfo'
     New-Item -ItemType Directory -Path $carpeta -Force -ErrorAction SilentlyContinue | Out-Null
@@ -298,6 +364,17 @@ function Install-App {
         $msg = $_.Exception.Message
         if ($msg -match '0x80073D06|higher version|already installed') {
             Escribe 'AVISO' "La app ya estaba instalada en esta cuenta (version igual o mas nueva)."
+        } elseif ($msg -match '0x80073CF3' -and $Dependencias -and $Dependencias.Count) {
+            # Respaldo: las dependencias ya se instalaron una por una, Windows las
+            # encuentra solo sin que se las pasemos.
+            Escribe 'AVISO' 'Windows rechazo el juego de dependencias; se reintenta sin pasarlas (ya estan instaladas).'
+            try {
+                Add-AppxPackage -Path $Ruta -ErrorAction Stop
+                Escribe 'OK' ("App instalada para el usuario actual: {0}" -f $Nombre)
+                $Dependencias = @()
+            } catch {
+                throw "No se pudo instalar la app: $($_.Exception.Message)"
+            }
         } else {
             throw "No se pudo instalar la app: $msg"
         }
@@ -334,11 +411,13 @@ function Start-Instalacion {
     if (Test-Path $carpeta) { Remove-Item $carpeta -Recurse -Force -ErrorAction SilentlyContinue }
     New-Item -ItemType Directory -Path $carpeta -Force | Out-Null
 
+    # La app se baja PRIMERO: su manifiesto dice cuales dependencias pide, y solo
+    # esas se descargan e instalan.
+    $rutaApp = Get-Paquete -Url $sel.App.Url -CarpetaTrabajo $carpeta -Nombre $sel.App.Nombre -EsDep $false
+    $depsApp = Select-DependenciasApp -Deps $sel.Deps -RutaApp $rutaApp -Arch $arqui
     $rutasDeps = @()
-    $rutaApp = $null
-    foreach ($p in $sel.Todos) {
-        $ruta = Get-Paquete -Url $p.Url -CarpetaTrabajo $carpeta -Nombre $p.Nombre -EsDep $p.EsDep
-        if ($p.EsDep) { $rutasDeps += $ruta } else { $rutaApp = $ruta }
+    foreach ($p in $depsApp) {
+        $rutasDeps += Get-Paquete -Url $p.Url -CarpetaTrabajo $carpeta -Nombre $p.Nombre -EsDep $true
     }
 
     Escribe 'INFO' "Instalando dependencias..."
@@ -365,7 +444,7 @@ function Start-InstalacionLocal {
 
     Escribe 'INFO' ("Leyendo paquetes de: {0}" -f $Carpeta)
     $sel = Select-Paquetes -Archivos $archivos -Arch $arqui
-    $rutasDeps = @($sel.Deps | ForEach-Object { $_.Url })
+    $rutasDeps = @((Select-DependenciasApp -Deps $sel.Deps -RutaApp $sel.App.Url -Arch $arqui) | ForEach-Object { $_.Url })
 
     Escribe 'INFO' "Instalando dependencias..."
     foreach ($d in $rutasDeps) { Install-Dependencia -Ruta $d -Nombre ([System.IO.Path]::GetFileName($d)) }
