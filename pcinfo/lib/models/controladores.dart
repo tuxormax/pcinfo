@@ -163,6 +163,9 @@ class ControladoresInfo {
   final bool supported; // ¿el módulo existe en este sistema? (solo Windows)
   final bool elevated; // ¿el backend corre como administrador?
   final bool available;
+
+  /// ¿Hay controladores y dispositivos pendientes? Solo en Windows; en Linux el módulo es solo WiFi.
+  final bool driversAplica;
   final String reason;
   final List<DriverItem> drivers;
   final List<WifiProfile> wifi;
@@ -176,6 +179,7 @@ class ControladoresInfo {
     this.supported = false,
     this.elevated = false,
     this.available = false,
+    this.driversAplica = true,
     this.reason = '',
     this.drivers = const [],
     this.wifi = const [],
@@ -188,6 +192,7 @@ class ControladoresInfo {
         supported: j['supported'] ?? false,
         elevated: j['elevated'] ?? false,
         available: j['available'] ?? false,
+        driversAplica: j['driversAplica'] ?? true,
         reason: j['reason'] ?? '',
         drivers: (j['drivers'] as List?)
                 ?.map((e) => DriverItem.fromJson(e as Map<String, dynamic>))

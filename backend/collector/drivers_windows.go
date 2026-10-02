@@ -41,12 +41,13 @@ type inventarioCrudo struct {
 
 func estadoControladores() DriversReport {
 	rep := DriversReport{
-		OS:         "windows",
-		Supported:  true,
-		Elevated:   isElevated(),
-		Drivers:    []DriverItem{},
-		Wifi:       []WifiProfile{},
-		Pendientes: []DispositivoPendiente{},
+		OS:            "windows",
+		Supported:     true,
+		DriversAplica: true,
+		Elevated:      isElevated(),
+		Drivers:       []DriverItem{},
+		Wifi:          []WifiProfile{},
+		Pendientes:    []DispositivoPendiente{},
 	}
 
 	salida, err := os.CreateTemp("", "pcinfo-drivers-*.json")

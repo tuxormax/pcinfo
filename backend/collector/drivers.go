@@ -98,13 +98,16 @@ type DispositivoPendiente struct {
 
 // DriversReport es la respuesta de GET /controladores.
 type DriversReport struct {
-	OS        string        `json:"os"`
-	Supported bool          `json:"supported"` // ¿el módulo existe en este sistema?
-	Elevated  bool          `json:"elevated"`  // ¿el backend corre como administrador?
-	Available bool          `json:"available"` // ¿se pudo leer el inventario?
-	Reason    string        `json:"reason"`    // aviso o motivo del fallo
-	Drivers   []DriverItem  `json:"drivers"`
-	Wifi      []WifiProfile `json:"wifi"`
+	OS        string `json:"os"`
+	Supported bool   `json:"supported"` // ¿el módulo existe en este sistema?
+	Elevated  bool   `json:"elevated"`  // ¿el backend corre como administrador?
+	Available bool   `json:"available"` // ¿se pudo leer el inventario?
+	// DriversAplica: ¿existen controladores y dispositivos pendientes que respaldar? Solo en
+	// Windows; en Linux el módulo se reduce a las redes WiFi (NetworkManager).
+	DriversAplica bool          `json:"driversAplica"`
+	Reason        string        `json:"reason"` // aviso o motivo del fallo
+	Drivers       []DriverItem  `json:"drivers"`
+	Wifi          []WifiProfile `json:"wifi"`
 	// Pendientes NO necesita administrador, al revés que el resto del módulo:
 	// sale aunque el inventario de controladores venga vacío.
 	Pendientes []DispositivoPendiente `json:"pendientes"`
@@ -189,6 +192,9 @@ func IniciaTarea(kind string, p PeticionTarea) (TareaInfo, error) {
 	if !rep.Supported {
 		return TareaInfo{}, fmt.Errorf("%s", rep.Reason)
 	}
+	if p.Drivers && !rep.DriversAplica {
+		return TareaInfo{}, fmt.Errorf("los controladores solo se pueden %s en Windows", kind)
+	}
 	if !rep.Elevated {
 		return TareaInfo{}, fmt.Errorf(
 			"hace falta ejecutar PCInfo como administrador para %s controladores y redes WiFi", kind)
@@ -268,7 +274,7 @@ func respalda(ctx context.Context, p PeticionTarea) error {
 			paso(PasoError, "Redes WiFi: "+err.Error())
 			fallos = append(fallos, "redes WiFi")
 		} else {
-			paso(PasoOK, "Redes WiFi respaldadas. OJO: los archivos .xml contienen las contraseñas en texto legible.")
+			paso(PasoOK, "Redes WiFi respaldadas. OJO: los archivos de respaldo contienen las contraseñas en texto legible.")
 		}
 	}
 	if len(fallos) > 0 {

@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'dart:async';
 
 import 'package:file_selector/file_selector.dart';
@@ -94,12 +95,14 @@ class _ControladoresPageState extends State<ControladoresPage> {
           // pregunta con la que el usuario abre esta pestaña ("¿por qué me sale
           // un dispositivo sin controlador?"), y además es lo único que
           // funciona sin administrador.
-          if (d.available) ...[
+          if (d.available && d.driversAplica) ...[
             _tarjetaPendientes(d),
             const SizedBox(height: 14),
           ],
-          _tarjetaControladores(d),
-          const SizedBox(height: 14),
+          if (d.driversAplica) ...[
+            _tarjetaControladores(d),
+            const SizedBox(height: 14),
+          ],
           _tarjetaWifi(d),
         ],
       ),
@@ -595,19 +598,20 @@ class _ControladoresPageState extends State<ControladoresPage> {
     final que = drivers ? 'los controladores' : 'las redes WiFi';
     final restaurar = kind == TareaKind.restaurar;
     final sub = drivers ? CarpetaRespaldo.drivers : CarpetaRespaldo.wifi;
+    final sep = Platform.isWindows ? '\\' : '/';
 
     final texto = restaurar
         ? (drivers
             ? 'Se instalarán en ESTE equipo los controladores guardados en '
-                '$carpeta\\$sub.\n\nLos que no correspondan a este hardware Windows '
+                '$carpeta$sep$sub.\n\nLos que no correspondan a este hardware Windows '
                 'los rechazará solo. Puede pedir reiniciar al terminar.'
             : 'Se añadirán a ESTE equipo las redes WiFi guardadas en '
-                '$carpeta\\$sub.\n\nLas redes que ya existan se sobrescribirán con '
+                '$carpeta$sep$sub.\n\nLas redes que ya existan se sobrescribirán con '
                 'las del respaldo.')
         : (drivers
-            ? 'Se copiarán los controladores instalados a $carpeta\\$sub.\n\n'
+            ? 'Se copiarán los controladores instalados a $carpeta$sep$sub.\n\n'
                 'Puede tardar varios minutos y ocupar bastante espacio.'
-            : 'Se copiarán las redes WiFi guardadas a $carpeta\\$sub.\n\n'
+            : 'Se copiarán las redes WiFi guardadas a $carpeta$sep$sub.\n\n'
                 'Los archivos incluirán las contraseñas en texto legible.');
 
     final ok = await showDialog<bool>(
