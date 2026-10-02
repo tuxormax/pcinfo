@@ -15,35 +15,21 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-//go:embed tienda_windows.ps1
-var scriptTiendaBase []byte
-
-//go:embed tienda_win10.ps1
+//go:embed tienda/win10/tienda.ps1
 var scriptTiendaWin10 []byte
 
-//go:embed tienda_win11.ps1
+//go:embed tienda/win11/tienda.ps1
 var scriptTiendaWin11 []byte
 
-//go:embed tienda_acciones.ps1
-var scriptTiendaAcciones []byte
-
-// Windows 11 empieza en la build 22000. Cada versión tiene su fragmento
-// (Preparar-Instalacion): W10 activa el sideloading (LTSC no trae la Tienda),
-// W11 no toca nada.
+// Windows 11 empieza en la build 22000. Cada versión tiene su script COMPLETO
+// en su carpeta (tienda/win10, tienda/win11); no comparten nada.
 const buildWin11 = 22000
 
-// scriptTienda arma el script: base común + fragmento de la versión + acciones.
 var scriptTienda = func() []byte {
-	frag := scriptTiendaWin10
 	if v := windows.RtlGetVersion(); v != nil && v.BuildNumber >= buildWin11 {
-		frag = scriptTiendaWin11
+		return scriptTiendaWin11
 	}
-	var b []byte
-	for _, parte := range [][]byte{scriptTiendaBase, frag, scriptTiendaAcciones} {
-		b = append(b, parte...)
-		b = append(b, '\n')
-	}
-	return b
+	return scriptTiendaWin10
 }()
 
 // Instalación de apps de la Microsoft Store en Windows. Todo el trabajo lo
