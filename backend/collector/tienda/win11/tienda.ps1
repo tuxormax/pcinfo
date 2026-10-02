@@ -1,4 +1,4 @@
-# VERSION: Windows 11 (sin tocar el registro) — script COMPLETO e independiente (no comparte archivos con la otra version).
+# VERSION: Windows 11 (sideloading solo si es LTSC, sin Tienda) — script COMPLETO e independiente (no comparte archivos con la otra version).
 # Instala apps de la Microsoft Store SIN abrir la Store: descarga los
 # paquetes de Microsoft (vía store.rg-adguard.net, que solo recibe el
 # ProductId) y los instala con Add-AppxPackage / DISM. Lo llama
@@ -38,7 +38,9 @@ $ProgressPreference = 'SilentlyContinue'
 function Escribe {
     param([string]$Nivel, [string]$Texto)
     if ([string]::IsNullOrWhiteSpace($Texto)) { return }
-    Write-Output ("{0}:{1}" -f $Nivel, $Texto)
+    # Write-Host (no Write-Output): asi el mensaje no se cuela en el valor de retorno de
+    # las funciones (Get-Paquete devolvia "OK:... ruta" en vez de la ruta sola).
+    Write-Host ("{0}:{1}" -f $Nivel, $Texto)
 }
 
 # ===================================================================
@@ -400,6 +402,44 @@ function Search-Store {
     return , @($out)
 }
 
+# --- Sideloading (falta en equipos LTSC, sin Tienda; W10 y W11) ------------------------------
+# LTSC no trae el paquete Microsoft.WindowsStore ni sus servicios de licencia
+# (ClipSVC/LicenseManager). Add-AppxPackage los necesita para REGISTRAR
+# cualquier paquete, aunque ya este descargado, y sin ellos falla con
+# 0x80073CFF ("necesitas una licencia de desarrollador o un sistema con
+# sideloading habilitado"). La solucion no es reinstalar la Store (contradice
+# el proposito del modulo): es activar la directiva de sideloading, la misma
+# via que usa TI para instalar apps LOB en equipos LTSC.
+function Test-SideloadHabilitado {
+    foreach ($r in @(
+        'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Appx',
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock'
+    )) {
+        try {
+            $v = Get-ItemProperty -Path $r -Name 'AllowAllTrustedApps' -ErrorAction Stop
+            if ($v.AllowAllTrustedApps -eq 1) { return $true }
+        } catch { }
+    }
+    return $false
+}
+
+function Test-TieneStore {
+    try { return [bool](Get-AppxPackage -AllUsers -Name 'Microsoft.WindowsStore' -ErrorAction Stop) } catch { return $false }
+}
+
+function Enable-Sideload {
+    if (Test-TieneStore) { return }
+    if (Test-SideloadHabilitado) { return }
+    $ruta = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock'
+    try {
+        New-Item -Path $ruta -Force -ErrorAction Stop | Out-Null
+        New-ItemProperty -Path $ruta -Name 'AllowAllTrustedApps' -PropertyType DWord -Value 1 -Force -ErrorAction Stop | Out-Null
+        Escribe 'AVISO' 'Se activo el sideloading de apps (falta por defecto en equipos LTSC, que no trae la Tienda ni su servicio de licencias).'
+    } catch {
+        Escribe 'AVISO' ("No se pudo activar el sideloading automaticamente: {0}. Si la instalacion falla pidiendo 'un sistema con sideloading habilitado', activalo a mano en Configuracion > Privacidad y seguridad > Para desarrolladores." -f $_.Exception.Message)
+    }
+}
+
 function Start-InstalacionMultiple {
     param([object[]]$Apps, [string]$Arch = 'Auto', [string]$Ring = 'Retail', [bool]$TodosLosUsuarios = $true)
 
@@ -439,9 +479,11 @@ switch ($Accion) {
     'Instalar' {
         if (-not (Test-Path -LiteralPath $AppsArchivo)) { throw "No se encontro la lista de apps a instalar." }
         $apps = Get-Content -LiteralPath $AppsArchivo -Raw -Encoding UTF8 | ConvertFrom-Json
+        Enable-Sideload
         Start-InstalacionMultiple -Apps @($apps) -Arch $Arch -Ring $Ring -TodosLosUsuarios ([bool]::Parse($Todos))
     }
     'InstalarCarpeta' {
+        Enable-Sideload
         Start-InstalacionLocal -Carpeta $Carpeta -Arch $Arch -TodosLosUsuarios ([bool]::Parse($Todos))
     }
     default { throw "Accion desconocida: $Accion" }
