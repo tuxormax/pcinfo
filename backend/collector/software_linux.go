@@ -3,6 +3,7 @@
 package collector
 
 import (
+	"fmt"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -220,3 +221,6 @@ func entero(s string) int64 {
 	}
 	return n
 }
+
+// quitaAppx: quitar apps de la Tienda es exclusivo de Windows.
+func quitaAppx(_ string) error { return fmt.Errorf("esta operación solo está disponible en Windows") }

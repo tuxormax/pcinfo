@@ -7,13 +7,16 @@ import 'backend_http.dart';
 /// usuario abre esa pestaña.
 abstract class SoftwareService {
   Future<SoftwareInfo> load();
+
+  /// Quita una app de la Tienda (PackageFullName) del usuario actual.
+  Future<void> quitaTienda(String paquete);
 }
 
 class HttpSoftwareService implements SoftwareService {
   final Uri endpoint;
 
   HttpSoftwareService({String url = 'http://127.0.0.1:51247/software'})
-      : endpoint = Uri.parse(url);
+    : endpoint = Uri.parse(url);
 
   @override
   Future<SoftwareInfo> load() async {
@@ -23,5 +26,15 @@ class HttpSoftwareService implements SoftwareService {
       que: 'al leer el software instalado',
     );
     return SoftwareInfo.fromJson(json);
+  }
+
+  @override
+  Future<void> quitaTienda(String paquete) async {
+    await enviaJson(
+      endpoint.replace(path: '/software/desinstalar'),
+      {'package': paquete},
+      espera: const Duration(minutes: 4),
+      que: 'al quitar la app',
+    );
   }
 }

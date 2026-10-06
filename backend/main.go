@@ -55,6 +55,7 @@ func runServer(addr string) {
 	mux.HandleFunc("/arranques", protege("/arranques", handleArranques))
 	mux.HandleFunc("/arranques/diario", protege("/arranques/diario", handleDiarioPersistente))
 	mux.HandleFunc("/software", protege("/software", handleSoftware))
+	mux.HandleFunc("/software/desinstalar", protege("/software/desinstalar", handleSoftwareDesinstalar))
 	mux.HandleFunc("/bateria", protege("/bateria", handleBateria))
 	mux.HandleFunc("/red", protege("/red", handleRed))
 	mux.HandleFunc("/controladores", protege("/controladores", handleControladores))
@@ -350,4 +351,25 @@ func responde(w http.ResponseWriter, ruta string, dato any) {
 		log.Printf("error serializando %s: %v", ruta, err)
 		http.Error(w, "error interno", http.StatusInternalServerError)
 	}
+}
+
+// handleSoftwareDesinstalar quita una app de la Tienda del usuario actual.
+// POR POST a propósito: borra software, no debe pasar por accidente con un GET.
+func handleSoftwareDesinstalar(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		fallo(w, http.StatusMethodNotAllowed, "esta operación necesita POST")
+		return
+	}
+	var p struct {
+		Package string `json:"package"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4*1024)).Decode(&p); err != nil {
+		fallo(w, http.StatusBadRequest, "no se entendió la petición: "+err.Error())
+		return
+	}
+	if err := collector.DesinstalaTienda(p.Package); err != nil {
+		fallo(w, http.StatusConflict, err.Error())
+		return
+	}
+	responde(w, "/software/desinstalar", map[string]any{"ok": true})
 }

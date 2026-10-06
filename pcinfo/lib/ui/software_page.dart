@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../models/software.dart';
+import '../services/backend_http.dart';
+import '../services/software_service.dart';
 import '../theme.dart';
 
 /// Ámbar de "ojo con esto" (mismo tono que los avisos del resto de la app).
@@ -16,7 +18,10 @@ const _ambar = Color(0xFFE3A84B);
 class SoftwarePage extends StatefulWidget {
   final SoftwareInfo data;
 
-  const SoftwarePage({super.key, required this.data});
+  /// Si viene, las apps de la Tienda ofrecen el botón "Quitar".
+  final SoftwareService? service;
+
+  const SoftwarePage({super.key, required this.data, this.service});
 
   @override
   State<SoftwarePage> createState() => _SoftwarePageState();
@@ -29,11 +34,94 @@ class _SoftwarePageState extends State<SoftwarePage> {
   /// ¿Mostrar también lo que vino con el sistema (componentes y parches)?
   bool _verSistema = false;
 
+  /// Apps ya quitadas en esta sesión (se ocultan sin volver a leer todo) y la
+  /// que se está quitando ahora.
+  final Set<String> _quitadas = {};
+  String? _quitando;
+  String _falloQuitar = '';
+
+  Future<void> _quitar(SoftwareItem it) async {
+    final svc = widget.service;
+    if (svc == null || _quitando != null) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: const Text(
+          'Quitar app de la Tienda',
+          style: TextStyle(
+            color: AppColors.textHi,
+            fontSize: kFont,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        content: Text(
+          'Se quitará "${it.name}" de este usuario de Windows. '
+          'Podrás volver a instalarla desde la Tienda.',
+          style: const TextStyle(
+            color: AppColors.textMid,
+            fontSize: kFont,
+            height: 1.5,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text(
+              'Cancelar',
+              style: TextStyle(color: AppColors.textMid, fontSize: kFont),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              'Quitar',
+              style: TextStyle(
+                color: AppColors.accent,
+                fontSize: kFont,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() {
+      _quitando = it.package;
+      _falloQuitar = '';
+    });
+    try {
+      await svc.quitaTienda(it.package);
+      if (!mounted) return;
+      setState(() {
+        _quitadas.add(it.package);
+        _quitando = null;
+      });
+    } on BackendError catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _quitando = null;
+        _falloQuitar = e.toString();
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final d = widget.data;
     final usuario = _filtra(d.delUsuario);
-    final sistema = _verSistema ? _filtra(d.delSistema) : const <SoftwareItem>[];
+    final sistema = _verSistema
+        ? _filtra(d.delSistema)
+        : const <SoftwareItem>[];
+    Widget fila(SoftwareItem e) => _Fila(
+      item: e,
+      quitando: _quitando != null && _quitando == e.package,
+      onQuitar: (widget.service != null && e.sePuedeQuitar && _quitando == null)
+          ? () => _quitar(e)
+          : null,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -48,6 +136,10 @@ class _SoftwarePageState extends State<SoftwarePage> {
                 const SizedBox(height: 14),
                 _aviso(d.reason),
               ],
+              if (_falloQuitar.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                _aviso(_falloQuitar),
+              ],
             ],
           ),
         ),
@@ -59,15 +151,23 @@ class _SoftwarePageState extends State<SoftwarePage> {
                   padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
                   children: [
                     if (usuario.isNotEmpty) ...[
-                      _grupo(d.tituloUsuario, usuario.length,
-                          Icons.person_rounded, AppColors.accent),
-                      ...usuario.map((e) => _Fila(item: e)),
+                      _grupo(
+                        d.tituloUsuario,
+                        usuario.length,
+                        Icons.person_rounded,
+                        AppColors.accent,
+                      ),
+                      ...usuario.map(fila),
                     ],
                     if (sistema.isNotEmpty) ...[
                       const SizedBox(height: 18),
-                      _grupo(d.tituloSistema, sistema.length,
-                          Icons.settings_suggest_rounded, AppColors.textMid),
-                      ...sistema.map((e) => _Fila(item: e)),
+                      _grupo(
+                        d.tituloSistema,
+                        sistema.length,
+                        Icons.settings_suggest_rounded,
+                        AppColors.textMid,
+                      ),
+                      ...sistema.map(fila),
                     ],
                   ],
                 ),
@@ -77,9 +177,12 @@ class _SoftwarePageState extends State<SoftwarePage> {
   }
 
   List<SoftwareItem> _filtra(List<SoftwareItem> items) {
-    if (_busca.isEmpty) return items;
+    final vivos = items
+        .where((e) => !_quitadas.contains(e.package) || e.package.isEmpty)
+        .toList();
+    if (_busca.isEmpty) return vivos;
     final q = _busca.toLowerCase();
-    return items.where((e) => e.buscable.contains(q)).toList();
+    return vivos.where((e) => e.buscable.contains(q)).toList();
   }
 
   // ---- Barra superior: contador, buscador e interruptor ----
@@ -122,11 +225,19 @@ class _SoftwarePageState extends State<SoftwarePage> {
           fillColor: AppColors.surfaceAlt,
           hintText: 'Buscar programa, fabricante o versión…',
           hintStyle: const TextStyle(color: AppColors.textLow, fontSize: kFont),
-          prefixIcon:
-              const Icon(Icons.search_rounded, size: 17, color: AppColors.textLow),
-          prefixIconConstraints:
-              const BoxConstraints(minWidth: 34, minHeight: 34),
-          contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+          prefixIcon: const Icon(
+            Icons.search_rounded,
+            size: 17,
+            color: AppColors.textLow,
+          ),
+          prefixIconConstraints: const BoxConstraints(
+            minWidth: 34,
+            minHeight: 34,
+          ),
+          contentPadding: const EdgeInsets.symmetric(
+            vertical: 8,
+            horizontal: 6,
+          ),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(9),
             borderSide: const BorderSide(color: AppColors.border),
@@ -157,8 +268,10 @@ class _SoftwarePageState extends State<SoftwarePage> {
             onChanged: (v) => setState(() => _verSistema = v),
           ),
         ),
-        const Text('Ver lo del sistema',
-            style: TextStyle(color: AppColors.textMid, fontSize: kFont)),
+        const Text(
+          'Ver lo del sistema',
+          style: TextStyle(color: AppColors.textMid, fontSize: kFont),
+        ),
       ],
     );
   }
@@ -180,8 +293,10 @@ class _SoftwarePageState extends State<SoftwarePage> {
             ),
           ),
           const SizedBox(width: 8),
-          Text('($cuantos)',
-              style: const TextStyle(color: AppColors.textLow, fontSize: kFont)),
+          Text(
+            '($cuantos)',
+            style: const TextStyle(color: AppColors.textLow, fontSize: kFont),
+          ),
           const SizedBox(width: 12),
           const Expanded(child: Divider(color: AppColors.border, height: 1)),
         ],
@@ -203,8 +318,10 @@ class _SoftwarePageState extends State<SoftwarePage> {
           const Icon(Icons.info_outline_rounded, size: 17, color: _ambar),
           const SizedBox(width: 10),
           Expanded(
-            child: SelectableText(texto,
-                style: const TextStyle(color: AppColors.textHi, fontSize: kFont)),
+            child: SelectableText(
+              texto,
+              style: const TextStyle(color: AppColors.textHi, fontSize: kFont),
+            ),
           ),
         ],
       ),
@@ -215,14 +332,16 @@ class _SoftwarePageState extends State<SoftwarePage> {
     final texto = _busca.isNotEmpty
         ? 'Ningún programa coincide con "$_busca".'
         : d.available
-            ? 'No se encontró ningún programa instalado.'
-            : 'No se pudo leer la lista de programas instalados.';
+        ? 'No se encontró ningún programa instalado.'
+        : 'No se pudo leer la lista de programas instalados.';
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
-        child: Text(texto,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: AppColors.textMid, fontSize: kFont)),
+        child: Text(
+          texto,
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: AppColors.textMid, fontSize: kFont),
+        ),
       ),
     );
   }
@@ -232,7 +351,9 @@ class _SoftwarePageState extends State<SoftwarePage> {
 /// fecha, tamaño, origen del dato) como detalle secundario.
 class _Fila extends StatelessWidget {
   final SoftwareItem item;
-  const _Fila({required this.item});
+  final VoidCallback? onQuitar;
+  final bool quitando;
+  const _Fila({required this.item, this.onQuitar, this.quitando = false});
 
   @override
   Widget build(BuildContext context) {
@@ -268,7 +389,9 @@ class _Fila extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                          color: AppColors.textLow, fontSize: kFont),
+                        color: AppColors.textLow,
+                        fontSize: kFont,
+                      ),
                     ),
                   ),
               ],
@@ -287,6 +410,24 @@ class _Fila extends StatelessWidget {
               ),
             ),
           ),
+          if (item.sePuedeQuitar) ...[
+            const SizedBox(width: 8),
+            quitando
+                ? const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : IconButton(
+                    tooltip: 'Quitar app',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: onQuitar,
+                    icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                  ),
+          ],
         ],
       ),
     );

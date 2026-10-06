@@ -66,6 +66,7 @@ foreach ($paquete in @(Get-AppxPackage)) {
         arch          = [string]$paquete.Architecture
         location      = [string]$paquete.InstallLocation
         packageName   = [string]$paquete.Name
+        packageFullName = [string]$paquete.PackageFullName
         signatureKind = [string]$paquete.SignatureKind
         isFramework   = [bool]$paquete.IsFramework
         nonRemovable  = [bool]$paquete.NonRemovable

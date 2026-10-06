@@ -11,12 +11,12 @@ class SoftwareKind {
 
   /// Nombre en pantalla de cada categoría.
   static String etiqueta(String k) => switch (k) {
-        programa => 'Programa',
-        tienda => 'Tienda',
-        actualizacion => 'Actualización',
-        componente => 'Componente',
-        _ => 'Otro',
-      };
+    programa => 'Programa',
+    tienda => 'Tienda',
+    actualizacion => 'Actualización',
+    componente => 'Componente',
+    _ => 'Otro',
+  };
 }
 
 /// Quién puso el programa en el equipo (campo [SoftwareItem.origin]). Es el
@@ -40,6 +40,10 @@ class SoftwareItem {
   final String origin; // ver SoftwareOrigen
   final String uninstall;
 
+  /// PackageFullName de una app de la Tienda que se puede quitar desde PCInfo
+  /// (vacío = no se ofrece). Solo Windows.
+  final String package;
+
   const SoftwareItem({
     this.name = '',
     this.version = '',
@@ -53,22 +57,27 @@ class SoftwareItem {
     this.system = false,
     this.origin = '',
     this.uninstall = '',
+    this.package = '',
   });
 
   factory SoftwareItem.fromJson(Map<String, dynamic> j) => SoftwareItem(
-        name: j['name'] ?? '',
-        version: j['version'] ?? '',
-        publisher: j['publisher'] ?? '',
-        installed: j['installed'] ?? '',
-        sizeMB: (j['sizeMB'] ?? 0) as int,
-        location: j['location'] ?? '',
-        arch: j['arch'] ?? '',
-        source: j['source'] ?? '',
-        kind: j['kind'] ?? '',
-        system: j['system'] ?? false,
-        origin: j['origin'] ?? '',
-        uninstall: j['uninstall'] ?? '',
-      );
+    name: j['name'] ?? '',
+    version: j['version'] ?? '',
+    publisher: j['publisher'] ?? '',
+    installed: j['installed'] ?? '',
+    sizeMB: (j['sizeMB'] ?? 0) as int,
+    location: j['location'] ?? '',
+    arch: j['arch'] ?? '',
+    source: j['source'] ?? '',
+    kind: j['kind'] ?? '',
+    system: j['system'] ?? false,
+    origin: j['origin'] ?? '',
+    uninstall: j['uninstall'] ?? '',
+    package: j['package'] ?? '',
+  );
+
+  bool get sePuedeQuitar =>
+      kind == SoftwareKind.tienda && !system && package.isNotEmpty;
 
   bool get esDelSistema => origin == SoftwareOrigen.sistema;
 
@@ -77,8 +86,7 @@ class SoftwareItem {
   String get versionVisible => version.isEmpty ? '—' : version;
 
   /// Texto sobre el que actúa el buscador de la pestaña.
-  String get buscable =>
-      '$name $version $publisher $source'.toLowerCase();
+  String get buscable => '$name $version $publisher $source'.toLowerCase();
 }
 
 class SoftwareInfo {
@@ -101,32 +109,32 @@ class SoftwareInfo {
   });
 
   factory SoftwareInfo.fromJson(Map<String, dynamic> j) => SoftwareInfo(
-        os: j['os'] ?? '',
-        source: j['source'] ?? '',
-        available: j['available'] ?? false,
-        reason: j['reason'] ?? '',
-        total: (j['total'] ?? 0) as int,
-        visible: (j['visible'] ?? 0) as int,
-        items: (j['items'] as List?)
-                ?.map((e) => SoftwareItem.fromJson(e as Map<String, dynamic>))
-                .toList() ??
-            const [],
-      );
+    os: j['os'] ?? '',
+    source: j['source'] ?? '',
+    available: j['available'] ?? false,
+    reason: j['reason'] ?? '',
+    total: (j['total'] ?? 0) as int,
+    visible: (j['visible'] ?? 0) as int,
+    items:
+        (j['items'] as List?)
+            ?.map((e) => SoftwareItem.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+  );
 
   /// Cómo se llama en pantalla cada grupo. En Windows el reparto es limpio
   /// ("lo instaló alguien" contra "vino con Windows"); en Linux la única señal
   /// disponible es `apt-mark showmanual`, que separa lo que se pidió
   /// expresamente de las dependencias que arrastró el sistema — parecido, pero
   /// no es lo mismo, así que el título lo dice tal cual.
-  String get tituloUsuario => os == 'linux'
-      ? 'Instalado a petición'
-      : 'Instalado por el usuario';
+  String get tituloUsuario =>
+      os == 'linux' ? 'Instalado a petición' : 'Instalado por el usuario';
 
   String get tituloSistema => switch (os) {
-        'linux' => 'Dependencias y base del sistema',
-        'windows' => 'Viene con Windows',
-        _ => 'Viene con el sistema',
-      };
+    'linux' => 'Dependencias y base del sistema',
+    'windows' => 'Viene con Windows',
+    _ => 'Viene con el sistema',
+  };
 
   /// Lo que instaló alguien (lo que de verdad distingue a este equipo).
   List<SoftwareItem> get delUsuario =>

@@ -17,6 +17,24 @@ import (
 //go:embed software_windows.ps1
 var scriptSoftware []byte
 
+//go:embed software_windows_quitar.ps1
+var scriptQuitarAppx []byte
+
+const timeoutQuitarAppx = 3 * time.Minute
+
+// quitaAppx desinstala la app de la Tienda para el usuario actual.
+func quitaAppx(paquete string) error {
+	out, err := correPS("software-quitar", scriptQuitarAppx, timeoutQuitarAppx, "-Paquete", paquete)
+	if err != nil {
+		// El script escribe el motivo redactado en su salida.
+		if m := strings.TrimSpace(out); m != "" {
+			return fmt.Errorf("%s", m)
+		}
+		return fmt.Errorf("no se pudo quitar la app: %w", err)
+	}
+	return nil
+}
+
 // Software instalado en Windows. Dos fuentes:
 //
 //  1. Programas clásicos: las claves "Uninstall" del registro — las mismas que
@@ -180,15 +198,16 @@ func clasificaPrograma(it *SoftwareItem, componente, tienePadre bool, tipo, clav
 
 // appxCrudo es lo que devuelve software_windows.ps1 por cada app de la Tienda.
 type appxCrudo struct {
-	Name          string `json:"name"`
-	Version       string `json:"version"`
-	Publisher     string `json:"publisher"`
-	Arch          string `json:"arch"`
-	Location      string `json:"location"`
-	PackageName   string `json:"packageName"`
-	SignatureKind string `json:"signatureKind"`
-	IsFramework   bool   `json:"isFramework"`
-	NonRemovable  bool   `json:"nonRemovable"`
+	Name            string `json:"name"`
+	Version         string `json:"version"`
+	Publisher       string `json:"publisher"`
+	Arch            string `json:"arch"`
+	Location        string `json:"location"`
+	PackageName     string `json:"packageName"`
+	PackageFullName string `json:"packageFullName"`
+	SignatureKind   string `json:"signatureKind"`
+	IsFramework     bool   `json:"isFramework"`
+	NonRemovable    bool   `json:"nonRemovable"`
 }
 
 // leeAppx lista las apps de la Tienda del usuario actual.
@@ -233,6 +252,9 @@ func leeAppx() ([]SoftwareItem, error) {
 			Kind:      KindTienda,
 			System:    deSistema,
 			Origin:    OrigenUsuario,
+		}
+		if !deSistema {
+			it.Package = limpiaTexto(c.PackageFullName)
 		}
 		if deSistema {
 			it.Kind = KindComponente

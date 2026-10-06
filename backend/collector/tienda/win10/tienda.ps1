@@ -552,7 +552,7 @@ function Start-InstalacionMultiple {
 switch ($Accion) {
     'Buscar' {
         $res = @(Search-Store -Consulta $Consulta)
-        $texto = (, $res) | ConvertTo-Json -Depth 5 -Compress
+        $texto = ConvertTo-Json -InputObject $res -Depth 5 -Compress
         [System.IO.File]::WriteAllText($Salida, $texto, (New-Object System.Text.UTF8Encoding($false)))
     }
     'Instalar' {

@@ -619,7 +619,8 @@ class _DashboardPageState extends State<DashboardPage> {
           return _estadoFallo(
               'No se pudo leer el software instalado', snap.error);
         }
-        return SoftwarePage(data: snap.data!);
+        return SoftwarePage(
+            data: snap.data!, service: widget.softwareService);
       },
     );
   }

@@ -2,7 +2,9 @@ package collector
 
 import (
 	"context"
+	"fmt"
 	"os/exec"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -64,6 +66,9 @@ type SoftwareItem struct {
 	System    bool   `json:"system"`    // componente/actualización del sistema (oculto por defecto)
 	Origin    string `json:"origin"`    // sistema | usuario (ver constantes Origen*)
 	Uninstall string `json:"uninstall"` // comando de desinstalación declarado (informativo)
+	// Package es el PackageFullName de una app de la Tienda que se puede quitar
+	// (POST /software/desinstalar). Vacío = no se ofrece quitarla desde PCInfo.
+	Package string `json:"package,omitempty"`
 }
 
 // SoftwareReport es la respuesta de GET /software.
@@ -129,4 +134,19 @@ func ejecuta(nombre string, args ...string) (string, error) {
 func limpiaTexto(s string) string {
 	s = strings.TrimSpace(strings.ReplaceAll(s, "\x00", ""))
 	return strings.Join(strings.Fields(s), " ")
+}
+
+// rePaqueteAppx acepta solo lo que puede ser un PackageFullName
+// (Nombre_1.2.3.0_x64__8wekyb3d8bbwe): nada que PowerShell pueda interpretar.
+var rePaqueteAppx = regexp.MustCompile(`^[A-Za-z0-9._~-]{3,200}$`)
+
+// DesinstalaTienda quita UNA app de la Tienda del usuario actual (no pide
+// administrador). Las apps del sistema, los frameworks y las no removibles se
+// rechazan; el script lo vuelve a comprobar por su cuenta.
+func DesinstalaTienda(paquete string) error {
+	paquete = strings.TrimSpace(paquete)
+	if !rePaqueteAppx.MatchString(paquete) {
+		return fmt.Errorf("el nombre del paquete no es válido")
+	}
+	return quitaAppx(paquete)
 }
