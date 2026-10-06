@@ -44,6 +44,8 @@ dependencies:
   # primo), que ya las prueba a diario en Linux.
   dart_ping: ^9.0.1
   upnp2: ^3.0.12
+  # Escáner de red: nombres por mDNS/Bonjour (igual que RedScan).
+  multicast_dns: ^0.3.3
 
 dev_dependencies:
   flutter_test:
@@ -61,6 +63,9 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
+
+  assets:
+    - assets/oui.txt
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

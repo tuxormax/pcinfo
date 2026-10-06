@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../models/red.dart';
 import '../services/red/diagnostico_service.dart';
+import '../services/red/escaner_service.dart';
 import '../services/red/velocidad_service.dart';
 import '../services/red_service.dart';
 import '../theme.dart';
@@ -49,6 +50,13 @@ class _RedPageState extends State<RedPage> {
   double? _descarga;
   double? _subida;
 
+  final _escSvc = EscanerService();
+  StreamSubscription<ProgresoEscaneo>? _escSub;
+  List<Dispositivo> _equipos = const [];
+  bool _escCorriendo = false;
+  double _escProgreso = 0;
+  String _escFase = '';
+
   @override
   void initState() {
     super.initState();
@@ -68,6 +76,8 @@ class _RedPageState extends State<RedPage> {
     _diagSub?.cancel();
     _diagSvc.cancelar();
     _velSvc.cancelar();
+    _escSub?.cancel();
+    _escSvc.cancelar();
     super.dispose();
   }
 
@@ -81,6 +91,8 @@ class _RedPageState extends State<RedPage> {
           _tarjetaRedLocal(),
           const SizedBox(height: 14),
           _tarjetaDiagnostico(),
+          const SizedBox(height: 14),
+          _tarjetaEscaner(),
           const SizedBox(height: 14),
           _tarjetaVelocidad(),
         ],
@@ -136,6 +148,153 @@ class _RedPageState extends State<RedPage> {
           ],
         ),
       );
+
+  // ---- Tarjeta de escáner de red (estilo Angry IP Scanner) ----
+
+  void _iniciarEscaner() {
+    final red = _red;
+    if (_escCorriendo || red == null || !red.hayRed) return;
+    setState(() {
+      _escCorriendo = true;
+      _escProgreso = 0;
+      _escFase = 'Iniciando…';
+      _equipos = const [];
+    });
+    _escSub?.cancel();
+    _escSub = _escSvc
+        .escanear(
+            baseRed: red.baseRed, ipLocal: red.localIp, gateway: red.gateway)
+        .listen(
+      (ev) {
+        if (!mounted) return;
+        setState(() {
+          _escProgreso = ev.porcentaje;
+          _escFase = ev.fase;
+          if (ev.nuevo != null) {
+            _equipos = [..._equipos, ev.nuevo!]
+              ..sort((a, b) => _octeto(a.ip).compareTo(_octeto(b.ip)));
+          }
+          if (ev.resultado != null) {
+            _equipos = ev.resultado!;
+            _escCorriendo = false;
+          }
+        });
+      },
+      onError: (_) {
+        if (mounted) setState(() => _escCorriendo = false);
+      },
+      onDone: () {
+        if (mounted) setState(() => _escCorriendo = false);
+      },
+    );
+  }
+
+  void _detenerEscaner() {
+    _escSvc.cancelar();
+    setState(() => _escFase = 'Deteniendo…');
+  }
+
+  static int _octeto(String ip) => int.tryParse(ip.split('.').last) ?? 0;
+
+  static IconData _iconoTipo(String tipo) => switch (tipo) {
+        'router' => Icons.router_rounded,
+        'impresora' => Icons.print_rounded,
+        'tv' => Icons.tv_rounded,
+        'iot' => Icons.sensors_rounded,
+        'web' => Icons.language_rounded,
+        'servidor' => Icons.dns_rounded,
+        'pc' => Icons.computer_rounded,
+        'telefono' => Icons.smartphone_rounded,
+        _ => Icons.devices_other_rounded,
+      };
+
+  Widget _tarjetaEscaner() {
+    final base = _red?.baseRed ?? '';
+    return _Tarjeta(
+      icono: Icons.radar_rounded,
+      color: AppColors.board,
+      titulo: 'Escáner de red',
+      subtitulo: _escCorriendo || _equipos.isNotEmpty
+          ? '$_escFase · ${_equipos.length} equipos'
+          : (base.isEmpty
+              ? 'Sin red'
+              : 'Escanea $base.1 – $base.254 y lista quién responde al ping'),
+      acciones: [
+        _botonPrincipal(
+          _escCorriendo ? 'Detener' : 'Escanear red',
+          _escCorriendo ? Icons.stop_rounded : Icons.play_arrow_rounded,
+          _escCorriendo ? _detenerEscaner : _iniciarEscaner,
+          rojo: _escCorriendo,
+        ),
+      ],
+      hijo: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_escCorriendo) ...[
+            LinearProgressIndicator(
+              value: _escProgreso == 0 ? null : _escProgreso,
+              backgroundColor: AppColors.bg,
+              color: AppColors.board,
+            ),
+            const SizedBox(height: 12),
+          ],
+          ..._equipos.map(_filaEquipo),
+          if (_equipos.isEmpty && !_escCorriendo)
+            _nota('Detecta tu IP y escanea todo el rango de la red. Solo se '
+                'muestran los equipos que responden al ping.'),
+        ],
+      ),
+    );
+  }
+
+  Widget _filaEquipo(Dispositivo d) {
+    final detalle = [
+      if (d.mac.isNotEmpty) d.mac,
+      if (d.fabricante != null) d.fabricante!,
+      if (d.latenciaMs != null) '${d.latenciaMs} ms',
+      if (d.puertos.isNotEmpty) 'puertos ${(d.puertos.toList()..sort()).join(', ')}',
+    ].join(' · ');
+    final marca = d.esEsteEquipo
+        ? ' (este equipo)'
+        : d.esGateway
+            ? ' (router)'
+            : '';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceAlt,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            Icon(_iconoTipo(d.tipo), size: 20, color: AppColors.board),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SelectableText('${d.etiqueta}$marca',
+                      style: const TextStyle(
+                          color: AppColors.textHi,
+                          fontSize: kFont,
+                          fontWeight: FontWeight.w600)),
+                  SelectableText(d.ip,
+                      style: const TextStyle(
+                          color: AppColors.textMid, fontSize: kFont)),
+                  if (detalle.isNotEmpty)
+                    Text(detalle,
+                        style: const TextStyle(
+                            color: AppColors.textLow, fontSize: kFont)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   // ---- Tarjeta de diagnóstico de Internet ----
 
