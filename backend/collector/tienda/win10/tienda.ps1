@@ -478,7 +478,7 @@ function Search-Store {
         if (-not $c.ProductId) { continue }
         $out += [pscustomobject]@{ nombre = $c.Title; publisher = $c.PublisherName; productId = $c.ProductId }
     }
-    return , @($out)
+    return @($out)
 }
 
 # --- Sideloading (falta en equipos LTSC, sin Tienda; W10 y W11) ------------------------------
