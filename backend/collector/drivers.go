@@ -21,6 +21,7 @@ import (
 //	GET  /controladores            → DriversReport (qué hay y si se puede operar)
 //	POST /controladores/respaldar  → {carpeta, drivers, wifi} → arranca la tarea
 //	POST /controladores/restaurar  → {carpeta, drivers, wifi} → arranca la tarea
+//	POST /controladores/descargar  → {ids} → baja e instala del catálogo del fabricante
 //	GET  /controladores/tarea      → TareaInfo (avance en vivo)
 //
 // Espejo en pcinfo/lib/models/controladores.dart.
@@ -42,6 +43,7 @@ import (
 const (
 	TareaRespaldar = "respaldar"
 	TareaRestaurar = "restaurar"
+	// TareaDescargar (drivers_web.go): baja e instala del catálogo del fabricante.
 )
 
 // Nivel de cada paso del registro de la tarea.
@@ -111,6 +113,9 @@ type DriversReport struct {
 	// Pendientes NO necesita administrador, al revés que el resto del módulo:
 	// sale aunque el inventario de controladores venga vacío.
 	Pendientes []DispositivoPendiente `json:"pendientes"`
+	// Web: controladores del catálogo del fabricante que corresponden a los
+	// dispositivos de Pendientes (se pueden descargar e instalar).
+	Web []CandidatoWeb `json:"web"`
 }
 
 // PasoTarea es una línea del registro de avance de una tarea.
@@ -164,6 +169,9 @@ func CollectDrivers() DriversReport {
 	if rep.Pendientes == nil {
 		rep.Pendientes = []DispositivoPendiente{}
 	}
+	if rep.Web == nil {
+		rep.Web = []CandidatoWeb{}
+	}
 	if rep.OS == "" {
 		rep.OS = runtime.GOOS
 	}
@@ -200,6 +208,13 @@ func IniciaTarea(kind string, p PeticionTarea) (TareaInfo, error) {
 			"hace falta ejecutar PCInfo como administrador para %s controladores y redes WiFi", kind)
 	}
 
+	return arrancaTareaGenerica(kind, TareaInfo{Drivers: p.Drivers, Wifi: p.Wifi, Folder: p.Carpeta},
+		func(ctx context.Context) error { return corretarea(ctx, kind, p) })
+}
+
+// arrancaTareaGenerica registra la única tarea que puede correr a la vez y lanza
+// `trabajo` en segundo plano. base trae lo que la GUI enseña (qué incluye, dónde).
+func arrancaTareaGenerica(kind string, base TareaInfo, trabajo func(context.Context) error) (TareaInfo, error) {
 	tarea.Lock()
 	if tarea.info.Running {
 		en := tarea.info.Kind
@@ -208,20 +223,19 @@ func IniciaTarea(kind string, p PeticionTarea) (TareaInfo, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeoutTarea)
 	tarea.cancel = cancel
-	tarea.info = TareaInfo{
-		ID:      fmt.Sprintf("%s-%d", kind, time.Now().UnixNano()),
-		Kind:    kind,
-		Drivers: p.Drivers,
-		Wifi:    p.Wifi,
-		Folder:  p.Carpeta,
-		Running: true,
-		Started: time.Now().Format("2006-01-02 15:04:05"),
-		Steps:   []PasoTarea{},
-	}
+	base.ID = fmt.Sprintf("%s-%d", kind, time.Now().UnixNano())
+	base.Kind = kind
+	base.Running = true
+	base.Started = time.Now().Format("2006-01-02 15:04:05")
+	base.Steps = []PasoTarea{}
+	tarea.info = base
 	info := tarea.info
 	tarea.Unlock()
 
-	go corretarea(ctx, cancel, kind, p)
+	go func() {
+		defer cancel()
+		cierraTarea(trabajo(ctx))
+	}()
 	return info, nil
 }
 
@@ -240,18 +254,14 @@ func CancelaTarea() bool {
 // con muchos dispositivos puede acercarse a la media hora.
 const timeoutTarea = 45 * time.Minute
 
-func corretarea(ctx context.Context, cancel context.CancelFunc, kind string, p PeticionTarea) {
-	defer cancel()
-	var err error
+func corretarea(ctx context.Context, kind string, p PeticionTarea) error {
 	switch kind {
 	case TareaRespaldar:
-		err = respalda(ctx, p)
+		return respalda(ctx, p)
 	case TareaRestaurar:
-		err = restaura(ctx, p)
-	default:
-		err = fmt.Errorf("acción desconocida: %s", kind)
+		return restaura(ctx, p)
 	}
-	cierraTarea(err)
+	return fmt.Errorf("acción desconocida: %s", kind)
 }
 
 // respalda ejecuta las partes elegidas del respaldo, sin abortar el conjunto si

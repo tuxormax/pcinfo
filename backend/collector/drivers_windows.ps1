@@ -4,6 +4,8 @@
 #   -Accion Listar              -Salida <json>   inventario (JSON al archivo)
 #   -Accion RespaldarDrivers    -Carpeta <dir>   Export-WindowsDriver
 #   -Accion RestaurarDrivers    -Carpeta <dir>   pnputil /add-driver /install
+#   -Accion InstalarWeb         -Carpeta <dir> -Archivo <f> -Tipo zip|exe|msi [-Argumentos ..]
+#                               instala un paquete ya descargado y verificado
 #   -Accion RespaldarWifi       -Carpeta <dir>   netsh wlan export (con clave)
 #   -Accion RestaurarWifi       -Carpeta <dir>   netsh wlan add profile
 #
@@ -18,7 +20,13 @@
 param(
     [Parameter(Mandatory = $true)][string]$Accion,
     [string]$Salida = '',
-    [string]$Carpeta = ''
+    [string]$Carpeta = '',
+    [string]$Archivo = '',
+    [string]$Tipo = '',
+    [string]$Argumentos = '',
+    [string]$Ejecuta = '',
+    [string]$EjecutaArgs = '',
+    [string]$Exitos = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -209,6 +217,47 @@ function RestaurarDrivers {
     if ($bien -eq 0) { throw "Ningun controlador se pudo instalar." }
 }
 
+# Instala un paquete del catalogo del fabricante YA descargado (el hash SHA-256
+# lo comprobo el lado Go). exe/msi deben traer firma Authenticode valida: lo que
+# se ejecuta aqui corre como administrador.
+function InstalarWeb {
+    if (-not (Test-Path -LiteralPath $Archivo)) { throw "No existe el archivo descargado: $Archivo" }
+    if ($Tipo -ne 'zip') {
+        $firma = Get-AuthenticodeSignature -LiteralPath $Archivo
+        if ($firma.Status -ne 'Valid') {
+            throw ("El instalador no tiene una firma digital valida ({0}); no se ejecuta." -f $firma.Status)
+        }
+        Escribe 'INFO' ("Firmado por {0}" -f $firma.SignerCertificate.Subject)
+    }
+    switch ($Tipo) {
+        'zip' {
+            Expand-Archive -LiteralPath $Archivo -DestinationPath $Carpeta -Force
+            RestaurarDrivers
+            return
+        }
+        'exe' { $p = Start-Process -FilePath $Archivo -ArgumentList $Argumentos -Wait -PassThru }
+        'msi' { $p = Start-Process -FilePath 'msiexec.exe' -ArgumentList ('/i "{0}" /qn /norestart {1}' -f $Archivo, $Argumentos) -Wait -PassThru }
+        default { throw "Tipo de paquete desconocido: $Tipo" }
+    }
+    $buenos = @(0, 3010)
+    if ($Exitos) { $buenos = @($Exitos -split ',' | ForEach-Object { [int]$_ }) }
+    if ($buenos -notcontains $p.ExitCode) { throw ("El instalador termino con el codigo {0}." -f $p.ExitCode) }
+    if ($p.ExitCode -eq 3010) { Escribe 'AVISO' 'Pide reiniciar el equipo para quedar activo.' }
+
+    # Herramienta del fabricante: ya instalada, ahora se EJECUTA y ella busca y
+    # baja los controladores del modelo exacto.
+    if ($Ejecuta) {
+        $programa = [Environment]::ExpandEnvironmentVariables($Ejecuta)
+        if (-not (Test-Path -LiteralPath $programa)) { throw "La herramienta no quedo instalada en: $programa" }
+        Escribe 'INFO' 'Ejecutando la herramienta del fabricante (puede tardar varios minutos)...'
+        $arg = [Environment]::ExpandEnvironmentVariables($EjecutaArgs)
+        $e = Start-Process -FilePath $programa -ArgumentList $arg -Wait -PassThru
+        if ($buenos -notcontains $e.ExitCode) { throw ("La herramienta termino con el codigo {0}." -f $e.ExitCode) }
+        if ($e.ExitCode -eq 3010) { Escribe 'AVISO' 'Pide reiniciar el equipo para quedar activo.' }
+        if ($e.ExitCode -eq 256) { Escribe 'INFO' 'No habia controladores pendientes para este equipo.' }
+    }
+}
+
 function RespaldarWifi {
     New-Item -ItemType Directory -Path $Carpeta -Force | Out-Null
     # key=clear guarda la contrasena en el XML: es lo unico que permite despues
@@ -251,6 +300,7 @@ switch ($Accion) {
     'Listar'            { Inventario }
     'RespaldarDrivers'  { RespaldarDrivers }
     'RestaurarDrivers'  { RestaurarDrivers }
+    'InstalarWeb'       { InstalarWeb }
     'RespaldarWifi'     { RespaldarWifi }
     'RestaurarWifi'     { RestaurarWifi }
     default             { throw "Accion desconocida: $Accion" }

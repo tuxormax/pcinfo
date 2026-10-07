@@ -7,6 +7,8 @@
 class TareaKind {
   static const respaldar = 'respaldar';
   static const restaurar = 'restaurar';
+  static const descargar =
+      'descargar'; // baja e instala del catálogo del fabricante
 }
 
 /// Nivel de cada línea del registro de avance.
@@ -42,13 +44,13 @@ class DriverItem {
   });
 
   factory DriverItem.fromJson(Map<String, dynamic> j) => DriverItem(
-        name: j['name'] ?? '',
-        original: j['original'] ?? '',
-        clase: j['class'] ?? '',
-        provider: j['provider'] ?? '',
-        version: j['version'] ?? '',
-        date: j['date'] ?? '',
-      );
+    name: j['name'] ?? '',
+    original: j['original'] ?? '',
+    clase: j['class'] ?? '',
+    provider: j['provider'] ?? '',
+    version: j['version'] ?? '',
+    date: j['date'] ?? '',
+  );
 
   /// Nombre útil: el original del fabricante si se conoce, y si no el oemN.inf
   /// con el que lo guardó Windows.
@@ -63,10 +65,10 @@ class WifiProfile {
   const WifiProfile({this.name = '', this.auth = '', this.password = ''});
 
   factory WifiProfile.fromJson(Map<String, dynamic> j) => WifiProfile(
-        name: j['name'] ?? '',
-        auth: j['auth'] ?? '',
-        password: j['password'] ?? '',
-      );
+    name: j['name'] ?? '',
+    auth: j['auth'] ?? '',
+    password: j['password'] ?? '',
+  );
 
   bool get abierta => auth.toLowerCase() == 'open';
 }
@@ -98,13 +100,13 @@ class CasoConocido {
   });
 
   factory CasoConocido.fromJson(Map<String, dynamic> j) => CasoConocido(
-        id: j['id'] ?? '',
-        nombre: j['nombre'] ?? '',
-        descripcion: j['descripcion'] ?? '',
-        via: j['via'] ?? '',
-        motivo: j['motivo'] ?? '',
-        fuente: j['fuente'] ?? '',
-      );
+    id: j['id'] ?? '',
+    nombre: j['nombre'] ?? '',
+    descripcion: j['descripcion'] ?? '',
+    via: j['via'] ?? '',
+    motivo: j['motivo'] ?? '',
+    fuente: j['fuente'] ?? '',
+  );
 
   /// Titular de la explicación. Las dos primeras vías dicen "está bien así";
   /// la tercera dice que de verdad falta algo, y por eso se pinta distinto.
@@ -158,6 +160,51 @@ class DispositivoPendiente {
       );
 }
 
+/// Controlador del catálogo del fabricante que corresponde a un dispositivo sin
+/// controlador. Espejo de CandidatoWeb (backend/collector/catalogo_drivers.go).
+class CandidatoWeb {
+  final String
+  id; // fila del catálogo: lo único que viaja de vuelta al instalar
+  final String dispositivo;
+  final String instanceId;
+  final String nombre;
+  final String fabricante;
+  final String version;
+  final String tipo; // zip | exe | msi
+  final String nota;
+
+  /// false = el dispositivo se dejó sin controlador a propósito: sale
+  /// desmarcado y con el motivo en [aviso].
+  final bool recomendado;
+  final String aviso;
+
+  const CandidatoWeb({
+    this.id = '',
+    this.dispositivo = '',
+    this.instanceId = '',
+    this.nombre = '',
+    this.fabricante = '',
+    this.version = '',
+    this.tipo = '',
+    this.nota = '',
+    this.recomendado = true,
+    this.aviso = '',
+  });
+
+  factory CandidatoWeb.fromJson(Map<String, dynamic> j) => CandidatoWeb(
+    id: j['id'] ?? '',
+    dispositivo: j['dispositivo'] ?? '',
+    instanceId: j['instanceId'] ?? '',
+    nombre: j['nombre'] ?? '',
+    fabricante: j['fabricante'] ?? '',
+    version: j['version'] ?? '',
+    tipo: j['tipo'] ?? '',
+    nota: j['nota'] ?? '',
+    recomendado: j['recomendado'] ?? true,
+    aviso: j['aviso'] ?? '',
+  );
+}
+
 class ControladoresInfo {
   final String os;
   final bool supported; // ¿el módulo existe en este sistema? (solo Windows)
@@ -174,6 +221,9 @@ class ControladoresInfo {
   /// necesita administrador: sale aunque la lista de controladores venga vacía.
   final List<DispositivoPendiente> pendientes;
 
+  /// Controladores del catálogo del fabricante que se pueden descargar e instalar.
+  final List<CandidatoWeb> web;
+
   const ControladoresInfo({
     this.os = '',
     this.supported = false,
@@ -184,6 +234,7 @@ class ControladoresInfo {
     this.drivers = const [],
     this.wifi = const [],
     this.pendientes = const [],
+    this.web = const [],
   });
 
   factory ControladoresInfo.fromJson(Map<String, dynamic> j) =>
@@ -194,17 +245,27 @@ class ControladoresInfo {
         available: j['available'] ?? false,
         driversAplica: j['driversAplica'] ?? true,
         reason: j['reason'] ?? '',
-        drivers: (j['drivers'] as List?)
+        drivers:
+            (j['drivers'] as List?)
                 ?.map((e) => DriverItem.fromJson(e as Map<String, dynamic>))
                 .toList() ??
             const [],
-        wifi: (j['wifi'] as List?)
+        wifi:
+            (j['wifi'] as List?)
                 ?.map((e) => WifiProfile.fromJson(e as Map<String, dynamic>))
                 .toList() ??
             const [],
-        pendientes: (j['pendientes'] as List?)
-                ?.map((e) =>
-                    DispositivoPendiente.fromJson(e as Map<String, dynamic>))
+        pendientes:
+            (j['pendientes'] as List?)
+                ?.map(
+                  (e) =>
+                      DispositivoPendiente.fromJson(e as Map<String, dynamic>),
+                )
+                .toList() ??
+            const [],
+        web:
+            (j['web'] as List?)
+                ?.map((e) => CandidatoWeb.fromJson(e as Map<String, dynamic>))
                 .toList() ??
             const [],
       );
@@ -226,10 +287,10 @@ class PasoTarea {
   const PasoTarea({this.when = '', this.text = '', this.level = ''});
 
   factory PasoTarea.fromJson(Map<String, dynamic> j) => PasoTarea(
-        when: j['when'] ?? '',
-        text: j['text'] ?? '',
-        level: j['level'] ?? '',
-      );
+    when: j['when'] ?? '',
+    text: j['text'] ?? '',
+    level: j['level'] ?? '',
+  );
 }
 
 class TareaInfo {
@@ -266,27 +327,32 @@ class TareaInfo {
   });
 
   factory TareaInfo.fromJson(Map<String, dynamic> j) => TareaInfo(
-        id: j['id'] ?? '',
-        kind: j['kind'] ?? '',
-        drivers: j['drivers'] ?? false,
-        wifi: j['wifi'] ?? false,
-        folder: j['folder'] ?? '',
-        running: j['running'] ?? false,
-        done: j['done'] ?? false,
-        ok: j['ok'] ?? false,
-        started: j['started'] ?? '',
-        finished: j['finished'] ?? '',
-        error: j['error'] ?? '',
-        summary: j['summary'] ?? '',
-        omitted: (j['omitted'] ?? 0) as int,
-        steps: (j['steps'] as List?)
-                ?.map((e) => PasoTarea.fromJson(e as Map<String, dynamic>))
-                .toList() ??
-            const [],
-      );
+    id: j['id'] ?? '',
+    kind: j['kind'] ?? '',
+    drivers: j['drivers'] ?? false,
+    wifi: j['wifi'] ?? false,
+    folder: j['folder'] ?? '',
+    running: j['running'] ?? false,
+    done: j['done'] ?? false,
+    ok: j['ok'] ?? false,
+    started: j['started'] ?? '',
+    finished: j['finished'] ?? '',
+    error: j['error'] ?? '',
+    summary: j['summary'] ?? '',
+    omitted: (j['omitted'] ?? 0) as int,
+    steps:
+        (j['steps'] as List?)
+            ?.map((e) => PasoTarea.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+  );
 
   /// ¿Hay algo que mostrar? Al arrancar la app no hay ninguna tarea todavía.
   bool get existe => id.isNotEmpty;
 
-  String get verbo => kind == TareaKind.restaurar ? 'Restauración' : 'Respaldo';
+  String get verbo => switch (kind) {
+    TareaKind.restaurar => 'Restauración',
+    TareaKind.descargar => 'Instalación de controladores',
+    _ => 'Respaldo',
+  };
 }

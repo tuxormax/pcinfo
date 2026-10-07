@@ -51,6 +51,8 @@ class _ServicioMudo implements ControladoresService {
   }) async =>
       const TareaInfo();
   @override
+  Future<TareaInfo> descarga(List<String> ids) async => const TareaInfo();
+  @override
   Future<TareaInfo> tarea() async => const TareaInfo();
   @override
   Future<void> cancela() async {}

@@ -62,6 +62,7 @@ func runServer(addr string) {
 	mux.HandleFunc("/controladores/tarea", protege("/controladores/tarea", handleTarea))
 	mux.HandleFunc("/controladores/respaldar", protege("/controladores/respaldar", handleRespaldar))
 	mux.HandleFunc("/controladores/restaurar", protege("/controladores/restaurar", handleRestaurar))
+	mux.HandleFunc("/controladores/descargar", protege("/controladores/descargar", handleDescargar))
 	mux.HandleFunc("/controladores/cancelar", protege("/controladores/cancelar", handleCancelar))
 	mux.HandleFunc("/tienda", protege("/tienda", handleTienda))
 	mux.HandleFunc("/tienda/buscar", protege("/tienda/buscar", handleTiendaBuscar))
@@ -270,6 +271,29 @@ func arrancaTarea(w http.ResponseWriter, r *http.Request, kind string) {
 		return
 	}
 	responde(w, "/controladores/"+kind, info)
+}
+
+// handleDescargar baja e instala controladores del catálogo del fabricante. El
+// cuerpo solo trae los ids de las filas elegidas: el enlace y el hash se
+// resuelven en el catálogo del backend, nunca los manda la GUI.
+func handleDescargar(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		fallo(w, http.StatusMethodNotAllowed, "esta operación necesita POST")
+		return
+	}
+	var p struct {
+		Ids []string `json:"ids"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 64*1024)).Decode(&p); err != nil {
+		fallo(w, http.StatusBadRequest, "no se entendió la petición: "+err.Error())
+		return
+	}
+	info, err := collector.IniciaDescarga(p.Ids)
+	if err != nil {
+		fallo(w, http.StatusConflict, err.Error())
+		return
+	}
+	responde(w, "/controladores/descargar", info)
 }
 
 // handleCancelar aborta la tarea en curso.

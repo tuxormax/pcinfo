@@ -1,0 +1,75 @@
+[
+ {
+  "id": "hp-elite-805g9-realtek-lan",
+  "nombre": "Realtek Ethernet Controller (HP SoftPaq sp157347)",
+  "fabricante": "HP",
+  "buscarId": "VEN_10EC&DEV_(8168|8136|8125)",
+  "equipo": "HP .*Elite SFF 805 G9",
+  "url": "https://ftp.hp.com/pub/softpaq/sp157001-157500/sp157347.exe",
+  "sha256": "39abba5c1ec5bdc5137c27502d5d3839bb4bd2b5c225d3a47969a4d385adb231",
+  "tipo": "exe",
+  "args": "-s",
+  "version": "1166.022.1119.2024",
+  "nota": "Paquete oficial de HP para el Elite SFF 805 G9. El argumento -s (silencioso) del SoftPaq no se ha probado en un Windows real."
+ },
+ {
+  "id": "hp-image-assistant",
+  "nombre": "HP Image Assistant (busca e instala los controladores de este HP)",
+  "fabricante": "HP",
+  "buscarId": "",
+  "equipo": "^(HP|Hewlett-Packard)\\b",
+  "url": "https://hpia.hpcloud.hp.com/downloads/hpia/hp-hpia-5.3.6.exe",
+  "sha256": "5e205a0300c1dc4f59d8a08caa5fb1daf434f1dc6cb05df4e4d3f9ec83cd9cb7",
+  "tipo": "exe",
+  "args": "/s /f C:\\SWSetup\\HPImageAssistant /e",
+  "version": "5.3.6",
+  "nota": "Herramienta oficial de HP; baja de HP los controladores del modelo exacto.",
+  "ejecuta": "C:\\SWSetup\\HPImageAssistant\\HPImageAssistant.exe",
+  "ejecutaArgs": "/Operation:Analyze /Category:Drivers /Selection:All /Action:Install /Silent /ReportFolder:C:\\SWSetup\\HPIA\\Logs /SoftpaqDownloadFolder:C:\\SWSetup\\HPIA\\Drivers",
+  "exitos": [
+   0,
+   3010,
+   256,
+   1168
+  ]
+ },
+ {
+  "id": "dell-command-update",
+  "nombre": "Dell Command | Update (busca e instala los controladores de este Dell)",
+  "fabricante": "Dell",
+  "buscarId": "",
+  "equipo": "^Dell",
+  "url": "https://dl.dell.com/FOLDER14424243M/1/Dell-Command-Update-Application_RXT5N_WIN64_5.7.0_A00.EXE",
+  "sha256": "b6d0d06edf25a7d9092208b2686502e031deda5ccb2d283ba8a434b27891f3cf",
+  "tipo": "exe",
+  "args": "/passthrough /S /V/quiet /V/norestart",
+  "version": "5.7.0",
+  "nota": "Herramienta oficial de Dell. Requiere .NET 8 Desktop Runtime.",
+  "ejecuta": "%ProgramFiles%\\Dell\\CommandUpdate\\dcu-cli.exe",
+  "ejecutaArgs": "/applyUpdates -silent -reboot=disable -updateType=driver",
+  "exitos": [
+   0,
+   2,
+   3010
+  ]
+ },
+ {
+  "id": "lenovo-thin-installer",
+  "nombre": "Lenovo Thin Installer (busca e instala los controladores de este Lenovo)",
+  "fabricante": "Lenovo",
+  "buscarId": "",
+  "equipo": "^LENOVO",
+  "url": "https://download.lenovo.com/pccbbs/thinkvantage_en/lenovo_thininstaller_1.04.02.00024.exe",
+  "sha256": "3f35fddfd07701caf95fc60eb488e26a73a1e27bb4beaed1afdf3982d871e234",
+  "tipo": "exe",
+  "args": "/VERYSILENT /NORESTART",
+  "version": "1.04.02.0024",
+  "nota": "Herramienta oficial de Lenovo. Las opciones de búsqueda no están documentadas por Lenovo: sin probar en un equipo real.",
+  "ejecuta": "%ProgramFiles(x86)%\\Lenovo\\ThinInstaller\\ThinInstaller.exe",
+  "ejecutaArgs": "/CM -search A -action INSTALL -noicon -includerebootpackages 3 -noreboot -packagetypes 2",
+  "exitos": [
+   0,
+   3010
+  ]
+ }
+]

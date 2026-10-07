@@ -20,6 +20,10 @@ abstract class ControladoresService {
     required bool wifi,
   });
 
+  /// Baja e instala del catálogo del fabricante las filas con esos ids. El
+  /// enlace y el hash los resuelve el backend: aquí solo viajan los ids.
+  Future<TareaInfo> descarga(List<String> ids);
+
   /// Estado de la tarea en curso (o de la última que terminó).
   Future<TareaInfo> tarea();
 
@@ -30,8 +34,9 @@ abstract class ControladoresService {
 class HttpControladoresService implements ControladoresService {
   final Uri base;
 
-  HttpControladoresService({String url = 'http://127.0.0.1:51247/controladores'})
-      : base = Uri.parse(url);
+  HttpControladoresService({
+    String url = 'http://127.0.0.1:51247/controladores',
+  }) : base = Uri.parse(url);
 
   Uri _sub(String cola) => base.replace(path: '${base.path}$cola');
 
@@ -57,6 +62,17 @@ class HttpControladoresService implements ControladoresService {
       {'carpeta': carpeta, 'drivers': drivers, 'wifi': wifi},
       espera: const Duration(seconds: 30),
       que: 'al iniciar la operación',
+    );
+    return TareaInfo.fromJson(json);
+  }
+
+  @override
+  Future<TareaInfo> descarga(List<String> ids) async {
+    final json = await enviaJson(
+      _sub('/descargar'),
+      {'ids': ids},
+      espera: const Duration(seconds: 30),
+      que: 'al iniciar la descarga de controladores',
     );
     return TareaInfo.fromJson(json);
   }

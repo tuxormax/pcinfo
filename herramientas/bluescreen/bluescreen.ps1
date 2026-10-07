@@ -67,7 +67,8 @@ param(
     [switch]$Rehacer,
     [switch]$Ver,
     [switch]$InstalarTarea,
-    [switch]$QuitarTarea
+    [switch]$QuitarTarea,
+    [switch]$Verificar
 )
 
 $ErrorActionPreference = 'Stop'
@@ -107,6 +108,7 @@ $STOPCODES = @{
     '0x0000007E' = 'SYSTEM_THREAD_EXCEPTION_NOT_HANDLED'
     '0x0000007F' = 'UNEXPECTED_KERNEL_MODE_TRAP'
     '0x0000009F' = 'DRIVER_POWER_STATE_FAILURE'
+    '0x000000A5' = 'ACPI_BIOS_ERROR'
     '0x000000A0' = 'INTERNAL_POWER_ERROR'
     '0x000000C2' = 'BAD_POOL_CALLER'
     '0x000000C4' = 'DRIVER_VERIFIER_DETECTED_VIOLATION'
@@ -152,6 +154,7 @@ $STOPGUIA = @{
     '0x0000007B' = 'Windows no encuentra el disco de arranque: cambio de modo SATA (AHCI/RAID) en BIOS o driver de almacenamiento. Revisa BIOS y el controlador iaStor/stornvme.'
     '0x0000007E' = 'Un hilo del sistema genero una excepcion no controlada, por un DRIVER. Actualiza/revierte el driver de terceros senalado abajo.'
     '0x0000009F' = 'Driver en estado de energia inconsistente (suele pasar al suspender/reanudar). Sospecha de driver de red, chipset o USB. Actualiza esos drivers o desactiva la suspension selectiva.'
+    '0x000000A5' = 'El BIOS/UEFI entrego a Windows una tabla o un metodo ACPI defectuoso o incompleto: es un problema de FIRMWARE, casi nunca de un driver. Actualiza el BIOS desde la pagina del fabricante, carga los valores por defecto del BIOS, instala el chipset y el audio oficiales del equipo y, si falla al reanudar, desactiva la suspension. Anota el 1er parametro: dice que tipo de fallo ACPI fue.'
     '0x000000C2' = 'Un driver hizo una operacion de pool invalida (BAD_POOL_CALLER). Es un DRIVER defectuoso; identifica el de terceros senalado y actualizalo.'
     '0x000000D1' = 'Un DRIVER accedio a memoria con IRQL alto. Muy comun en drivers de RED/WiFi o GPU. Actualiza o revierte el driver de terceros senalado abajo.'
     '0x000000EF' = 'Un proceso critico del sistema murio. Puede ser corrupcion del sistema o driver/malware. Corre sfc /scannow y DISM /Online /Cleanup-Image /RestoreHealth.'
@@ -738,6 +741,8 @@ function Format-Entrada($ev, $indice, $info, $dumps) {
     } elseif ($ev.Dump) {
         $existe = if (Test-Path $ev.Dump) { 'existe' } else { 'YA NO existe (se sobrescribio)' }
         [void]$sb.AppendLine("| Archivo dump | $(MD $ev.Dump) ($existe) |")
+    } else {
+        [void]$sb.AppendLine('| Archivo dump | NO hay ninguno: Windows no alcanzo a guardarlo (revisa paginacion y CrashControl con -Verificar). Si el pantallazo fue al arrancar, la foto de la pantalla es la unica evidencia. |')
     }
     [void]$sb.AppendLine('')
 
@@ -898,6 +903,31 @@ function Asegura-Paginacion {
     }
 }
 
+# Comprueba que el equipo esta listo para dejar rastro de un pantallazo: volcado
+# activo, archivo de paginacion y tarea registrada. Devuelve la lista de problemas.
+function Verifica-Captura {
+    $prob = @()
+    try {
+        $cc = Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\CrashControl' -ErrorAction Stop
+        if ($null -ne $cc.CrashDumpEnabled -and [int]$cc.CrashDumpEnabled -eq 0) { $prob += 'Volcado desactivado (CrashDumpEnabled = 0).' }
+    } catch { }
+    try {
+        $cs = Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+        $pf = @(Get-CimInstance Win32_PageFileUsage -ErrorAction SilentlyContinue)
+        if (-not $cs.AutomaticManagedPagefile -and $pf.Count -eq 0) { $prob += 'No hay archivo de paginacion.' }
+    } catch { }
+    try {
+        if (-not (Get-ScheduledTask -TaskName $TASK_NAME -ErrorAction SilentlyContinue)) { $prob += "La tarea $TASK_NAME no esta registrada." }
+    } catch { $prob += "No se pudo comprobar la tarea $TASK_NAME." }
+    if ($prob.Count -eq 0) {
+        Log 'Verificacion: volcado activo, paginacion presente y tarea registrada.' 'Green'
+    } else {
+        foreach ($m in $prob) { Log "Verificacion: $m" 'Yellow' }
+        Log 'Con eso, un pantallazo puede NO dejar rastro. Corre bluescreen.bat para repararlo.' 'Yellow'
+    }
+    return $prob
+}
+
 function Instalar-Tarea {
     $ps1 = $PSCommandPath
     $accion = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$ps1`" -Archivo `"$Archivo`""
@@ -928,6 +958,7 @@ function Instalar-Tarea {
             /TR "powershell.exe $accion" | Out-Null
         Log "Tarea creada solo con disparador de arranque." 'Yellow'
     }
+    [void](Verifica-Captura)
 }
 
 function Quitar-Tarea {
@@ -941,6 +972,7 @@ function Quitar-Tarea {
 # ==============================================================================
 
 if ($QuitarTarea) { Quitar-Tarea; return }
+if ($Verificar) { [void](Verifica-Captura); return }
 if ($InstalarTarea) { Instalar-Tarea }   # instala y CONTINUA para capturar lo ya ocurrido
 
 if ($Ver) {

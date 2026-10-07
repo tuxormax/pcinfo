@@ -58,6 +58,7 @@ $STOPCODES = @{
     '0x0000007E' = 'SYSTEM_THREAD_EXCEPTION_NOT_HANDLED'
     '0x0000007F' = 'UNEXPECTED_KERNEL_MODE_TRAP'
     '0x0000009F' = 'DRIVER_POWER_STATE_FAILURE'
+    '0x000000A5' = 'ACPI_BIOS_ERROR'
     '0x000000A0' = 'INTERNAL_POWER_ERROR'
     '0x000000BE' = 'ATTEMPTED_WRITE_TO_READONLY_MEMORY'
     '0x000000C2' = 'BAD_POOL_CALLER'
@@ -88,6 +89,7 @@ $STOPCAUSA = @{
     '0x00000022' = 'Fallo del sistema de archivos: el disco o su driver devolvieron datos inconsistentes.'
     '0x00000024' = 'Problema en el sistema de archivos NTFS: disco con sectores dañados o driver de almacenamiento defectuoso.'
     '0x0000002E' = 'Error de paridad en el bus de memoria: RAM defectuosa o mal asentada.'
+    '0x000000A5' = 'El BIOS/UEFI entregó a Windows una tabla o un método ACPI defectuoso o incompleto. Es un problema de firmware (BIOS desactualizado o mal configurado), casi nunca de un driver.'
     '0x0000003B' = 'Una llamada al sistema falló dentro del kernel. Suele venir de un driver (gráfica, antivirus, virtualización).'
     '0x00000050' = 'Se accedió a una dirección de memoria que no existe. Sospechosos: RAM dañada, un driver o un antivirus.'
     '0x0000007A' = 'Windows no pudo leer del disco una página de memoria: disco, cable o controladora fallando.'
@@ -125,6 +127,7 @@ $STOPFIX = @{
     '0x00000022' = 'Corre "chkdsk C: /f /r" y revisa la salud del disco en la pestaña Hardware.'
     '0x00000024' = 'Corre "chkdsk C: /f /r", revisa el S.M.A.R.T. del disco y cambia el cable SATA.'
     '0x0000002E' = 'Prueba la RAM con mdsched.exe o memtest86+, y reasienta los módulos.'
+    '0x000000A5' = 'Actualiza el BIOS/UEFI desde la página del fabricante, carga los valores por defecto del BIOS, instala el chipset y el audio oficiales del equipo y, si falla al reanudar, desactiva la suspensión. Anota el 1er parámetro del código: dice qué tipo de fallo ACPI fue.'
     '0x0000003B' = 'Actualiza el driver de la gráfica y desinstala antivirus de terceros temporalmente para descartar.'
     '0x00000050' = 'Corre mdsched.exe (test de RAM); si la RAM está bien, actualiza o desinstala el driver señalado.'
     '0x0000007A' = 'Revisa el S.M.A.R.T. del disco en la pestaña Hardware, cambia el cable SATA y corre "chkdsk C: /f /r".'
@@ -604,7 +607,7 @@ $EVENTOS = @{
     }
     'Microsoft-Windows-Kernel-Power|41'            = @{ kind = 'apagado'; sev = 'critico'; titulo = 'El sistema se reinició sin apagarse correctamente'
         causa = 'El kernel no tuvo tiempo de cerrar la sesión: pantallazo azul, corte de energía, sobrecalentamiento o una fuente de poder que no da abasto.'
-        fix = 'Revisa temperaturas y limpia el equipo; prueba con otra fuente/regulador. Si el evento trae un código de bugcheck, es un pantallazo azul: revisa esa entrada.'
+        fix = 'Revisa temperaturas y limpia el equipo; prueba con otra fuente/regulador. Si el evento trae un código de bugcheck, es un pantallazo azul: revisa esa entrada. Con código 0 puede ser un pantallazo que no alcanzó a guardar su volcado (pasa con errores al arrancar o al reanudar, como ACPI_BIOS_ERROR): mira el aviso sobre volcados.'
     }
     'Microsoft-Windows-WHEA-Logger|17'             = @{ kind = 'hardware'; sev = 'aviso'; titulo = 'Error de hardware corregido automáticamente (WHEA)'
         causa = 'El hardware detectó un error y pudo corregirlo solo. Es un aviso temprano: memoria, bus PCIe o CPU empezando a dar problemas.'
@@ -996,6 +999,45 @@ foreach ($k in $orden) {
     $g = $grupos[$k]
     if ([int]$g.count -le 1) { $g.firstWhen = '' }
     [void]$items.Add($g)
+}
+
+# ---- 2b) ¿Se está capturando bien lo que pase? ---------------------------------
+# Un reinicio inesperado sin pantallazo registrado ni volcado casi siempre es un
+# BSOD que Windows no alcanzó a guardar. Aquí se revisa si el equipo está
+# preparado para guardarlos (volcado activo, archivo de paginación) y si la tarea
+# de bluescreen sigue registrada. Solo en el Windows vivo: un sistema analizado
+# desde otra unidad no se puede preguntar por su tarea ni su paginación.
+if (-not $OFFLINE) {
+    $problemas = @()
+    try {
+        $cc = Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\CrashControl' -ErrorAction Stop
+        if ($null -ne $cc.CrashDumpEnabled -and [int]$cc.CrashDumpEnabled -eq 0) { $problemas += 'El volcado de memoria está desactivado (CrashDumpEnabled = 0): ningún pantallazo deja archivo .dmp.' }
+    } catch { }
+    try {
+        $cs = Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+        $pf = @(Get-CimInstance Win32_PageFileUsage -ErrorAction SilentlyContinue)
+        if (-not $cs.AutomaticManagedPagefile -and $pf.Count -eq 0) { $problemas += 'No hay archivo de paginación: Windows no puede escribir el volcado de un pantallazo.' }
+    } catch { }
+    try {
+        if (-not (Get-ScheduledTask -TaskName 'RecopilarBluescreens' -ErrorAction SilentlyContinue)) { $problemas += 'La tarea RecopilarBluescreens no está registrada: nadie anota los pantallazos en C:\bluescreen.md. Se vuelve a crear con "Pantallazos azules (bluescreen)" del menú Inicio.' }
+    } catch { }
+    $reinicios = 0
+    foreach ($r in $registros) {
+        if ("$($r.ProviderName)" -eq 'Microsoft-Windows-Kernel-Power' -and [int]$r.Id -eq 41) { $reinicios++ }
+    }
+    if ($reinicios -gt 0 -and $dumps.Count -eq 0) { $problemas += "Hubo $reinicios reinicio(s) inesperado(s) y no hay ningún volcado en C:\Windows\Minidump: si fueron pantallazos azules, Windows no alcanzó a guardarlos (suele pasar con fallos al arrancar o al reanudar de la suspensión, como ACPI_BIOS_ERROR)." }
+    if ($problemas.Count -gt 0) {
+        [void]$items.Add([ordered]@{
+                id = 'captura-pantallazos'; when = (Fecha (Get-Date)); firstWhen = ''; count = 1
+                severity = 'aviso'; kind = 'sistema'; title = 'Los pantallazos azules podrían no estar quedando registrados'
+                source = 'Revisión de PCInfo (volcado, paginación y tarea bluescreen)'
+                code = ''; codeName = ''
+                culprit = ''; culpritInfo = ''; confidence = ''; suspects = @()
+                cause = 'Para diagnosticar un pantallazo hace falta que Windows guarde su volcado y que alguien lo anote. Si falta alguna pieza, un fallo real queda sin rastro.'
+                fix = 'Corrige lo indicado abajo. Si el pantallazo ocurre al arrancar, fotografía el código y el primer parámetro que muestra la pantalla: sin volcado, esa foto es la única evidencia.'
+                detail = ($problemas -join "`r`n")
+            })
+    }
 }
 
 # ---- 3) Volcados presentes en el disco ---------------------------------------

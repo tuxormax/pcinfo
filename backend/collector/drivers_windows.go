@@ -89,6 +89,7 @@ func estadoControladores() DriversReport {
 		rep.Wifi = crudo.Wifi
 	}
 	rep.Pendientes = explicaPendientes(crudo.Pendientes)
+	rep.Web = candidatosWeb(rep.Pendientes, equipoActual())
 	// Sin administrador netsh exporta los perfiles pero NO las contraseñas: se
 	// avisa para que nadie crea que el respaldo servirá para restaurar.
 	if !rep.Elevated && rep.Reason == "" {
@@ -117,13 +118,13 @@ func restauraWifi(ctx context.Context, carpeta string) error {
 // tareaPS ejecuta una acción del script y va publicando cada línea que imprime
 // como un paso de la tarea. El prefijo de la línea (OK:, AVISO:, INFO:) decide
 // el nivel con que la GUI la pinta.
-func tareaPS(ctx context.Context, accion, carpeta string) error {
+func tareaPS(ctx context.Context, accion, carpeta string, extra ...string) error {
 	var ultimo string
 	err := correPSFlujo(ctx, "drivers", scriptDrivers, func(linea string) {
 		nivel, texto := parteNivel(linea)
 		ultimo = texto
 		paso(nivel, texto)
-	}, "-Accion", accion, "-Carpeta", carpeta)
+	}, append([]string{"-Accion", accion, "-Carpeta", carpeta}, extra...)...)
 	if err != nil {
 		// PowerShell escribe el throw en stderr, que llega por el mismo canal:
 		// la última línea suele ser el motivo real y es mucho más útil que el

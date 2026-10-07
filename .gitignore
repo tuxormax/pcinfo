@@ -56,3 +56,6 @@ herramientas/catalogo/*_raw*.json
 herramientas/catalogo/*_spec.json
 herramientas/catalogo/specs.json
 herramientas/catalogo/__pycache__/
+
+# Instaladores bajados con herramientas/agrega_driver_web.py (no van al repo)
+/drivers/
