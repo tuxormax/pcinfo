@@ -322,7 +322,9 @@ class _ErroresPageState extends State<ErroresPage> {
               children: [
                 Text(
                   d.items.isEmpty
-                      ? 'Sin errores registrados'
+                      ? (d.available
+                          ? 'Sin errores registrados'
+                          : 'No se pudo comprobar')
                       : '${d.items.length} problema(s) detectado(s)'
                           '${graves > 0 ? "  ·  $graves grave(s)" : ""}',
                   style: const TextStyle(

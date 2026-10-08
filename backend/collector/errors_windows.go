@@ -65,6 +65,15 @@ func collectErrors(raizPedida string) ErrorsReport {
 		rep.ScanDays = diasOffline
 	}
 
+	// Servicio "Registro de eventos de Windows" apagado o deshabilitado: se
+	// intenta activarlo antes de leer (solo en el Windows en ejecución).
+	if !rep.Offline {
+		if aviso := aseguraServicioEventos(); aviso != "" {
+			motivo = aviso
+		}
+		aseguraTareaBluescreen()
+	}
+
 	ps1 := materializaScript()
 	if ps1 == "" {
 		rep.Reason = "No se pudo preparar el lector de eventos de Windows (no hay carpeta temporal escribible)."
@@ -203,6 +212,74 @@ func correPowerShell(ps1, salida, raiz string, dias int) error {
 		return fmt.Errorf("%v: %s", err, recorta(string(out), 300))
 	}
 	return nil
+}
+
+// aseguraServicioEventos deja el servicio EventLog en inicio automático y en
+// ejecución. Devuelve "" si ya estaba bien o se pudo arreglar, o un aviso en
+// español si no se pudo (normalmente por falta de permisos de administrador).
+func aseguraServicioEventos() string {
+	sc := func(args ...string) string {
+		cmd := exec.Command("sc.exe", args...)
+		ocultaVentana(cmd)
+		out, _ := cmd.CombinedOutput()
+		return string(out)
+	}
+	if strings.Contains(sc("query", "EventLog"), "RUNNING") {
+		return ""
+	}
+	if !isElevated() {
+		return "El servicio 'Registro de eventos de Windows' no está en ejecución y PCInfo no puede " +
+			"activarlo sin permisos de administrador. Reintenta como administrador."
+	}
+	sc("config", "EventLog", "start=", "auto")
+	sc("start", "EventLog")
+	for i := 0; i < 10; i++ {
+		if strings.Contains(sc("query", "EventLog"), "RUNNING") {
+			return "El servicio 'Registro de eventos de Windows' estaba apagado y PCInfo lo activó."
+		}
+		time.Sleep(time.Second)
+	}
+	return "El servicio 'Registro de eventos de Windows' está apagado y PCInfo no pudo activarlo; " +
+		"actívalo desde services.msc."
+}
+
+// aseguraTareaBluescreen deja activa la tarea RecopilarBluescreens (la que
+// anota cada pantallazo azul y garantiza el volcado). Si falta, la vuelve a
+// instalar con el script empaquetado; si está deshabilitada, la habilita.
+// Necesita administrador; sin él no hace nada (el aviso ya lo da el script).
+func aseguraTareaBluescreen() {
+	if !isElevated() {
+		return
+	}
+	const tarea = "RecopilarBluescreens"
+	schtasks := func(args ...string) (string, error) {
+		cmd := exec.Command("schtasks.exe", args...)
+		ocultaVentana(cmd)
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	if out, err := schtasks("/query", "/tn", tarea, "/fo", "csv", "/nh"); err == nil {
+		if strings.Contains(out, "Disabled") || strings.Contains(out, "Deshabilitad") {
+			schtasks("/change", "/tn", tarea, "/enable")
+		}
+		return
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+	script := filepath.Join(filepath.Dir(exe), "bluescreen", "bluescreen.ps1")
+	if _, err := os.Stat(script); err != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, rutaPowerShell(), "-NoProfile", "-NonInteractive",
+		"-ExecutionPolicy", "Bypass", "-File", script, "-InstalarTarea")
+	ocultaVentana(cmd)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		warn("bluescreen tarea", fmt.Errorf("%v: %s", err, recorta(string(out), 200)))
+	}
 }
 
 func rutaPowerShell() string {
