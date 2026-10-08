@@ -9,6 +9,8 @@ class ErroresInfo {
   final bool available; // ¿se pudo leer alguna fuente?
   final String reason; // aviso/motivo cuando algo no se pudo leer
   final int scanDays; // días de historial analizados
+  final int limit; // eventos leídos por registro (0 = ventana de días)
+  final bool hasMore; // hay más eventos: se ofrece «Cargar más»
 
   /// Instalación analizada. [target] vacío = el sistema que está corriendo;
   /// con [offline] en true se leyó el Windows de OTRA unidad (equipo que no
@@ -41,6 +43,8 @@ class ErroresInfo {
     this.available = false,
     this.reason = '',
     this.scanDays = 30,
+    this.limit = 0,
+    this.hasMore = false,
     this.target = '',
     this.targetLabel = '',
     this.offline = false,
@@ -54,39 +58,46 @@ class ErroresInfo {
   });
 
   factory ErroresInfo.fromJson(Map<String, dynamic> j) => ErroresInfo(
-        os: j['os'] ?? '',
-        elevated: j['elevated'] ?? false,
-        source: j['source'] ?? '',
-        available: j['available'] ?? false,
-        reason: j['reason'] ?? '',
-        scanDays: (j['scanDays'] ?? 30) as int,
-        target: j['target'] ?? '',
-        targetLabel: j['targetLabel'] ?? '',
-        offline: j['offline'] ?? false,
-        installs: (j['installs'] as List?)
-                ?.map((e) => Install.fromJson(e as Map<String, dynamic>))
-                .toList() ??
-            const [],
-        items: (j['items'] as List?)
-                ?.map((e) => ErrorItem.fromJson(e as Map<String, dynamic>))
-                .toList() ??
-            const [],
-        dumps: (j['dumps'] as List?)
-                ?.map((e) => DumpFile.fromJson(e as Map<String, dynamic>))
-                .toList() ??
-            const [],
-        culprits: (j['culprits'] as List?)
-                ?.map((e) => Culprit.fromJson(e as Map<String, dynamic>))
-                .toList() ??
-            const [],
-        dumpsAnalyzed: (j['dumpsAnalyzed'] ?? 0) as int,
-        analyzedLabel: j['analyzedLabel'] ?? '',
-        culpritsNote: (j['culpritsNote'] as List?)
-                ?.map((e) => '$e')
-                .where((e) => e.isNotEmpty)
-                .toList() ??
-            const [],
-      );
+    os: j['os'] ?? '',
+    elevated: j['elevated'] ?? false,
+    source: j['source'] ?? '',
+    available: j['available'] ?? false,
+    reason: j['reason'] ?? '',
+    scanDays: (j['scanDays'] ?? 30) as int,
+    limit: (j['limit'] ?? 0) as int,
+    hasMore: j['hasMore'] ?? false,
+    target: j['target'] ?? '',
+    targetLabel: j['targetLabel'] ?? '',
+    offline: j['offline'] ?? false,
+    installs:
+        (j['installs'] as List?)
+            ?.map((e) => Install.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    items:
+        (j['items'] as List?)
+            ?.map((e) => ErrorItem.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    dumps:
+        (j['dumps'] as List?)
+            ?.map((e) => DumpFile.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    culprits:
+        (j['culprits'] as List?)
+            ?.map((e) => Culprit.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    dumpsAnalyzed: (j['dumpsAnalyzed'] ?? 0) as int,
+    analyzedLabel: j['analyzedLabel'] ?? '',
+    culpritsNote:
+        (j['culpritsNote'] as List?)
+            ?.map((e) => '$e')
+            .where((e) => e.isNotEmpty)
+            .toList() ??
+        const [],
+  );
 
   bool get isWindows => os == 'windows';
 
@@ -174,27 +185,25 @@ class ErrorItem {
   });
 
   factory ErrorItem.fromJson(Map<String, dynamic> j) => ErrorItem(
-        id: j['id'] ?? '',
-        when: j['when'] ?? '',
-        firstWhen: j['firstWhen'] ?? '',
-        count: (j['count'] ?? 1) as int,
-        severity: j['severity'] ?? 'error',
-        kind: j['kind'] ?? 'sistema',
-        title: j['title'] ?? '',
-        source: j['source'] ?? '',
-        code: j['code'] ?? '',
-        codeName: j['codeName'] ?? '',
-        culprit: j['culprit'] ?? '',
-        culpritInfo: j['culpritInfo'] ?? '',
-        confidence: j['confidence'] ?? '',
-        suspects:
-            (j['suspects'] as List?)?.map((e) => '$e').toList() ?? const [],
-        evidence:
-            (j['evidence'] as List?)?.map((e) => '$e').toList() ?? const [],
-        cause: j['cause'] ?? '',
-        fix: j['fix'] ?? '',
-        detail: j['detail'] ?? '',
-      );
+    id: j['id'] ?? '',
+    when: j['when'] ?? '',
+    firstWhen: j['firstWhen'] ?? '',
+    count: (j['count'] ?? 1) as int,
+    severity: j['severity'] ?? 'error',
+    kind: j['kind'] ?? 'sistema',
+    title: j['title'] ?? '',
+    source: j['source'] ?? '',
+    code: j['code'] ?? '',
+    codeName: j['codeName'] ?? '',
+    culprit: j['culprit'] ?? '',
+    culpritInfo: j['culpritInfo'] ?? '',
+    confidence: j['confidence'] ?? '',
+    suspects: (j['suspects'] as List?)?.map((e) => '$e').toList() ?? const [],
+    evidence: (j['evidence'] as List?)?.map((e) => '$e').toList() ?? const [],
+    cause: j['cause'] ?? '',
+    fix: j['fix'] ?? '',
+    detail: j['detail'] ?? '',
+  );
 
   bool get repetido => count > 1;
 }
@@ -209,10 +218,10 @@ class DumpFile {
   const DumpFile({this.path = '', this.when = '', this.sizeBytes = 0});
 
   factory DumpFile.fromJson(Map<String, dynamic> j) => DumpFile(
-        path: j['path'] ?? '',
-        when: j['when'] ?? '',
-        sizeBytes: (j['sizeBytes'] ?? 0) as int,
-      );
+    path: j['path'] ?? '',
+    when: j['when'] ?? '',
+    sizeBytes: (j['sizeBytes'] ?? 0) as int,
+  );
 }
 
 /// Instalación de Windows encontrada en los discos del equipo. Con el equipo
@@ -234,12 +243,12 @@ class Install {
   });
 
   factory Install.fromJson(Map<String, dynamic> j) => Install(
-        root: j['root'] ?? '',
-        drive: j['drive'] ?? '',
-        label: j['label'] ?? '',
-        version: j['version'] ?? '',
-        current: j['current'] ?? false,
-      );
+    root: j['root'] ?? '',
+    drive: j['drive'] ?? '',
+    label: j['label'] ?? '',
+    version: j['version'] ?? '',
+    current: j['current'] ?? false,
+  );
 
   /// Texto del selector: "Este equipo (X:)" o "Windows en D: · Datos".
   String get titulo {
@@ -276,16 +285,16 @@ class Culprit {
   });
 
   factory Culprit.fromJson(Map<String, dynamic> j) => Culprit(
-        driver: j['driver'] ?? '',
-        device: j['device'] ?? '',
-        vendor: j['vendor'] ?? '',
-        version: j['version'] ?? '',
-        path: j['path'] ?? '',
-        inStack: (j['inStack'] ?? 0) as int,
-        unloading: (j['unloading'] ?? 0) as int,
-        total: (j['total'] ?? 0) as int,
-        why: j['why'] ?? '',
-      );
+    driver: j['driver'] ?? '',
+    device: j['device'] ?? '',
+    vendor: j['vendor'] ?? '',
+    version: j['version'] ?? '',
+    path: j['path'] ?? '',
+    inStack: (j['inStack'] ?? 0) as int,
+    unloading: (j['unloading'] ?? 0) as int,
+    total: (j['total'] ?? 0) as int,
+    why: j['why'] ?? '',
+  );
 
   /// Estar en la pila es PRUEBA de que su código se ejecutaba; estar
   /// descargándose es un patrón fuerte pero indirecto.

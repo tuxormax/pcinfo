@@ -25,11 +25,17 @@ class ErroresPage extends StatefulWidget {
   /// (recibe su raíz, "D:\\Windows"; vacío = el sistema en ejecución).
   final void Function(String raiz)? onInstalacion;
 
+  /// Botón «Cargar más» al final de la lista (30 eventos más por registro).
+  final VoidCallback? onCargarMas;
+  final bool cargandoMas;
+
   const ErroresPage({
     super.key,
     required this.data,
     this.avisoAccion,
     this.onInstalacion,
+    this.onCargarMas,
+    this.cargandoMas = false,
   });
 
   @override
@@ -53,8 +59,9 @@ class _ErroresPageState extends State<ErroresPage> {
   @override
   Widget build(BuildContext context) {
     final d = widget.data;
-    final items =
-        _filtro == null ? d.items : d.items.where((e) => e.kind == _filtro).toList();
+    final items = _filtro == null
+        ? d.items
+        : d.items.where((e) => e.kind == _filtro).toList();
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
@@ -72,23 +79,30 @@ class _ErroresPageState extends State<ErroresPage> {
             const SizedBox(height: 14),
             _culpables(d),
           ],
-          if (d.reason.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            _aviso(d),
-          ],
-          if (d.items.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            _filtros(d),
-          ],
+          if (d.reason.isNotEmpty) ...[const SizedBox(height: 14), _aviso(d)],
+          if (d.items.isNotEmpty) ...[const SizedBox(height: 16), _filtros(d)],
           const SizedBox(height: 16),
           if (d.items.isEmpty)
             _sinErrores(d)
           else
             ...items.map((e) => _ErrorCard(item: e)),
-          if (d.dumps.isNotEmpty) ...[
+          if (d.hasMore && widget.onCargarMas != null) ...[
             const SizedBox(height: 8),
-            _volcados(d),
+            Center(
+              child: OutlinedButton.icon(
+                onPressed: widget.cargandoMas ? null : widget.onCargarMas,
+                icon: widget.cargandoMas
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.expand_more_rounded),
+                label: Text(widget.cargandoMas ? 'Cargando…' : 'Cargar más'),
+              ),
+            ),
           ],
+          if (d.dumps.isNotEmpty) ...[const SizedBox(height: 8), _volcados(d)],
         ],
       ),
     );
@@ -118,11 +132,14 @@ class _ErroresPageState extends State<ErroresPage> {
               Icon(Icons.rule_rounded, size: 18, color: rojo),
               const SizedBox(width: 8),
               Expanded(
-                child: Text('Controladores señalados',
-                    style: TextStyle(
-                        color: rojo,
-                        fontSize: kFont,
-                        fontWeight: FontWeight.w700)),
+                child: Text(
+                  'Controladores señalados',
+                  style: TextStyle(
+                    color: rojo,
+                    fontSize: kFont,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
               _badgeGlobal(d.etiquetaAnalizados, AppColors.textMid),
             ],
@@ -131,8 +148,10 @@ class _ErroresPageState extends State<ErroresPage> {
           // Lo redacta el backend: lo que se cruza no es lo mismo en Windows
           // (volcados de memoria) que en Linux (lo que el kernel imprime al
           // caer), y llamarlo igual en los dos sería mentir en uno.
-          Text(d.notaCulpables.join(' '),
-              style: const TextStyle(color: AppColors.textMid, fontSize: kFont)),
+          Text(
+            d.notaCulpables.join(' '),
+            style: const TextStyle(color: AppColors.textMid, fontSize: kFont),
+          ),
           const SizedBox(height: 12),
           ...d.culprits.map((c) => _filaCulpable(c, rojo)),
         ],
@@ -150,33 +169,50 @@ class _ErroresPageState extends State<ErroresPage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(c.probado ? Icons.gps_fixed_rounded : Icons.help_outline_rounded,
-              size: 16, color: c.probado ? rojo : AppColors.textMid),
+          Icon(
+            c.probado ? Icons.gps_fixed_rounded : Icons.help_outline_rounded,
+            size: 16,
+            color: c.probado ? rojo : AppColors.textMid,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SelectableText(c.titulo,
-                    style: const TextStyle(
-                        color: AppColors.textHi,
-                        fontSize: kFont,
-                        fontWeight: FontWeight.w700)),
+                SelectableText(
+                  c.titulo,
+                  style: const TextStyle(
+                    color: AppColors.textHi,
+                    fontSize: kFont,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
                 // El archivo se repite cuando el titulo es el dispositivo:
                 // hace falta para saber que desinstalar.
                 if (c.device.isNotEmpty)
-                  SelectableText(c.driver,
-                      style: const TextStyle(
-                          color: AppColors.textMid, fontSize: kFont)),
+                  SelectableText(
+                    c.driver,
+                    style: const TextStyle(
+                      color: AppColors.textMid,
+                      fontSize: kFont,
+                    ),
+                  ),
                 if (datos.isNotEmpty)
-                  SelectableText(datos,
-                      style: const TextStyle(
-                          color: AppColors.textMid, fontSize: kFont)),
+                  SelectableText(
+                    datos,
+                    style: const TextStyle(
+                      color: AppColors.textMid,
+                      fontSize: kFont,
+                    ),
+                  ),
                 if (c.why.isNotEmpty)
-                  Text(c.why,
-                      style: TextStyle(
-                          color: c.probado ? rojo : AppColors.textMid,
-                          fontSize: kFont)),
+                  Text(
+                    c.why,
+                    style: TextStyle(
+                      color: c.probado ? rojo : AppColors.textMid,
+                      fontSize: kFont,
+                    ),
+                  ),
               ],
             ),
           ),
@@ -238,37 +274,45 @@ class _ErroresPageState extends State<ErroresPage> {
         isDense: true,
         dropdownColor: AppColors.surfaceAlt,
         borderRadius: BorderRadius.circular(10),
-        icon: const Icon(Icons.expand_more_rounded,
-            color: AppColors.textMid, size: 20),
+        icon: const Icon(
+          Icons.expand_more_rounded,
+          color: AppColors.textMid,
+          size: 20,
+        ),
         style: const TextStyle(color: AppColors.textHi, fontSize: kFont),
         items: d.installs
-            .map((i) => DropdownMenuItem<String>(
-                  value: i.root,
-                  child: Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          i.titulo,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: AppColors.textHi,
-                            fontSize: kFont,
-                            fontWeight:
-                                i.current ? FontWeight.w400 : FontWeight.w700,
-                          ),
+            .map(
+              (i) => DropdownMenuItem<String>(
+                value: i.root,
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        i.titulo,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: AppColors.textHi,
+                          fontSize: kFont,
+                          fontWeight: i.current
+                              ? FontWeight.w400
+                              : FontWeight.w700,
                         ),
                       ),
-                      if (i.version.isNotEmpty) ...[
-                        const SizedBox(width: 8),
-                        Text(
-                          i.version,
-                          style: const TextStyle(
-                              color: AppColors.textLow, fontSize: kFont - 1),
+                    ),
+                    if (i.version.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        i.version,
+                        style: const TextStyle(
+                          color: AppColors.textLow,
+                          fontSize: kFont - 1,
                         ),
-                      ],
+                      ),
                     ],
-                  ),
-                ))
+                  ],
+                ),
+              ),
+            )
             .toList(),
         onChanged: widget.onInstalacion == null
             ? null
@@ -276,8 +320,9 @@ class _ErroresPageState extends State<ErroresPage> {
                 if (v == null) return;
                 // Al sistema en ejecución se vuelve con raíz vacía: así el
                 // backend no depende de la letra de unidad del medio de rescate.
-                final esActual =
-                    d.installs.any((i) => i.root == v && i.current);
+                final esActual = d.installs.any(
+                  (i) => i.root == v && i.current,
+                );
                 widget.onInstalacion!(esActual ? '' : v);
               },
       ),
@@ -303,8 +348,9 @@ class _ErroresPageState extends State<ErroresPage> {
             width: 38,
             height: 38,
             decoration: BoxDecoration(
-              color: (graves > 0 ? _colorSeveridad('critico') : AppColors.accent)
-                  .withValues(alpha: 0.14),
+              color:
+                  (graves > 0 ? _colorSeveridad('critico') : AppColors.accent)
+                      .withValues(alpha: 0.14),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(
@@ -323,10 +369,10 @@ class _ErroresPageState extends State<ErroresPage> {
                 Text(
                   d.items.isEmpty
                       ? (d.available
-                          ? 'Sin errores registrados'
-                          : 'No se pudo comprobar')
+                            ? 'Sin errores registrados'
+                            : 'No se pudo comprobar')
                       : '${d.items.length} problema(s) detectado(s)'
-                          '${graves > 0 ? "  ·  $graves grave(s)" : ""}',
+                            '${graves > 0 ? "  ·  $graves grave(s)" : ""}',
                   style: const TextStyle(
                     color: AppColors.textHi,
                     fontSize: kFont,
@@ -335,10 +381,14 @@ class _ErroresPageState extends State<ErroresPage> {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  'Últimos ${d.scanDays} días  ·  ${d.source}'
-                  '${d.totalOcurrencias > d.items.length ? "  ·  ${d.totalOcurrencias} apariciones en total" : ""}',
+                  d.limit > 0
+                      ? 'Los ${d.limit} eventos más recientes de cada registro  ·  ${d.source}'
+                      : 'Últimos ${d.scanDays} días  ·  ${d.source}'
+                            '${d.totalOcurrencias > d.items.length ? "  ·  ${d.totalOcurrencias} apariciones en total" : ""}',
                   style: const TextStyle(
-                      color: AppColors.textLow, fontSize: kFont),
+                    color: AppColors.textLow,
+                    fontSize: kFont,
+                  ),
                 ),
               ],
             ),
@@ -351,8 +401,9 @@ class _ErroresPageState extends State<ErroresPage> {
   Widget _aviso(ErroresInfo d) {
     // Si no se pudo leer nada es un problema (rojo); si se leyó pero con
     // limitaciones, es solo un matiz (ámbar).
-    final color =
-        d.available ? const Color(0xFFE3A84B) : const Color(0xFFF2768D);
+    final color = d.available
+        ? const Color(0xFFE3A84B)
+        : const Color(0xFFF2768D);
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -364,11 +415,12 @@ class _ErroresPageState extends State<ErroresPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(
-              d.available
-                  ? Icons.info_outline_rounded
-                  : Icons.report_gmailerrorred_rounded,
-              size: 20,
-              color: color),
+            d.available
+                ? Icons.info_outline_rounded
+                : Icons.report_gmailerrorred_rounded,
+            size: 20,
+            color: color,
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -379,14 +431,20 @@ class _ErroresPageState extends State<ErroresPage> {
                       ? 'La lista podría estar incompleta'
                       : 'No se pudieron leer los registros del sistema',
                   style: TextStyle(
-                      color: color,
-                      fontSize: kFont,
-                      fontWeight: FontWeight.w700),
+                    color: color,
+                    fontSize: kFont,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
                 const SizedBox(height: 4),
-                Text(d.reason,
-                    style: const TextStyle(
-                        color: AppColors.textMid, fontSize: kFont, height: 1.35)),
+                Text(
+                  d.reason,
+                  style: const TextStyle(
+                    color: AppColors.textMid,
+                    fontSize: kFont,
+                    height: 1.35,
+                  ),
+                ),
                 if (widget.avisoAccion != null) ...[
                   const SizedBox(height: 12),
                   widget.avisoAccion!,
@@ -429,7 +487,7 @@ class _ErroresPageState extends State<ErroresPage> {
           Text(
             d.available
                 ? 'No se encontraron pantallazos, apagados inesperados ni fallos '
-                    'registrados por el sistema operativo.'
+                      'registrados por el sistema operativo.'
                 : 'Revisa el aviso de arriba para saber qué falta para poder leerlos.',
             textAlign: TextAlign.center,
             style: const TextStyle(color: AppColors.textMid, fontSize: kFont),
@@ -466,9 +524,8 @@ class _ErroresPageState extends State<ErroresPage> {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-                color: activo
-                    ? color.withValues(alpha: 0.55)
-                    : AppColors.border),
+              color: activo ? color.withValues(alpha: 0.55) : AppColors.border,
+            ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -477,17 +534,23 @@ class _ErroresPageState extends State<ErroresPage> {
                 Icon(_iconoTipo(tipo), size: 14, color: color),
                 const SizedBox(width: 6),
               ],
-              Text(texto,
-                  style: TextStyle(
-                      color: activo ? AppColors.textHi : AppColors.textMid,
-                      fontSize: kFont,
-                      fontWeight: FontWeight.w600)),
+              Text(
+                texto,
+                style: TextStyle(
+                  color: activo ? AppColors.textHi : AppColors.textMid,
+                  fontSize: kFont,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
               const SizedBox(width: 6),
-              Text('$n',
-                  style: TextStyle(
-                      color: activo ? color : AppColors.textLow,
-                      fontSize: kFont,
-                      fontWeight: FontWeight.w700)),
+              Text(
+                '$n',
+                style: TextStyle(
+                  color: activo ? color : AppColors.textLow,
+                  fontSize: kFont,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ],
           ),
         ),
@@ -507,11 +570,14 @@ class _ErroresPageState extends State<ErroresPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Volcados de memoria guardados en el disco',
-              style: TextStyle(
-                  color: AppColors.textHi,
-                  fontSize: kFont,
-                  fontWeight: FontWeight.w700)),
+          const Text(
+            'Volcados de memoria guardados en el disco',
+            style: TextStyle(
+              color: AppColors.textHi,
+              fontSize: kFont,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
           const SizedBox(height: 4),
           const Text(
             'Son la "foto" de la memoria en el momento del fallo. Sirven para un '
@@ -524,19 +590,30 @@ class _ErroresPageState extends State<ErroresPage> {
               padding: const EdgeInsets.only(bottom: 4),
               child: Row(
                 children: [
-                  const Icon(Icons.insert_drive_file_outlined,
-                      size: 14, color: AppColors.textLow),
+                  const Icon(
+                    Icons.insert_drive_file_outlined,
+                    size: 14,
+                    color: AppColors.textLow,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(dm.path,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            color: AppColors.textMid, fontSize: kFont)),
+                    child: Text(
+                      dm.path,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.textMid,
+                        fontSize: kFont,
+                      ),
+                    ),
                   ),
                   const SizedBox(width: 10),
-                  Text('${dm.when}   ${formatBytes(dm.sizeBytes)}',
-                      style: const TextStyle(
-                          color: AppColors.textLow, fontSize: kFont)),
+                  Text(
+                    '${dm.when}   ${formatBytes(dm.sizeBytes)}',
+                    style: const TextStyle(
+                      color: AppColors.textLow,
+                      fontSize: kFont,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -594,20 +671,26 @@ class _ErrorCardState extends State<_ErrorCard> {
                         color: _colorTipo(e.kind).withValues(alpha: 0.14),
                         borderRadius: BorderRadius.circular(9),
                       ),
-                      child: Icon(_iconoTipo(e.kind),
-                          size: 19, color: _colorTipo(e.kind)),
+                      child: Icon(
+                        _iconoTipo(e.kind),
+                        size: 19,
+                        color: _colorTipo(e.kind),
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(e.title,
-                              style: const TextStyle(
-                                  color: AppColors.textHi,
-                                  fontSize: kFont,
-                                  fontWeight: FontWeight.w700,
-                                  height: 1.3)),
+                          Text(
+                            e.title,
+                            style: const TextStyle(
+                              color: AppColors.textHi,
+                              fontSize: kFont,
+                              fontWeight: FontWeight.w700,
+                              height: 1.3,
+                            ),
+                          ),
                           const SizedBox(height: 6),
                           Wrap(
                             spacing: 8,
@@ -625,7 +708,9 @@ class _ErrorCardState extends State<_ErrorCard> {
                                     ? 'Última vez: ${e.when}  ·  desde ${e.firstWhen}'
                                     : e.when,
                                 style: const TextStyle(
-                                    color: AppColors.textLow, fontSize: kFont),
+                                  color: AppColors.textLow,
+                                  fontSize: kFont,
+                                ),
                               ),
                             ],
                           ),
@@ -634,11 +719,12 @@ class _ErrorCardState extends State<_ErrorCard> {
                     ),
                     const SizedBox(width: 8),
                     Icon(
-                        _abierto
-                            ? Icons.expand_less_rounded
-                            : Icons.expand_more_rounded,
-                        color: AppColors.textMid,
-                        size: 20),
+                      _abierto
+                          ? Icons.expand_less_rounded
+                          : Icons.expand_more_rounded,
+                      color: AppColors.textMid,
+                      size: 20,
+                    ),
                   ],
                 ),
               ),
@@ -660,11 +746,19 @@ class _ErrorCardState extends State<_ErrorCard> {
           const SizedBox(height: 14),
           if (e.culprit.isNotEmpty) _culpable(e),
           if (e.cause.isNotEmpty)
-            _bloque(Icons.help_outline_rounded, 'Qué lo provocó', e.cause,
-                AppColors.textMid),
+            _bloque(
+              Icons.help_outline_rounded,
+              'Qué lo provocó',
+              e.cause,
+              AppColors.textMid,
+            ),
           if (e.fix.isNotEmpty)
-            _bloque(Icons.build_circle_outlined, 'Cómo resolverlo', e.fix,
-                AppColors.accent),
+            _bloque(
+              Icons.build_circle_outlined,
+              'Cómo resolverlo',
+              e.fix,
+              AppColors.accent,
+            ),
           if (e.suspects.length > 1) _sospechosos(e),
           if (e.source.isNotEmpty)
             Padding(
@@ -672,8 +766,10 @@ class _ErrorCardState extends State<_ErrorCard> {
               child: Text(
                 'Origen: ${e.source}'
                 '${e.codeName.isNotEmpty ? "  ·  ${e.codeName}" : ""}',
-                style:
-                    const TextStyle(color: AppColors.textLow, fontSize: kFont),
+                style: const TextStyle(
+                  color: AppColors.textLow,
+                  fontSize: kFont,
+                ),
               ),
             ),
           if (e.detail.isNotEmpty) _crudo(e),
@@ -702,11 +798,14 @@ class _ErrorCardState extends State<_ErrorCard> {
               children: [
                 Row(
                   children: [
-                    const Text('Probable causante',
-                        style: TextStyle(
-                            color: AppColors.board,
-                            fontSize: kFont,
-                            fontWeight: FontWeight.w700)),
+                    const Text(
+                      'Probable causante',
+                      style: TextStyle(
+                        color: AppColors.board,
+                        fontSize: kFont,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                     if (e.confidence.isNotEmpty) ...[
                       const SizedBox(width: 8),
                       _badge('confianza ${e.confidence}', AppColors.textMid),
@@ -714,26 +813,39 @@ class _ErrorCardState extends State<_ErrorCard> {
                   ],
                 ),
                 const SizedBox(height: 4),
-                SelectableText(e.culprit,
-                    style: const TextStyle(
-                        color: AppColors.textHi,
-                        fontSize: kFont,
-                        fontWeight: FontWeight.w700)),
+                SelectableText(
+                  e.culprit,
+                  style: const TextStyle(
+                    color: AppColors.textHi,
+                    fontSize: kFont,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
                 if (e.culpritInfo.isNotEmpty) ...[
                   const SizedBox(height: 2),
-                  SelectableText(e.culpritInfo,
-                      style: const TextStyle(
-                          color: AppColors.textMid, fontSize: kFont)),
+                  SelectableText(
+                    e.culpritInfo,
+                    style: const TextStyle(
+                      color: AppColors.textMid,
+                      fontSize: kFont,
+                    ),
+                  ),
                 ],
                 // POR QUE se le acusa. Sin esto "confianza alta" y "confianza
                 // baja" son etiquetas opacas y no se puede decidir si vale la
                 // pena desinstalar un controlador.
-                ...e.evidence.map((t) => Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: SelectableText(t,
-                          style: const TextStyle(
-                              color: AppColors.textMid, fontSize: kFont)),
-                    )),
+                ...e.evidence.map(
+                  (t) => Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: SelectableText(
+                      t,
+                      style: const TextStyle(
+                        color: AppColors.textMid,
+                        fontSize: kFont,
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -752,17 +864,25 @@ class _ErrorCardState extends State<_ErrorCard> {
             children: [
               Icon(icono, size: 15, color: color),
               const SizedBox(width: 7),
-              Text(titulo,
-                  style: TextStyle(
-                      color: color,
-                      fontSize: kFont,
-                      fontWeight: FontWeight.w700)),
+              Text(
+                titulo,
+                style: TextStyle(
+                  color: color,
+                  fontSize: kFont,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 4),
-          SelectableText(texto,
-              style: const TextStyle(
-                  color: AppColors.textMid, fontSize: kFont, height: 1.4)),
+          SelectableText(
+            texto,
+            style: const TextStyle(
+              color: AppColors.textMid,
+              fontSize: kFont,
+              height: 1.4,
+            ),
+          ),
         ],
       ),
     );
@@ -774,16 +894,20 @@ class _ErrorCardState extends State<_ErrorCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Otros drivers de terceros cargados al fallar',
-              style: TextStyle(
-                  color: AppColors.textMid,
-                  fontSize: kFont,
-                  fontWeight: FontWeight.w700)),
+          const Text(
+            'Otros drivers de terceros cargados al fallar',
+            style: TextStyle(
+              color: AppColors.textMid,
+              fontSize: kFont,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
           const SizedBox(height: 4),
           for (final s in e.suspects.skip(1))
-            Text('·  $s',
-                style:
-                    const TextStyle(color: AppColors.textLow, fontSize: kFont)),
+            Text(
+              '·  $s',
+              style: const TextStyle(color: AppColors.textLow, fontSize: kFont),
+            ),
         ],
       ),
     );
@@ -795,21 +919,26 @@ class _ErrorCardState extends State<_ErrorCard> {
       children: [
         Row(
           children: [
-            const Text('Mensaje original del sistema',
-                style: TextStyle(
-                    color: AppColors.textLow,
-                    fontSize: kFont,
-                    fontWeight: FontWeight.w600)),
+            const Text(
+              'Mensaje original del sistema',
+              style: TextStyle(
+                color: AppColors.textLow,
+                fontSize: kFont,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
             const Spacer(),
             TextButton.icon(
               onPressed: () => _copiar(e),
               icon: Icon(
-                  _copiado ? Icons.check_rounded : Icons.copy_all_rounded,
-                  size: 15),
+                _copiado ? Icons.check_rounded : Icons.copy_all_rounded,
+                size: 15,
+              ),
               label: Text(_copiado ? 'Copiado' : 'Copiar'),
               style: TextButton.styleFrom(
-                foregroundColor:
-                    _copiado ? const Color(0xFF3FB950) : AppColors.textMid,
+                foregroundColor: _copiado
+                    ? const Color(0xFF3FB950)
+                    : AppColors.textMid,
                 textStyle: const TextStyle(fontSize: kFont),
                 padding: const EdgeInsets.symmetric(horizontal: 10),
                 minimumSize: const Size(0, 30),
@@ -845,8 +974,10 @@ class _ErrorCardState extends State<_ErrorCard> {
   Future<void> _copiar(ErrorItem e) async {
     final b = StringBuffer()
       ..writeln(e.title)
-      ..writeln('Cuándo: ${e.when}'
-          '${e.repetido ? " (${e.count} veces desde ${e.firstWhen})" : ""}')
+      ..writeln(
+        'Cuándo: ${e.when}'
+        '${e.repetido ? " (${e.count} veces desde ${e.firstWhen})" : ""}',
+      )
       ..writeln('Origen: ${e.source}');
     if (e.code.isNotEmpty) {
       b.writeln('Código: ${e.code} ${e.codeName}'.trimRight());
@@ -873,16 +1004,21 @@ class _ErrorCardState extends State<_ErrorCard> {
 /// Etiqueta pequena. Suelta (fuera de la clase) porque la usan tanto la pagina
 /// como la tarjeta de cada pantallazo, igual que _colorSeveridad.
 Widget _badgeGlobal(String texto, Color color) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.14),
-          borderRadius: BorderRadius.circular(5),
-          border: Border.all(color: color.withValues(alpha: 0.30)),
-        ),
-        child: Text(texto,
-            style: TextStyle(
-                color: color, fontSize: kFont - 2, fontWeight: FontWeight.w700)),
-      );
+  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+  decoration: BoxDecoration(
+    color: color.withValues(alpha: 0.14),
+    borderRadius: BorderRadius.circular(5),
+    border: Border.all(color: color.withValues(alpha: 0.30)),
+  ),
+  child: Text(
+    texto,
+    style: TextStyle(
+      color: color,
+      fontSize: kFont - 2,
+      fontWeight: FontWeight.w700,
+    ),
+  ),
+);
 
 // ---------------------------------------------------------------------------
 // Traducción de categorías y severidades (compartida por la página y la tarjeta)

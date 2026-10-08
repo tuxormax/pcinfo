@@ -25,12 +25,13 @@
 param(
     [Parameter(Mandatory = $true)][string]$Salida,
     [int]$Dias = 30,
-    [int]$MaxEventos = 400,
+    [int]$MaxEventos = 30,
     [string]$Raiz = ''
 )
 
 $ErrorActionPreference = 'Stop'
 $desde = (Get-Date).AddDays(-$Dias)
+$global:HayMas = $false   # algun registro tenia mas eventos que el limite pedido
 
 # ==============================================================================
 #  Instalación a analizar (la del sistema vivo o la de otra unidad)
@@ -745,7 +746,11 @@ function Info-Evento($proveedor, $id, $nivel) {
 # LogName 'System' -> <Raiz>\System32\winevt\Logs\System.evtx
 function Get-Eventos($filtro, $max) {
     if (-not $OFFLINE) {
-        try { return @(Get-WinEvent -FilterHashtable $filtro -MaxEvents $max -ErrorAction Stop) }
+        try {
+            $r = @(Get-WinEvent -FilterHashtable $filtro -MaxEvents $max -ErrorAction Stop)
+            if ($r.Count -ge $max) { $global:HayMas = $true }
+            return $r
+        }
         catch { return @() }
     }
     $archivo = Join-Path $LOGS ("$($filtro['LogName']).evtx")
@@ -753,8 +758,10 @@ function Get-Eventos($filtro, $max) {
     # Get-WinEvent tambien sabe leer un .evtx suelto (clave Path del filtro).
     $f = @{ Path = $archivo }
     foreach ($k in $filtro.Keys) { if ($k -ne 'LogName') { $f[$k] = $filtro[$k] } }
-    try { return @(Get-WinEvent -FilterHashtable $f -MaxEvents $max -ErrorAction Stop) }
-    catch { return (Lee-Evtx $archivo $filtro $max) }
+    try { $r = @(Get-WinEvent -FilterHashtable $f -MaxEvents $max -ErrorAction Stop) }
+    catch { $r = @(Lee-Evtx $archivo $filtro $max) }
+    if ($r.Count -ge $max) { $global:HayMas = $true }
+    return $r
 }
 
 # Respaldo para entornos recortados (WinPE / Hiren's) donde Get-WinEvent puede no
@@ -765,7 +772,7 @@ function Xpath-Filtro($filtro) {
     if ($filtro['ProviderName']) { $cond += "Provider[@Name='$($filtro['ProviderName'])']" }
     if ($filtro['Id']) { $cond += "(EventID=$($filtro['Id']))" }
     if ($filtro['Level']) { $cond += '(' + ((@($filtro['Level']) | ForEach-Object { "Level=$_" }) -join ' or ') + ')' }
-    $cond += "TimeCreated[timediff(@SystemTime) <= $([int64]$Dias * 86400000)]"
+    if ($filtro['StartTime']) { $cond += "TimeCreated[timediff(@SystemTime) <= $([int64]$Dias * 86400000)]" }
     return '*[System[' + ($cond -join ' and ') + ']]'
 }
 
@@ -791,9 +798,14 @@ function Lee-Evtx([string]$archivo, $filtro, [int]$max) {
 # apagado esos textos pueden no resolverse (las DLL de mensajes son las del
 # sistema vivo): en ese caso se cae al contenido crudo del evento, que basta
 # porque el diagnostico sale del catalogo por proveedor+Id, no del mensaje.
+$global:Reloj = [System.Diagnostics.Stopwatch]::StartNew()
 function Mensaje($e) {
+    # Resolver el texto lo hace el sistema (lento en registros grandes): pasado el
+    # presupuesto de tiempo se salta y se usa el contenido crudo del evento.
+    if ($global:Reloj.Elapsed.TotalSeconds -lt 60) {
     try { if ($e.Message) { return "$($e.Message)" } } catch { }
     try { if ($e.FormatDescription()) { return "$($e.FormatDescription())" } } catch { }
+    }
     try {
         $xml = [xml]$e.ToXml()
         $partes = @()
@@ -947,8 +959,10 @@ $orden = New-Object System.Collections.ArrayList
 # OJO: no llamar a esta variable $eventos — PowerShell NO distingue mayusculas y
 # pisaria el catalogo $EVENTOS, dejando a Info-Evento sin ContainsKey.
 $registros = @()
-$registros += Get-Eventos @{ LogName = 'System'; Level = 1, 2; StartTime = $desde } $MaxEventos
-$registros += Get-Eventos @{ LogName = 'Application'; Level = 1, 2; StartTime = $desde } $MaxEventos
+# Sin ventana de dias: se leen los $MaxEventos mas recientes de cada registro
+# (el boton "Cargar mas" de la GUI sube el limite).
+$registros += Get-Eventos @{ LogName = 'System'; Level = 1, 2 } $MaxEventos
+$registros += Get-Eventos @{ LogName = 'Application'; Level = 1, 2 } $MaxEventos
 
 foreach ($e in $registros) {
     $prov = "$($e.ProviderName)"
@@ -1092,6 +1106,7 @@ $resultado = [ordered]@{
     dumps    = @($listaDumps)
     culprits = @($culpables)
     dumpsAnalyzed = $global:TotalAnalizados
+    hasMore  = [bool]$global:HayMas
 }
 $json = $resultado | ConvertTo-Json -Depth 6
 Set-Content -Path $Salida -Value $json -Encoding UTF8

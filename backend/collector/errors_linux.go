@@ -38,7 +38,7 @@ const timeoutLog = 20 * time.Second
 
 // El parámetro raiz (analizar otra instalación desde un medio de rescate) es
 // solo de Windows: en Linux journald del sistema arrancado es la única fuente.
-func collectErrors(_ string) ErrorsReport {
+func collectErrors(_ string, _ int) ErrorsReport {
 	rep := ErrorsReport{
 		OS:          runtime.GOOS,
 		Elevated:    isElevated(),

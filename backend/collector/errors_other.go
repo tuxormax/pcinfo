@@ -7,7 +7,7 @@ import "runtime"
 // collectErrors en plataformas sin implementación (macOS, BSD): devuelve un
 // reporte vacío pero explicando por qué, para que la GUI no muestre "0 errores"
 // como si el equipo estuviera impecable.
-func collectErrors(_ string) ErrorsReport {
+func collectErrors(_ string, _ int) ErrorsReport {
 	return ErrorsReport{
 		OS:        runtime.GOOS,
 		Elevated:  isElevated(),

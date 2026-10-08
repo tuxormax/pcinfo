@@ -6,6 +6,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -38,16 +39,19 @@ var (
 // volcados puede tardar. Si se pasa, se devuelve el motivo en el reporte.
 const timeoutErrores = 150 * time.Second
 
+var errTardoErrores = errors.New("la lectura del registro de eventos tardó demasiado")
+
 // Al analizar una instalación apagada se mira MUCHO más atrás: un equipo que ya
 // no arranca puede llevar semanas sin usarse, y con la ventana normal de 30 días
 // el pantallazo que lo dejó muerto ya no aparecería.
 const diasOffline = 180
 
-func collectErrors(raizPedida string) ErrorsReport {
+func collectErrors(raizPedida string, limite int) ErrorsReport {
 	rep := ErrorsReport{
 		OS:       runtime.GOOS,
 		Elevated: isElevated(),
 		ScanDays: diasAnalisis,
+		Limit:    limite,
 		Source:   "Registro de eventos de Windows y volcados de memoria (.dmp)",
 		Items:    []SystemError{},
 		Dumps:    []DumpFile{},
@@ -87,14 +91,19 @@ func collectErrors(raizPedida string) ErrorsReport {
 	salida.Close()
 	defer os.Remove(salida.Name())
 
-	if err := correPowerShell(ps1, salida.Name(), raiz, rep.ScanDays); err != nil {
+	if err := correPowerShell(ps1, salida.Name(), raiz, rep.ScanDays, limite); err != nil {
 		warn("errores powershell", err)
 		if rep.Offline {
 			rep.Reason = "No se pudieron leer los registros de " + raiz + " (" + err.Error() + "). " +
 				"Comprueba que la unidad sea accesible y ejecuta PCInfo como administrador."
 		} else {
-			rep.Reason = "No se pudo leer el registro de eventos de Windows (" + err.Error() + "). " +
-				"Verifica que el servicio 'Registro de eventos de Windows' esté en ejecución."
+			if errors.Is(err, errTardoErrores) {
+				rep.Reason = "La lectura del registro de eventos tardó demasiado y se canceló. " +
+					"El registro es muy grande o el equipo está ocupado: reintenta con Refrescar."
+			} else {
+				rep.Reason = "No se pudo leer el registro de eventos de Windows (" + err.Error() + "). " +
+					"Verifica que el servicio 'Registro de eventos de Windows' esté en ejecución."
+			}
 		}
 		return rep
 	}
@@ -112,6 +121,7 @@ func collectErrors(raizPedida string) ErrorsReport {
 		Elevated bool          `json:"elevated"`
 		Items    []SystemError `json:"items"`
 		Dumps    []DumpFile    `json:"dumps"`
+		HasMore  bool          `json:"hasMore"`
 	}
 	if err := json.Unmarshal(datos, &crudo); err != nil {
 		warn("errores json", err)
@@ -120,6 +130,7 @@ func collectErrors(raizPedida string) ErrorsReport {
 	}
 
 	rep.Available = true
+	rep.HasMore = crudo.HasMore
 	if crudo.Items != nil {
 		rep.Items = crudo.Items
 	}
@@ -191,7 +202,7 @@ func materializaScript() string {
 // correPowerShell ejecuta el script sin ventana de consola (el backend se compila
 // con -H windowsgui: sin ocultaVentana aparecería una consola negra) y con
 // timeout, igual que el resto de comandos externos del colector.
-func correPowerShell(ps1, salida, raiz string, dias int) error {
+func correPowerShell(ps1, salida, raiz string, dias, limite int) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeoutErrores)
 	defer cancel()
 
@@ -201,12 +212,13 @@ func correPowerShell(ps1, salida, raiz string, dias int) error {
 		"-File", ps1,
 		"-Salida", salida,
 		"-Dias", fmt.Sprint(dias),
+		"-MaxEventos", fmt.Sprint(limite),
 		"-Raiz", raiz,
 	)
 	ocultaVentana(cmd)
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() == context.DeadlineExceeded {
-		return fmt.Errorf("la lectura del registro de eventos tardó demasiado")
+		return errTardoErrores
 	}
 	if err != nil {
 		return fmt.Errorf("%v: %s", err, recorta(string(out), 300))

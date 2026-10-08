@@ -156,31 +156,36 @@ class _DashboardPageState extends State<DashboardPage> {
     final f = widget.service.load();
     _future = f;
     _discosCargando = true;
-    f.then((v) {
-      if (mounted) setState(() => _hw = v);
-      _cargaDiscos(f);
-    }).catchError((Object _) {
-      if (mounted) setState(() => _discosCargando = false);
-    });
+    f
+        .then((v) {
+          if (mounted) setState(() => _hw = v);
+          _cargaDiscos(f);
+        })
+        .catchError((Object _) {
+          if (mounted) setState(() => _discosCargando = false);
+        });
   }
 
   /// Segunda fase. [origen] es el future del inventario que la disparó: si
   /// mientras tanto se refrescó (o se relanzó el backend elevado), estos discos
   /// ya son de una carga vieja y se descartan.
   void _cargaDiscos(Future<HardwareInfo> origen) {
-    widget.service.loadDiscos().then((discos) {
-      if (!mounted || _future != origen) return;
-      setState(() {
-        _discosCargando = false;
-        final hw = _hw;
-        if (hw != null) _hw = hw.conDiscos(discos);
-      });
-    }).catchError((Object _) {
-      // Si falla, se quedan los discos sin salud y el aviso de siempre.
-      if (mounted && _future == origen) {
-        setState(() => _discosCargando = false);
-      }
-    });
+    widget.service
+        .loadDiscos()
+        .then((discos) {
+          if (!mounted || _future != origen) return;
+          setState(() {
+            _discosCargando = false;
+            final hw = _hw;
+            if (hw != null) _hw = hw.conDiscos(discos);
+          });
+        })
+        .catchError((Object _) {
+          // Si falla, se quedan los discos sin salud y el aviso de siempre.
+          if (mounted && _future == origen) {
+            setState(() => _discosCargando = false);
+          }
+        });
   }
 
   /// Instalación de Windows cuyo historial se está viendo. Vacío = la del
@@ -188,14 +193,21 @@ class _DashboardPageState extends State<DashboardPage> {
   /// pestaña de errores (equipo que no arranca, visto desde un medio de rescate).
   String _raizErrores = '';
 
+  /// Eventos por registro que se piden; «Cargar más» suma 30 y Refrescar vuelve a 30.
+  int _limiteErrores = 30;
+  bool _cargandoMasErrores = false;
+
   void _cargaErrores() {
     final svc = widget.erroresService;
     if (svc == null) return;
-    final f = svc.load(raiz: _raizErrores);
+    _limiteErrores = 30;
+    final f = svc.load(raiz: _raizErrores, limite: _limiteErrores);
     _erroresFuture = f;
-    f.then((v) {
-      if (mounted) setState(() => _errores = v);
-    }).catchError((Object _) {});
+    f
+        .then((v) {
+          if (mounted) setState(() => _errores = v);
+        })
+        .catchError((Object _) {});
   }
 
   void _cargaSoftware() {
@@ -203,9 +215,11 @@ class _DashboardPageState extends State<DashboardPage> {
     if (svc == null) return;
     final f = svc.load();
     _softwareFuture = f;
-    f.then((v) {
-      if (mounted) setState(() => _software = v);
-    }).catchError((Object _) {});
+    f
+        .then((v) {
+          if (mounted) setState(() => _software = v);
+        })
+        .catchError((Object _) {});
   }
 
   void _cargaControladores() {
@@ -213,9 +227,11 @@ class _DashboardPageState extends State<DashboardPage> {
     if (svc == null) return;
     final f = svc.load();
     _controladoresFuture = f;
-    f.then((v) {
-      if (mounted) setState(() => _controladores = v);
-    }).catchError((Object _) {});
+    f
+        .then((v) {
+          if (mounted) setState(() => _controladores = v);
+        })
+        .catchError((Object _) {});
   }
 
   void _cargaTienda() {
@@ -229,9 +245,11 @@ class _DashboardPageState extends State<DashboardPage> {
     if (svc == null) return;
     final f = svc.load();
     _bateriaFuture = f;
-    f.then((v) {
-      if (mounted) setState(() => _bateria = v);
-    }).catchError((Object _) {});
+    f
+        .then((v) {
+          if (mounted) setState(() => _bateria = v);
+        })
+        .catchError((Object _) {});
   }
 
   /// Incidencias de disco (registro del sistema). Se piden al abrir la pestaña
@@ -242,9 +260,11 @@ class _DashboardPageState extends State<DashboardPage> {
   void _cargaIncidencias() {
     final f = widget.service.loadIncidencias();
     _incidenciasFuture = f;
-    f.then((v) {
-      if (mounted) setState(() => _incidencias = v);
-    }).catchError((Object _) {});
+    f
+        .then((v) {
+          if (mounted) setState(() => _incidencias = v);
+        })
+        .catchError((Object _) {});
   }
 
   void _cargaArranques() {
@@ -252,9 +272,11 @@ class _DashboardPageState extends State<DashboardPage> {
     if (svc == null) return;
     final f = svc.load();
     _arranquesFuture = f;
-    f.then((v) {
-      if (mounted) setState(() => _arranques = v);
-    }).catchError((Object _) {});
+    f
+        .then((v) {
+          if (mounted) setState(() => _arranques = v);
+        })
+        .catchError((Object _) {});
   }
 
   /// Fuerza la lectura de salud de un disco clasificado como memoria extraíble.
@@ -268,24 +290,39 @@ class _DashboardPageState extends State<DashboardPage> {
       if (!mounted) return;
       final hw = _hw;
       if (hw != null) setState(() => _hw = hw.conDiscos(discos));
-      final leido = discos.firstWhere(
-        (x) => x.name == d.name,
-        orElse: () => d,
-      );
+      final leido = discos.firstWhere((x) => x.name == d.name, orElse: () => d);
       if (!leido.smartAvailable && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          backgroundColor: AppColors.surfaceAlt,
-          content: Text(
-            '${d.model.isEmpty ? d.name : d.model} no entregó datos de salud: '
-            'es una memoria extraíble o su adaptador no traduce los comandos.',
-            style: const TextStyle(color: AppColors.textHi, fontSize: kFont),
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: AppColors.surfaceAlt,
+            content: Text(
+              '${d.model.isEmpty ? d.name : d.model} no entregó datos de salud: '
+              'es una memoria extraíble o su adaptador no traduce los comandos.',
+              style: const TextStyle(color: AppColors.textHi, fontSize: kFont),
+            ),
           ),
-        ));
+        );
       }
     } catch (_) {
       // El fallo ya se ve en la ficha: el disco sigue sin salud.
     } finally {
       if (mounted) setState(() => _forzandoSalud.remove(d.name));
+    }
+  }
+
+  /// Pide 30 eventos más por registro sin tirar la lista que ya se ve.
+  Future<void> _cargaMasErrores() async {
+    final svc = widget.erroresService;
+    if (svc == null || _cargandoMasErrores) return;
+    setState(() => _cargandoMasErrores = true);
+    try {
+      final v = await svc.load(raiz: _raizErrores, limite: _limiteErrores + 30);
+      _limiteErrores += 30;
+      if (mounted) setState(() => _errores = v);
+    } catch (_) {
+      // Se queda la lista actual; el botón vuelve a estar disponible.
+    } finally {
+      if (mounted) setState(() => _cargandoMasErrores = false);
     }
   }
 
@@ -374,13 +411,15 @@ class _DashboardPageState extends State<DashboardPage> {
         if (_tiendaFuture != null) _cargaTienda();
       });
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        backgroundColor: AppColors.surfaceAlt,
-        content: Text(
-          'No se pudo obtener permisos de administrador (¿se canceló el aviso de Windows?). Inténtalo de nuevo.',
-          style: TextStyle(color: Color(0xFFF2768D), fontSize: kFont),
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: AppColors.surfaceAlt,
+          content: Text(
+            'No se pudo obtener permisos de administrador (¿se canceló el aviso de Windows?). Inténtalo de nuevo.',
+            style: TextStyle(color: Color(0xFFF2768D), fontSize: kFont),
+          ),
         ),
-      ));
+      );
     }
   }
 
@@ -422,7 +461,10 @@ class _DashboardPageState extends State<DashboardPage> {
             if (err.detalle.isNotEmpty) ...[
               const SizedBox(height: 14),
               ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 720, maxHeight: 220),
+                constraints: const BoxConstraints(
+                  maxWidth: 720,
+                  maxHeight: 220,
+                ),
                 child: Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
@@ -478,17 +520,23 @@ class _DashboardPageState extends State<DashboardPage> {
       ..writeln(err.mensaje)
       ..writeln()
       ..writeln('App: $appName v$appVersion Rev $appRevision')
-      ..writeln('Backend: ${info == null || !info.vivo ? 'no responde' : info.etiqueta}')
+      ..writeln(
+        'Backend: ${info == null || !info.vivo ? 'no responde' : info.etiqueta}',
+      )
       ..writeln('Sistema: ${Platform.operatingSystemVersion}')
       ..writeln()
       ..writeln(err.detalle);
     await Clipboard.setData(ClipboardData(text: texto.toString()));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      backgroundColor: AppColors.surfaceAlt,
-      content: Text('Detalles copiados al portapapeles',
-          style: TextStyle(color: AppColors.textHi, fontSize: kFont)),
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        backgroundColor: AppColors.surfaceAlt,
+        content: Text(
+          'Detalles copiados al portapapeles',
+          style: TextStyle(color: AppColors.textHi, fontSize: kFont),
+        ),
+      ),
+    );
   }
 
   @override
@@ -510,16 +558,16 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _cuerpo() => switch (_tab) {
-        _tabErroresIdx => _tabErrores(),
-        _tabSoftwareIdx => _tabSoftware(),
-        _tabControladoresIdx => _tabControladores(),
-        _tabBateriaIdx => _tabBateria(),
-        _tabDiscosIdx => _tabDiscos(),
-        _tabArranquesIdx => _tabArranques(),
-        _tabRedIdx => _tabRed(),
-        _tabTiendaIdx => _tabTienda(),
-        _ => _tabHardware(),
-      };
+    _tabErroresIdx => _tabErrores(),
+    _tabSoftwareIdx => _tabSoftware(),
+    _tabControladoresIdx => _tabControladores(),
+    _tabBateriaIdx => _tabBateria(),
+    _tabDiscosIdx => _tabDiscos(),
+    _tabArranquesIdx => _tabArranques(),
+    _tabRedIdx => _tabRed(),
+    _tabTiendaIdx => _tabTienda(),
+    _ => _tabHardware(),
+  };
 
   Widget _tabHardware() {
     return FutureBuilder<HardwareInfo>(
@@ -570,9 +618,11 @@ class _DashboardPageState extends State<DashboardPage> {
         }
         if (snap.hasError) {
           return _estadoFallo(
-              'No se pudo leer el historial de errores', snap.error);
+            'No se pudo leer el historial de errores',
+            snap.error,
+          );
         }
-        final data = snap.data!;
+        final data = _errores ?? snap.data!;
         // En Windows, si el backend no está elevado se ofrece relanzarlo con
         // permisos de administrador (mismo botón que usa la ficha de discos).
         final puedeElevar =
@@ -580,6 +630,8 @@ class _DashboardPageState extends State<DashboardPage> {
         return ErroresPage(
           data: data,
           onInstalacion: _cambiaInstalacion,
+          onCargarMas: _cargaMasErrores,
+          cargandoMas: _cargandoMasErrores,
           avisoAccion: !puedeElevar
               ? null
               : FilledButton.icon(
@@ -589,12 +641,16 @@ class _DashboardPageState extends State<DashboardPage> {
                           width: 14,
                           height: 14,
                           child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white),
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
                         )
                       : const Icon(Icons.shield_rounded, size: 16),
-                  label: Text(_elevating
-                      ? 'Solicitando permiso…'
-                      : 'Reintentar como administrador'),
+                  label: Text(
+                    _elevating
+                        ? 'Solicitando permiso…'
+                        : 'Reintentar como administrador',
+                  ),
                 ),
         );
       },
@@ -617,10 +673,11 @@ class _DashboardPageState extends State<DashboardPage> {
         }
         if (snap.hasError) {
           return _estadoFallo(
-              'No se pudo leer el software instalado', snap.error);
+            'No se pudo leer el software instalado',
+            snap.error,
+          );
         }
-        return SoftwarePage(
-            data: snap.data!, service: widget.softwareService);
+        return SoftwarePage(data: snap.data!, service: widget.softwareService);
       },
     );
   }
@@ -641,8 +698,7 @@ class _DashboardPageState extends State<DashboardPage> {
           return _cargando('Leyendo los controladores y las redes guardadas…');
         }
         if (snap.hasError) {
-          return _estadoFallo(
-              'No se pudo leer los controladores', snap.error);
+          return _estadoFallo('No se pudo leer los controladores', snap.error);
         }
         final data = snap.data!;
         return ControladoresPage(
@@ -671,11 +727,12 @@ class _DashboardPageState extends State<DashboardPage> {
         final hw = _hw ?? snap.data!;
         final faltaAdmin =
             hw.disks.any((d) => !d.smartAvailable && !d.removable) &&
-                !hw.diag.elevated;
+            !hw.diag.elevated;
         return DiscosPage(
           discos: hw.disks,
           incidencias: _incidencias,
-          cargandoIncidencias: _incidencias == null && _incidenciasFuture != null,
+          cargandoIncidencias:
+              _incidencias == null && _incidenciasFuture != null,
           cargando: _discosCargando,
           avisoAccion: _botonElevar(faltaAdmin),
           onForzar: _forzarSalud,
@@ -697,8 +754,10 @@ class _DashboardPageState extends State<DashboardPage> {
       future: _bateriaFuture,
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
-          return _cargando('Leyendo el estado de la batería…\n'
-              'Windows tarda unos segundos en preparar su informe.');
+          return _cargando(
+            'Leyendo el estado de la batería…\n'
+            'Windows tarda unos segundos en preparar su informe.',
+          );
         }
         if (snap.hasError) {
           return _estadoFallo('No se pudo leer la batería', snap.error);
@@ -724,7 +783,9 @@ class _DashboardPageState extends State<DashboardPage> {
         }
         if (snap.hasError) {
           return _estadoFallo(
-              'No se pudo leer el historial de encendidos', snap.error);
+            'No se pudo leer el historial de encendidos',
+            snap.error,
+          );
         }
         return ArranquesPage(
           data: snap.data!,
@@ -800,13 +861,15 @@ class _DashboardPageState extends State<DashboardPage> {
           ? const SizedBox(
               width: 14,
               height: 14,
-              child:
-                  CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
             )
           : const Icon(Icons.shield_rounded, size: 16),
-      label: Text(_elevating
-          ? 'Solicitando permiso…'
-          : 'Reintentar como administrador'),
+      label: Text(
+        _elevating ? 'Solicitando permiso…' : 'Reintentar como administrador',
+      ),
     );
   }
 
@@ -817,9 +880,11 @@ class _DashboardPageState extends State<DashboardPage> {
         children: [
           const CircularProgressIndicator(color: AppColors.accent),
           const SizedBox(height: 16),
-          Text(texto,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: AppColors.textMid, fontSize: kFont)),
+          Text(
+            texto,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: AppColors.textMid, fontSize: kFont),
+          ),
         ],
       ),
     );
@@ -834,17 +899,20 @@ class _DashboardPageState extends State<DashboardPage> {
           children: [
             Icon(icono, color: AppColors.textMid, size: 48),
             const SizedBox(height: 16),
-            Text(titulo,
-                style: const TextStyle(
-                  color: AppColors.textHi,
-                  fontSize: kFont + 2,
-                  fontWeight: FontWeight.w600,
-                )),
+            Text(
+              titulo,
+              style: const TextStyle(
+                color: AppColors.textHi,
+                fontSize: kFont + 2,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
             const SizedBox(height: 8),
-            Text(detalle,
-                textAlign: TextAlign.center,
-                style:
-                    const TextStyle(color: AppColors.textMid, fontSize: kFont)),
+            Text(
+              detalle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: AppColors.textMid, fontSize: kFont),
+            ),
             const SizedBox(height: 20),
             FilledButton.icon(
               onPressed: _refresh,
@@ -871,8 +939,11 @@ class _DashboardPageState extends State<DashboardPage> {
       color: const Color(0x33E0A33A),
       child: Row(
         children: [
-          const Icon(Icons.warning_amber_rounded,
-              size: 18, color: Color(0xFFE0A33A)),
+          const Icon(
+            Icons.warning_amber_rounded,
+            size: 18,
+            color: Color(0xFFE0A33A),
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -902,15 +973,24 @@ class _DashboardPageState extends State<DashboardPage> {
         child: Row(
           children: [
             _tabBoton(_tabHardwareIdx, Icons.memory_rounded, 'Hardware'),
-            _tabBoton(_tabErroresIdx, Icons.rule_folder_rounded,
-                'Historial de Errores'),
+            _tabBoton(
+              _tabErroresIdx,
+              Icons.rule_folder_rounded,
+              'Historial de Errores',
+            ),
             _tabBoton(_tabSoftwareIdx, Icons.apps_rounded, 'Software'),
-            _tabBoton(_tabControladoresIdx,
-                Icons.settings_input_component_rounded, 'Controladores'),
+            _tabBoton(
+              _tabControladoresIdx,
+              Icons.settings_input_component_rounded,
+              'Controladores',
+            ),
             _tabBoton(_tabBateriaIdx, Icons.battery_5_bar_rounded, 'Batería'),
             _tabBoton(_tabDiscosIdx, Icons.storage_rounded, 'Discos'),
-            _tabBoton(_tabArranquesIdx, Icons.power_settings_new_rounded,
-                'Encendidos y apagados'),
+            _tabBoton(
+              _tabArranquesIdx,
+              Icons.power_settings_new_rounded,
+              'Encendidos y apagados',
+            ),
             _tabBoton(_tabRedIdx, Icons.lan_rounded, 'Red'),
             // Solo Windows: a diferencia de Controladores (que sí se deja ver
             // en Linux con su aviso "solo Windows"), aquí ni siquiera vale la
@@ -918,7 +998,10 @@ class _DashboardPageState extends State<DashboardPage> {
             // como concepto fuera de Windows.
             if (Platform.isWindows)
               _tabBoton(
-                  _tabTiendaIdx, Icons.storefront_rounded, 'Tienda Windows'),
+                _tabTiendaIdx,
+                Icons.storefront_rounded,
+                'Tienda Windows',
+              ),
           ],
         ),
       ),
@@ -947,11 +1030,14 @@ class _DashboardPageState extends State<DashboardPage> {
             children: [
               Icon(icono, size: 16, color: color),
               const SizedBox(width: 7),
-              Text(texto,
-                  style: TextStyle(
-                      color: color,
-                      fontSize: kFont,
-                      fontWeight: FontWeight.w600)),
+              Text(
+                texto,
+                style: TextStyle(
+                  color: color,
+                  fontSize: kFont,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ],
           ),
         ),
@@ -992,73 +1078,70 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _dot() => Container(
-        width: 4,
-        height: 4,
-        decoration: const BoxDecoration(
-          color: AppColors.textLow,
-          shape: BoxShape.circle,
-        ),
-      );
+    width: 4,
+    height: 4,
+    decoration: const BoxDecoration(
+      color: AppColors.textLow,
+      shape: BoxShape.circle,
+    ),
+  );
 
   Widget _content(HardwareInfo hw) {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
       child: LayoutBuilder(
-              builder: (context, c) {
-                const gap = 18.0;
-                // 2 columnas si hay espacio; si no, 1.
-                final twoCols = c.maxWidth > 720;
-                final gpuCards = _gpuCardList(hw.gpu);
-                if (!twoCols) {
-                  // Una sola columna: todas las fichas con el mismo gap (una por
-                  // GPU intercaladas antes de Almacenamiento).
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _systemCard(hw.system),
-                      const SizedBox(height: gap),
-                      _cpuCard(hw.cpu),
-                      const SizedBox(height: gap),
-                      _boardCard(hw.board),
-                      const SizedBox(height: gap),
-                      _portsCard(hw.board),
-                      const SizedBox(height: gap),
-                      _ramCard(hw.memory),
-                      for (final gc in gpuCards) ...[
-                        const SizedBox(height: gap),
-                        gc,
-                      ],
-                      const SizedBox(height: gap),
-                      _disksCard(hw),
-                    ],
-                  );
-                }
-                // Masonry real: cada ficha se coloca en la columna más corta,
-                // así no quedan huecos por diferencia de altura.
-                final cards = [
-                  _systemCard(hw.system),
-                  _cpuCard(hw.cpu),
-                  _boardCard(hw.board),
-                  _portsCard(hw.board),
-                  _ramCard(hw.memory),
-                  ...gpuCards,
-                ];
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    MasonryGridView.count(
-                      crossAxisCount: 2,
-                      mainAxisSpacing: gap,
-                      crossAxisSpacing: gap,
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: cards.length,
-                      itemBuilder: (context, i) => cards[i],
-                    ),
-                    const SizedBox(height: gap),
-                    _disksCard(hw),
-                  ],
-                );
+        builder: (context, c) {
+          const gap = 18.0;
+          // 2 columnas si hay espacio; si no, 1.
+          final twoCols = c.maxWidth > 720;
+          final gpuCards = _gpuCardList(hw.gpu);
+          if (!twoCols) {
+            // Una sola columna: todas las fichas con el mismo gap (una por
+            // GPU intercaladas antes de Almacenamiento).
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _systemCard(hw.system),
+                const SizedBox(height: gap),
+                _cpuCard(hw.cpu),
+                const SizedBox(height: gap),
+                _boardCard(hw.board),
+                const SizedBox(height: gap),
+                _portsCard(hw.board),
+                const SizedBox(height: gap),
+                _ramCard(hw.memory),
+                for (final gc in gpuCards) ...[const SizedBox(height: gap), gc],
+                const SizedBox(height: gap),
+                _disksCard(hw),
+              ],
+            );
+          }
+          // Masonry real: cada ficha se coloca en la columna más corta,
+          // así no quedan huecos por diferencia de altura.
+          final cards = [
+            _systemCard(hw.system),
+            _cpuCard(hw.cpu),
+            _boardCard(hw.board),
+            _portsCard(hw.board),
+            _ramCard(hw.memory),
+            ...gpuCards,
+          ];
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              MasonryGridView.count(
+                crossAxisCount: 2,
+                mainAxisSpacing: gap,
+                crossAxisSpacing: gap,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: cards.length,
+                itemBuilder: (context, i) => cards[i],
+              ),
+              const SizedBox(height: gap),
+              _disksCard(hw),
+            ],
+          );
         },
       ),
     );
@@ -1088,12 +1171,15 @@ class _DashboardPageState extends State<DashboardPage> {
             child: Row(
               children: [
                 Flexible(
-                    child: _chip(
-                        Icons.dns_rounded, _hw?.system.hostname ?? '—')),
+                  child: _chip(Icons.dns_rounded, _hw?.system.hostname ?? '—'),
+                ),
                 const SizedBox(width: 8),
                 Flexible(
-                    child: _chip(
-                        Icons.terminal_rounded, _hw?.system.distro ?? '—')),
+                  child: _chip(
+                    Icons.terminal_rounded,
+                    _hw?.system.distro ?? '—',
+                  ),
+                ),
               ],
             ),
           ),
@@ -1138,15 +1224,20 @@ class _DashboardPageState extends State<DashboardPage> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.save_alt_rounded,
-                  size: 16,
-                  color: habilitado ? AppColors.textMid : AppColors.textLow),
+              Icon(
+                Icons.save_alt_rounded,
+                size: 16,
+                color: habilitado ? AppColors.textMid : AppColors.textLow,
+              ),
               const SizedBox(width: 6),
-              Text('Guardar',
-                  style: TextStyle(
-                      color: habilitado ? AppColors.textMid : AppColors.textLow,
-                      fontSize: kFont,
-                      fontWeight: FontWeight.w600)),
+              Text(
+                'Guardar',
+                style: TextStyle(
+                  color: habilitado ? AppColors.textMid : AppColors.textLow,
+                  fontSize: kFont,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ],
           ),
         ),
@@ -1160,8 +1251,10 @@ class _DashboardPageState extends State<DashboardPage> {
       final path = switch (_tab) {
         _tabErroresIdx => await saveErroresReport(_errores!, equipo),
         _tabSoftwareIdx => await saveSoftwareReport(_software!, equipo),
-        _tabControladoresIdx =>
-          await saveControladoresReport(_controladores!, equipo),
+        _tabControladoresIdx => await saveControladoresReport(
+          _controladores!,
+          equipo,
+        ),
         _tabBateriaIdx => await saveBateriaReport(_bateria!, equipo),
         _tabDiscosIdx => await saveDiscosReport(_hw!.disks, equipo),
         _tabArranquesIdx => await saveArranquesReport(_arranques!, equipo),
@@ -1169,18 +1262,26 @@ class _DashboardPageState extends State<DashboardPage> {
       };
       if (path == null) return; // el usuario cerró el selector: no guardó nada
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        backgroundColor: AppColors.surfaceAlt,
-        content: Text('Reporte guardado en: $path',
-            style: const TextStyle(color: AppColors.textHi, fontSize: kFont)),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.surfaceAlt,
+          content: Text(
+            'Reporte guardado en: $path',
+            style: const TextStyle(color: AppColors.textHi, fontSize: kFont),
+          ),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        backgroundColor: AppColors.surfaceAlt,
-        content: Text('No se pudo guardar el reporte: $e',
-            style: const TextStyle(color: Color(0xFFF2768D), fontSize: kFont)),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.surfaceAlt,
+          content: Text(
+            'No se pudo guardar el reporte: $e',
+            style: const TextStyle(color: Color(0xFFF2768D), fontSize: kFont),
+          ),
+        ),
+      );
     }
   }
 
@@ -1198,11 +1299,12 @@ class _DashboardPageState extends State<DashboardPage> {
           Icon(icon, size: 14, color: AppColors.textMid),
           const SizedBox(width: 6),
           Flexible(
-            child: Text(text,
-                overflow: TextOverflow.ellipsis,
-                softWrap: false,
-                style:
-                    const TextStyle(color: AppColors.textMid, fontSize: kFont)),
+            child: Text(
+              text,
+              overflow: TextOverflow.ellipsis,
+              softWrap: false,
+              style: const TextStyle(color: AppColors.textMid, fontSize: kFont),
+            ),
           ),
         ],
       ),
@@ -1223,11 +1325,14 @@ class _DashboardPageState extends State<DashboardPage> {
             children: [
               Icon(Icons.refresh_rounded, size: 16, color: AppColors.accent),
               SizedBox(width: 6),
-              Text('Refrescar',
-                  style: TextStyle(
-                      color: AppColors.accent,
-                      fontSize: kFont,
-                      fontWeight: FontWeight.w600)),
+              Text(
+                'Refrescar',
+                style: TextStyle(
+                  color: AppColors.accent,
+                  fontSize: kFont,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ],
           ),
         ),
@@ -1329,13 +1434,15 @@ class _DashboardPageState extends State<DashboardPage> {
           if (b.portsNote.isNotEmpty) _avisoPuertos(b.portsNote),
           if (b.slots.isEmpty && b.sataTotal == 0)
             _avisoPuertos(
-                'El firmware de esta placa no declara sus ranuras y el modelo '
-                'no está en el catálogo verificado.')
+              'El firmware de esta placa no declara sus ranuras y el modelo '
+              'no está en el catálogo verificado.',
+            )
           else if (b.portsSource != 'catalogo')
             _avisoPuertos(
-                'Ranuras y puertos según el firmware; el chipset puede exponer '
-                'más puertos de los que la placa trae cableados (modelo no '
-                'verificado en el catálogo).'),
+              'Ranuras y puertos según el firmware; el chipset puede exponer '
+              'más puertos de los que la placa trae cableados (modelo no '
+              'verificado en el catálogo).',
+            ),
         ],
       ),
     );
@@ -1350,15 +1457,19 @@ class _DashboardPageState extends State<DashboardPage> {
       final etiqueta = s.label == s.spec ? s.spec : '${s.label}  ·  ${s.spec}';
       // Quién ocupa la ranura va a la IZQUIERDA, con el resto del texto: a la
       // derecha solo cabe una palabra sin que se salga en pantalla estrecha.
-      final izq = s.ocupada && s.usedBy.isNotEmpty ? '$etiqueta  ·  ${s.usedBy}' : etiqueta;
-      rows.add(_slotTile(
-        icon: s.ocupada ? Icons.check_box_rounded : Icons.crop_square_rounded,
-        iconColor: s.ocupada ? AppColors.ports : AppColors.textLow,
-        left: izq,
-        right: s.ocupada ? 'Ocupada' : (s.libre ? 'Libre' : 'Sin dato'),
-        rightColor: s.ocupada ? AppColors.textHi : AppColors.textLow,
-        dimmed: !s.ocupada,
-      ));
+      final izq = s.ocupada && s.usedBy.isNotEmpty
+          ? '$etiqueta  ·  ${s.usedBy}'
+          : etiqueta;
+      rows.add(
+        _slotTile(
+          icon: s.ocupada ? Icons.check_box_rounded : Icons.crop_square_rounded,
+          iconColor: s.ocupada ? AppColors.ports : AppColors.textLow,
+          left: izq,
+          right: s.ocupada ? 'Ocupada' : (s.libre ? 'Libre' : 'Sin dato'),
+          rightColor: s.ocupada ? AppColors.textHi : AppColors.textLow,
+          dimmed: !s.ocupada,
+        ),
+      );
     }
     return Column(children: rows);
   }
@@ -1370,8 +1481,11 @@ class _DashboardPageState extends State<DashboardPage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.info_outline_rounded,
-              size: 14, color: AppColors.textLow),
+          const Icon(
+            Icons.info_outline_rounded,
+            size: 14,
+            color: AppColors.textLow,
+          ),
           const SizedBox(width: 6),
           Expanded(
             child: Text(
@@ -1393,20 +1507,25 @@ class _DashboardPageState extends State<DashboardPage> {
     final rows = <SpecRow>[
       SpecRow('Total', formatBytes(m.totalBytes)),
       SpecRow(
-          'Montaje',
-          m.soldered
-              ? 'Soldada (no ampliable)'
-              : m.mixed
-                  ? 'Mixta (soldada + ranura)'
-                  : 'Ranuras (ampliable)'),
+        'Montaje',
+        m.soldered
+            ? 'Soldada (no ampliable)'
+            : m.mixed
+            ? 'Mixta (soldada + ranura)'
+            : 'Ranuras (ampliable)',
+      ),
     ];
     if (m.mixed) {
       rows.add(SpecRow('RAM soldada', formatBytes(m.solderedBytes)));
     }
     if (m.totalSlots > 0) {
       final libres = m.freeSlots;
-      rows.add(SpecRow('Ranuras',
-          '${m.slotModules.length} de ${m.totalSlots} ocupadas'));
+      rows.add(
+        SpecRow(
+          'Ranuras',
+          '${m.slotModules.length} de ${m.totalSlots} ocupadas',
+        ),
+      );
       rows.add(SpecRow('Ranuras libres', '$libres'));
     } else {
       rows.add(SpecRow('Módulos', '${m.slotModules.length}'));
@@ -1426,10 +1545,7 @@ class _DashboardPageState extends State<DashboardPage> {
       footer: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
-        children: [
-          _slotsList(m),
-          if (mostrarAviso) _firmwareCaveat(),
-        ],
+        children: [_slotsList(m), if (mostrarAviso) _firmwareCaveat()],
       ),
     );
   }
@@ -1506,7 +1622,8 @@ class _DashboardPageState extends State<DashboardPage> {
         .toLowerCase()
         .replaceAll('(tm)', '')
         .replaceAll('(r)', '');
-    final integrada = v.contains('intel') ||
+    final integrada =
+        v.contains('intel') ||
         p.contains('uhd') ||
         p.contains('iris') ||
         p.contains('vega') ||
@@ -1545,8 +1662,11 @@ class _DashboardPageState extends State<DashboardPage> {
                   color: AppColors.disk.withValues(alpha: 0.14),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.storage_rounded,
-                    color: AppColors.disk, size: 21),
+                child: const Icon(
+                  Icons.storage_rounded,
+                  color: AppColors.disk,
+                  size: 21,
+                ),
               ),
               const SizedBox(width: 12),
               const Text(
@@ -1561,13 +1681,12 @@ class _DashboardPageState extends State<DashboardPage> {
             ],
           ),
           const SizedBox(height: 14),
-          if (warning != null) ...[
-            warning,
-            const SizedBox(height: 14),
-          ],
+          if (warning != null) ...[warning, const SizedBox(height: 14)],
           if (disks.isEmpty)
-            const Text('No se detectaron discos',
-                style: TextStyle(color: AppColors.textMid, fontSize: kFont))
+            const Text(
+              'No se detectaron discos',
+              style: TextStyle(color: AppColors.textMid, fontSize: kFont),
+            )
           else
             ...disks.map(_diskRow),
         ],
@@ -1613,9 +1732,9 @@ class _DashboardPageState extends State<DashboardPage> {
             : 'La salud de los discos requiere ejecutarse como root',
         detail: diag.isWindows
             ? 'Para leer el estado y el desgaste (S.M.A.R.T.) de los discos, PCInfo '
-                'necesita ejecutarse como administrador. Windows pedirá confirmación.'
+                  'necesita ejecutarse como administrador. Windows pedirá confirmación.'
             : 'El servicio de PCInfo debe correr como root para leer el S.M.A.R.T. '
-                'de los discos. Reinstala el paquete o inicia el servicio con privilegios.',
+                  'de los discos. Reinstala el paquete o inicia el servicio con privilegios.',
         action: !canRetry
             ? null
             : FilledButton.icon(
@@ -1625,12 +1744,16 @@ class _DashboardPageState extends State<DashboardPage> {
                         width: 14,
                         height: 14,
                         child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
                       )
                     : const Icon(Icons.shield_rounded, size: 16),
-                label: Text(_elevating
-                    ? 'Solicitando permiso…'
-                    : 'Reintentar como administrador'),
+                label: Text(
+                  _elevating
+                      ? 'Solicitando permiso…'
+                      : 'Reintentar como administrador',
+                ),
               ),
       );
     }
@@ -1669,19 +1792,24 @@ class _DashboardPageState extends State<DashboardPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title,
-                    style: TextStyle(
-                        color: color,
-                        fontSize: kFont,
-                        fontWeight: FontWeight.w700)),
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: kFont,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
                 const SizedBox(height: 4),
-                Text(detail,
-                    style: const TextStyle(
-                        color: AppColors.textMid, fontSize: kFont, height: 1.35)),
-                if (action != null) ...[
-                  const SizedBox(height: 12),
-                  action,
-                ],
+                Text(
+                  detail,
+                  style: const TextStyle(
+                    color: AppColors.textMid,
+                    fontSize: kFont,
+                    height: 1.35,
+                  ),
+                ),
+                if (action != null) ...[const SizedBox(height: 12), action],
               ],
             ),
           ),
@@ -1691,8 +1819,8 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _diskRow(DiskInfo d) {
-    final isSsd = d.type.toLowerCase().contains('ssd') ||
-        d.bus.toLowerCase() == 'nvme';
+    final isSsd =
+        d.type.toLowerCase().contains('ssd') || d.bus.toLowerCase() == 'nvme';
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -1706,8 +1834,11 @@ class _DashboardPageState extends State<DashboardPage> {
         children: [
           Row(
             children: [
-              Icon(isSsd ? Icons.bolt_rounded : Icons.album_rounded,
-                  size: 20, color: AppColors.disk),
+              Icon(
+                isSsd ? Icons.bolt_rounded : Icons.album_rounded,
+                size: 20,
+                color: AppColors.disk,
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -1737,7 +1868,9 @@ class _DashboardPageState extends State<DashboardPage> {
                       '${d.name}   ·   Serie: ${d.serial}   ·   Bus: ${d.bus.toUpperCase()}'
                       '${d.port.isEmpty ? "" : "   ·   Conectado en: ${d.port}"}',
                       style: const TextStyle(
-                          color: AppColors.textLow, fontSize: kFont),
+                        color: AppColors.textLow,
+                        fontSize: kFont,
+                      ),
                     ),
                   ],
                 ),
@@ -1793,10 +1926,14 @@ class _DashboardPageState extends State<DashboardPage> {
           runSpacing: 12,
           children: [
             _metric('Capacidad', formatDiskCap(d.sizeBytes)),
-            _metric('Ocupado',
-                '${formatGB(d.usedBytes)}  (${usedPct.round()}%)'),
-            _metric('Disponible',
-                '${formatGB(d.availBytes)}  (${d.availPercent.round()}%)'),
+            _metric(
+              'Ocupado',
+              '${formatGB(d.usedBytes)}  (${usedPct.round()}%)',
+            ),
+            _metric(
+              'Disponible',
+              '${formatGB(d.availBytes)}  (${d.availPercent.round()}%)',
+            ),
           ],
         ),
         const SizedBox(height: 10),
@@ -1811,8 +1948,8 @@ class _DashboardPageState extends State<DashboardPage> {
     final color = usedPct >= 90
         ? const Color(0xFFF2768D)
         : usedPct >= 75
-            ? const Color(0xFFE3A84B)
-            : AppColors.disk;
+        ? const Color(0xFFE3A84B)
+        : AppColors.disk;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1826,8 +1963,10 @@ class _DashboardPageState extends State<DashboardPage> {
           ),
         ),
         const SizedBox(height: 4),
-        Text('${usedPct.round()}% usado',
-            style: const TextStyle(color: AppColors.textLow, fontSize: kFont)),
+        Text(
+          '${usedPct.round()}% usado',
+          style: const TextStyle(color: AppColors.textLow, fontSize: kFont),
+        ),
       ],
     );
   }
@@ -1845,8 +1984,13 @@ class _DashboardPageState extends State<DashboardPage> {
     }
     items.add(_metric('Horas encendido', '${d.powerOnHours} h'));
     items.add(_metric('Ciclos de encendido', '${d.powerCycles}'));
-    items.add(_metric('Sectores reasignados', '${d.reallocatedSectors}',
-        warn: d.reallocatedSectors > 0));
+    items.add(
+      _metric(
+        'Sectores reasignados',
+        '${d.reallocatedSectors}',
+        warn: d.reallocatedSectors > 0,
+      ),
+    );
     return Wrap(spacing: 28, runSpacing: 12, children: items);
   }
 
@@ -1855,14 +1999,19 @@ class _DashboardPageState extends State<DashboardPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(label,
-            style: const TextStyle(color: AppColors.textLow, fontSize: kFont)),
+        Text(
+          label,
+          style: const TextStyle(color: AppColors.textLow, fontSize: kFont),
+        ),
         const SizedBox(height: 2),
-        Text(value,
-            style: TextStyle(
-                color: warn ? const Color(0xFFE3A84B) : AppColors.textHi,
-                fontSize: kFont,
-                fontWeight: FontWeight.w700)),
+        Text(
+          value,
+          style: TextStyle(
+            color: warn ? const Color(0xFFE3A84B) : AppColors.textHi,
+            fontSize: kFont,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       ],
     );
   }
@@ -1875,8 +2024,10 @@ class _DashboardPageState extends State<DashboardPage> {
         borderRadius: BorderRadius.circular(6),
         border: Border.all(color: AppColors.disk.withValues(alpha: 0.30)),
       ),
-      child: Text(type,
-          style: const TextStyle(color: AppColors.disk, fontSize: kFont)),
+      child: Text(
+        type,
+        style: const TextStyle(color: AppColors.disk, fontSize: kFont),
+      ),
     );
   }
 
@@ -1894,7 +2045,9 @@ class _DashboardPageState extends State<DashboardPage> {
                 width: 14,
                 height: 14,
                 child: CircularProgressIndicator(
-                    strokeWidth: 2, color: AppColors.accent),
+                  strokeWidth: 2,
+                  color: AppColors.accent,
+                ),
               )
             : const Icon(Icons.health_and_safety_outlined, size: 16),
         label: Text(
@@ -1913,51 +2066,66 @@ class _DashboardPageState extends State<DashboardPage> {
 
   /// Aviso mientras se lee la salud de los discos (segunda fase del arranque).
   Widget _leyendoSaludBox() => _warnBox(
-        color: AppColors.textLow,
-        icon: Icons.hourglass_top_rounded,
-        title: 'Leyendo la salud de los discos (S.M.A.R.T.)…',
-        detail:
-            'El resto del inventario ya está listo. Esta parte puede tardar unos '
-            'segundos más si hay memorias USB, lectores de tarjetas o discos '
-            'externos conectados, porque hay que preguntarle a cada uno.',
-      );
+    color: AppColors.textLow,
+    icon: Icons.hourglass_top_rounded,
+    title: 'Leyendo la salud de los discos (S.M.A.R.T.)…',
+    detail:
+        'El resto del inventario ya está listo. Esta parte puede tardar unos '
+        'segundos más si hay memorias USB, lectores de tarjetas o discos '
+        'externos conectados, porque hay que preguntarle a cada uno.',
+  );
 
   /// Etiqueta de estado del disco. [extra] agrega el iconito de "ver detalles".
-  Widget _badgeSimple(Color c, String label, IconData icon,
-          {bool extra = false}) =>
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          color: c.withValues(alpha: 0.14),
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: c.withValues(alpha: 0.35)),
+  Widget _badgeSimple(
+    Color c,
+    String label,
+    IconData icon, {
+    bool extra = false,
+  }) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+    decoration: BoxDecoration(
+      color: c.withValues(alpha: 0.14),
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(color: c.withValues(alpha: 0.35)),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 13, color: c),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: TextStyle(
+            color: c,
+            fontSize: kFont,
+            fontWeight: FontWeight.w600,
+          ),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 13, color: c),
-            const SizedBox(width: 4),
-            Text(label,
-                style: TextStyle(
-                    color: c, fontSize: kFont, fontWeight: FontWeight.w600)),
-            if (extra) ...[
-              const SizedBox(width: 4),
-              Icon(Icons.info_outline_rounded, size: 12, color: c),
-            ],
-          ],
-        ),
-      );
+        if (extra) ...[
+          const SizedBox(width: 4),
+          Icon(Icons.info_outline_rounded, size: 12, color: c),
+        ],
+      ],
+    ),
+  );
 
   Widget _healthBadge(DiskInfo d) {
     if ((_discosCargando || _forzandoSalud.contains(d.name)) &&
         !d.smartAvailable) {
       return _badgeSimple(
-          AppColors.textLow, 'LEYENDO…', Icons.hourglass_top_rounded);
+        AppColors.textLow,
+        'LEYENDO…',
+        Icons.hourglass_top_rounded,
+      );
     }
     // Una memoria USB o una tarjeta no reporta salud: decirlo así es más honesto
     // que "SIN SMART", que sugiere que algo falló.
     if (d.removable && !d.smartAvailable) {
-      return _badgeSimple(AppColors.textLow, 'MEMORIA EXTRAÍBLE', Icons.usb_rounded);
+      return _badgeSimple(
+        AppColors.textLow,
+        'MEMORIA EXTRAÍBLE',
+        Icons.usb_rounded,
+      );
     }
     final h = d.healthStatus;
     late final Color c;
@@ -2007,14 +2175,12 @@ class _DashboardPageState extends State<DashboardPage> {
   /// significa y la consecuencia. Se abre al tocar la etiqueta de salud.
   void _showDiskIssues(DiskInfo d) {
     final fail = d.healthStatus == DiskHealth.fail;
-    final headColor =
-        fail ? const Color(0xFFF2768D) : const Color(0xFFE3A84B);
+    final headColor = fail ? const Color(0xFFF2768D) : const Color(0xFFE3A84B);
     showDialog<void>(
       context: context,
       builder: (ctx) => Dialog(
         backgroundColor: AppColors.surface,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 560),
           child: Column(
@@ -2026,17 +2192,17 @@ class _DashboardPageState extends State<DashboardPage> {
                 padding: const EdgeInsets.fromLTRB(20, 18, 16, 16),
                 decoration: BoxDecoration(
                   color: headColor.withValues(alpha: 0.12),
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(14)),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(14),
+                  ),
                 ),
                 child: Row(
                   children: [
                     Icon(
-                        fail
-                            ? Icons.error_rounded
-                            : Icons.warning_amber_rounded,
-                        color: headColor,
-                        size: 26),
+                      fail ? Icons.error_rounded : Icons.warning_amber_rounded,
+                      color: headColor,
+                      size: 26,
+                    ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
@@ -2047,23 +2213,29 @@ class _DashboardPageState extends State<DashboardPage> {
                                 ? 'Disco en peligro'
                                 : 'Disco con advertencias',
                             style: TextStyle(
-                                color: headColor,
-                                fontSize: kFont + 3,
-                                fontWeight: FontWeight.w700),
+                              color: headColor,
+                              fontSize: kFont + 3,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                           const SizedBox(height: 2),
                           Text(
                             d.model,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                                color: AppColors.textMid, fontSize: kFont),
+                              color: AppColors.textMid,
+                              fontSize: kFont,
+                            ),
                           ),
                         ],
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.close_rounded,
-                          color: AppColors.textMid, size: 20),
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        color: AppColors.textMid,
+                        size: 20,
+                      ),
                       onPressed: () => Navigator.of(ctx).pop(),
                     ),
                   ],
@@ -2076,8 +2248,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   child: Text(
                     'Este disco muestra daños. NO es fiable: respalda tus datos '
                     'y considera reemplazarlo.',
-                    style:
-                        TextStyle(color: AppColors.textHi, fontSize: kFont),
+                    style: TextStyle(color: AppColors.textHi, fontSize: kFont),
                   ),
                 ),
               // Lista de problemas.
@@ -2086,9 +2257,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      for (final iss in d.issues) _issueTile(iss),
-                    ],
+                    children: [for (final iss in d.issues) _issueTile(iss)],
                   ),
                 ),
               ),
@@ -2125,11 +2294,10 @@ class _DashboardPageState extends State<DashboardPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(
-              danger
-                  ? Icons.error_rounded
-                  : Icons.warning_amber_rounded,
-              size: 18,
-              color: c),
+            danger ? Icons.error_rounded : Icons.warning_amber_rounded,
+            size: 18,
+            color: c,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -2138,33 +2306,44 @@ class _DashboardPageState extends State<DashboardPage> {
                 Row(
                   children: [
                     Expanded(
-                      child: Text(iss.title,
-                          style: TextStyle(
-                              color: AppColors.textHi,
-                              fontSize: kFont,
-                              fontWeight: FontWeight.w700)),
+                      child: Text(
+                        iss.title,
+                        style: TextStyle(
+                          color: AppColors.textHi,
+                          fontSize: kFont,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 7, vertical: 2),
+                        horizontal: 7,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: c.withValues(alpha: 0.16),
                         borderRadius: BorderRadius.circular(5),
                       ),
-                      child: Text(danger ? 'PELIGRO' : 'ADVERTENCIA',
-                          style: TextStyle(
-                              color: c,
-                              fontSize: kFont - 2,
-                              fontWeight: FontWeight.w700)),
+                      child: Text(
+                        danger ? 'PELIGRO' : 'ADVERTENCIA',
+                        style: TextStyle(
+                          color: c,
+                          fontSize: kFont - 2,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 4),
-                Text(iss.detail,
-                    style: const TextStyle(
-                        color: AppColors.textMid,
-                        fontSize: kFont,
-                        height: 1.35)),
+                Text(
+                  iss.detail,
+                  style: const TextStyle(
+                    color: AppColors.textMid,
+                    fontSize: kFont,
+                    height: 1.35,
+                  ),
+                ),
               ],
             ),
           ),
@@ -2183,29 +2362,33 @@ class _DashboardPageState extends State<DashboardPage> {
       final ff = mod.isSoldered
           ? '  ·  Soldada'
           : mod.formFactor.isEmpty
-              ? ''
-              : '  ·  ${mod.formFactor}';
-      rows.add(_slotTile(
-        icon: Icons.sd_card_rounded,
-        iconColor: AppColors.ram,
-        left: '${mod.location}$ff',
-        right:
-            '${formatBytes(mod.sizeBytes)}  ${mod.type} ${mod.speedMhz > 0 ? "${mod.speedMhz}MHz" : ""}'
-                .trim(),
-        rightColor: AppColors.textHi,
-      ));
+          ? ''
+          : '  ·  ${mod.formFactor}';
+      rows.add(
+        _slotTile(
+          icon: Icons.sd_card_rounded,
+          iconColor: AppColors.ram,
+          left: '${mod.location}$ff',
+          right:
+              '${formatBytes(mod.sizeBytes)}  ${mod.type} ${mod.speedMhz > 0 ? "${mod.speedMhz}MHz" : ""}'
+                  .trim(),
+          rightColor: AppColors.textHi,
+        ),
+      );
     }
     // Ranuras libres (placeholder por cada una).
     final libres = m.freeSlots;
     for (var i = 0; i < libres; i++) {
-      rows.add(_slotTile(
-        icon: Icons.crop_square_rounded,
-        iconColor: AppColors.textLow,
-        left: 'Ranura libre',
-        right: 'Vacía',
-        rightColor: AppColors.textLow,
-        dimmed: true,
-      ));
+      rows.add(
+        _slotTile(
+          icon: Icons.crop_square_rounded,
+          iconColor: AppColors.textLow,
+          left: 'Ranura libre',
+          right: 'Vacía',
+          rightColor: AppColors.textLow,
+          dimmed: true,
+        ),
+      );
     }
     return Column(children: rows);
   }
@@ -2225,24 +2408,29 @@ class _DashboardPageState extends State<DashboardPage> {
         color: dimmed ? AppColors.bg : AppColors.surfaceAlt,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-            color: dimmed
-                ? AppColors.border.withValues(alpha: 0.5)
-                : AppColors.border),
+          color: dimmed
+              ? AppColors.border.withValues(alpha: 0.5)
+              : AppColors.border,
+        ),
       ),
       child: Row(
         children: [
           Icon(icon, size: 15, color: iconColor),
           const SizedBox(width: 9),
           Expanded(
-            child: Text(left,
-                style:
-                    TextStyle(color: AppColors.textMid, fontSize: kFont)),
+            child: Text(
+              left,
+              style: TextStyle(color: AppColors.textMid, fontSize: kFont),
+            ),
           ),
-          Text(right,
-              style: TextStyle(
-                  color: rightColor,
-                  fontSize: kFont,
-                  fontWeight: FontWeight.w500)),
+          Text(
+            right,
+            style: TextStyle(
+              color: rightColor,
+              fontSize: kFont,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
         ],
       ),
     );

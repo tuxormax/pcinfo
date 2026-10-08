@@ -185,8 +185,17 @@ func handleIncidencias(w http.ResponseWriter, r *http.Request) {
 // Parámetro opcional ?raiz=D:\Windows (Windows): analiza esa instalación en vez
 // de la que está corriendo. Es lo que usa el selector de unidad de la GUI para
 // leer los errores de un equipo que ya no arranca desde un medio de rescate.
+// limiteDeConsulta lee ?limite=N (eventos por registro); 0 si falta o es inválido.
+func limiteDeConsulta(r *http.Request) int {
+	n, err := strconv.Atoi(r.URL.Query().Get("limite"))
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}
+
 func handleErrores(w http.ResponseWriter, r *http.Request) {
-	responde(w, "/errores", collector.CollectErrors(r.URL.Query().Get("raiz")))
+	responde(w, "/errores", collector.CollectErrors(r.URL.Query().Get("raiz"), limiteDeConsulta(r)))
 }
 
 // handleArranques sirve "Encendidos y apagados": el historial de sesiones del

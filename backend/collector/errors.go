@@ -112,6 +112,8 @@ type ErrorsReport struct {
 	Available bool   `json:"available"` // ¿se pudo leer alguna fuente?
 	Reason    string `json:"reason"`    // si no, por qué (accionable)
 	ScanDays  int    `json:"scanDays"`  // días de historial analizados
+	Limit     int    `json:"limit"`     // eventos leídos por registro (0 = se usa la ventana de días)
+	HasMore   bool   `json:"hasMore"`   // hay más eventos que el límite: la GUI ofrece «Cargar más»
 
 	// Instalación analizada. Target vacío = el sistema que está corriendo.
 	Target      string    `json:"target"`      // raíz analizada ("D:\\Windows")
@@ -152,6 +154,13 @@ type Culprit struct {
 	Why       string `json:"why"`       // frase ya redactada para la pantalla
 }
 
+// Cuántos eventos se leen de cada registro (System, Application) la primera
+// vez; la GUI pide más con el botón «Cargar más» y el tope evita lecturas eternas.
+const (
+	limiteErroresInicial = 30
+	limiteErroresMax     = 1500
+)
+
 // CollectErrors arma el reporte de errores del sistema. Igual que Collect(), va
 // envuelto en safe(): si la lectura de registros entra en pánico devuelve un
 // reporte vacío en vez de tumbar el endpoint.
@@ -159,8 +168,14 @@ type Culprit struct {
 // raiz: carpeta de Windows a analizar ("D:\\Windows"). Vacío = el sistema que
 // está corriendo, que es el caso normal. Se usa desde un medio de rescate para
 // leer los errores del Windows dañado de otro disco (en Linux se ignora).
-func CollectErrors(raiz string) ErrorsReport {
-	rep := safe("errores", func() ErrorsReport { return collectErrors(raiz) })
+func CollectErrors(raiz string, limite int) ErrorsReport {
+	if limite <= 0 {
+		limite = limiteErroresInicial
+	}
+	if limite > limiteErroresMax {
+		limite = limiteErroresMax
+	}
+	rep := safe("errores", func() ErrorsReport { return collectErrors(raiz, limite) })
 	if rep.OS == "" {
 		rep.OS = runtime.GOOS
 	}
