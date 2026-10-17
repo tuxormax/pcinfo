@@ -133,7 +133,8 @@ function Get-ArchivosStore {
 
 function Split-NombrePaquete {
     param([string]$Nombre)
-    $ext = [System.IO.Path]::GetExtension($Nombre)
+    $ext = ''
+    if ($Nombre -match '(\.[A-Za-z0-9]+)\s*$') { $ext = $Matches[1] }
     $p = $Nombre.Split('_')
     $ver = $null
     if ($p.Count -ge 2) { try { $ver = [version]$p[1] } catch { $ver = $null } }
@@ -152,7 +153,7 @@ function Select-Paquetes {
 
     $candidatos = @()
     foreach ($a in $Archivos) {
-        if ($a.Nombre -match '(?i)\.blockmap$|\.appxsym$|\.cat$|\.xml$') { continue }
+        if ($a.Nombre -notmatch '(?i)\.(appx|appxbundle|msix|msixbundle)\s*$') { continue }
         $info = Split-NombrePaquete $a.Nombre
         if ($validos -notcontains $info.Extension) { continue }
         if ($info.Arch -ne $Arch -and $info.Arch -ne 'neutral' -and $info.Arch -ne 'all') { continue }
