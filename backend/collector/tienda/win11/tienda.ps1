@@ -220,7 +220,10 @@ function Invoke-Descarga {
                     try { if ($Url -match '[?&]P1=(\d+)') { $venc = [DateTimeOffset]::FromUnixTimeSeconds([long]$Matches[1]).LocalDateTime.ToString('HH:mm:ss') } } catch { }
                     $srv = ''; try { $srv = ([uri]$Url).Host } catch { }
                     $cab = ''; try { $cab = ($_.Exception.Response.Headers.AllKeys | Select-Object -First 8) -join ',' } catch { }
-                    Escribe 'AVISO' ("Enlace rechazado (HTTP {0}) de {1}. Servidor: {2}. Vence: {3}. Agente: {4}. Cabeceras: {5}" -f $est, $Etiqueta, $srv, $venc, $(if ($UaAlterno) { 'alterno' } else { 'Chrome' }), $cab)
+                    $ra = ''; try { $ra = [string]$_.Exception.Response.Headers['Retry-After'] } catch { }
+                    Escribe 'AVISO' ("Enlace rechazado (HTTP {0}) de {1}. Servidor: {2}. Vence: {3}. Agente: {4}. Cabeceras: {5}. Espera pedida (Retry-After): {6}" -f $est, $Etiqueta, $srv, $venc, $(if ($UaAlterno) { 'alterno' } else { 'Chrome' }), $cab, $(if ($ra) { $ra } else { 'no indica' }))
+                    # Con Retry-After el CDN esta limitando a esta conexion: insistir lo agrava.
+                    if ($ra) { throw "ENLACE-LIMITADO $ra" }
                     throw "ENLACE-RECHAZADO $est"
                 }
                 throw
@@ -235,7 +238,7 @@ function Invoke-Descarga {
             }
             break
         } catch {
-            if ($_.Exception.Message -like 'ENLACE-RECHAZADO*') { throw }
+            if ($_.Exception.Message -like 'ENLACE-*') { throw }
             if ($k -ge $intentos) { throw }
             Escribe 'AVISO' ("Descarga interrumpida de {0} ({1}). Reintento {2} de {3}, continuando desde lo ya bajado..." -f $Etiqueta, $_.Exception.Message, ($k + 1), $intentos)
             Start-Sleep -Seconds 3
@@ -346,23 +349,29 @@ function Get-Paquete {
     try {
         Invoke-Descarga -Url $Url -Destino $destino -Etiqueta $Nombre
     } catch {
-        if ($_.Exception.Message -notlike 'ENLACE-RECHAZADO*') { throw }
-        # Enlace rechazado (vencido o bloqueado): se piden enlaces nuevos a rg-adguard y
-        # se reintenta, primero con el agente Chrome y luego con el de Microsoft.
+        if ($_.Exception.Message -notlike 'ENLACE-*') { throw }
+        if ($_.Exception.Message -like 'ENLACE-LIMITADO*') {
+            # Microsoft limita a esta conexion: no se insiste (agravaria el bloqueo).
+            throw ("ENLACE-BLOQUEADO Microsoft pidio esperar ({0}) antes de volver a descargar." -f ($_.Exception.Message -replace '^ENLACE-LIMITADO\s*', ''))
+        }
+        # Enlace rechazado: se pide UN enlace nuevo a rg-adguard y se prueba con el agente
+        # Chrome y luego con el de Microsoft; si sigue el rechazo, lo resuelve la Tienda.
         $hecho = $false
-        foreach ($alt in @($false, $true)) {
-            Escribe 'INFO' ('Pidiendo un enlace nuevo de {0} a rg-adguard...' -f $Nombre)
-            $nuevos = Get-ArchivosStore -ProductId $script:IdActual -Ring $script:RingActual
-            $nuevo = $nuevos | Where-Object { $_.Nombre -ieq $Nombre } | Select-Object -First 1
-            if (-not $nuevo) { break }
-            try {
-                Invoke-Descarga -Url $nuevo.Url -Destino $destino -Etiqueta $Nombre -UaAlterno $alt
-                $hecho = $true; break
-            } catch {
-                if ($_.Exception.Message -notlike 'ENLACE-RECHAZADO*') { throw }
+        Escribe 'INFO' ('Pidiendo un enlace nuevo de {0} a rg-adguard...' -f $Nombre)
+        $nuevos = Get-ArchivosStore -ProductId $script:IdActual -Ring $script:RingActual
+        $nuevo = $nuevos | Where-Object { $_.Nombre -ieq $Nombre } | Select-Object -First 1
+        if ($nuevo) {
+            foreach ($alt in @($false, $true)) {
+                try {
+                    Invoke-Descarga -Url $nuevo.Url -Destino $destino -Etiqueta $Nombre -UaAlterno $alt
+                    $hecho = $true; break
+                } catch {
+                    if ($_.Exception.Message -notlike 'ENLACE-*') { throw }
+                    if ($_.Exception.Message -like 'ENLACE-LIMITADO*') { break }
+                }
             }
         }
-        if (-not $hecho) { throw "Microsoft rechazo el enlace de descarga de $Nombre (403) incluso con enlaces nuevos. Reintenta en unos minutos; si persiste, copia el registro y avisa a seismexico." }
+        if (-not $hecho) { throw "ENLACE-BLOQUEADO Microsoft rechazo el enlace de descarga de $Nombre (403) incluso con un enlace nuevo." }
     }
 
     if ($EsDep) {
@@ -435,6 +444,29 @@ function Install-App {
     }
 }
 
+# Plan B cuando Microsoft rechaza los enlaces temporales de rg-adguard: instalar por la
+# propia Tienda (winget, fuente msstore), que usa su canal y su licencia. En un equipo
+# sin Tienda (LTSC) no hay plan B y se dice claro.
+function Install-DesdeTienda {
+    param([string]$ProductId, [string]$Nombre)
+    $wg = Get-Command winget -ErrorAction SilentlyContinue
+    if (-not $wg) {
+        if (Test-TieneStore) {
+            try { Start-Process "ms-windows-store://pdp/?productid=$ProductId" } catch { }
+            throw "Microsoft rechazo la descarga directa y este equipo no tiene winget. Se abrio la Tienda en la ficha de $Nombre: pulsa Instalar alli."
+        }
+        throw "Microsoft rechazo la descarga directa y este equipo no tiene Tienda ni winget (LTSC): no hay otra via para instalar $Nombre."
+    }
+    Escribe 'INFO' ("Microsoft rechazo la descarga directa: se instala {0} desde la Tienda (winget, solo para el usuario actual)..." -f $Nombre)
+    $salida = & $wg.Source install --id $ProductId --source msstore --accept-package-agreements --accept-source-agreements --disable-interactivity 2>&1
+    foreach ($l in @($salida)) {
+        $t = ([string]$l).Trim()
+        if ($t -and $t -notmatch '^[\s\-\\|/]+$') { Escribe 'INFO' $t }
+    }
+    if ($LASTEXITCODE -ne 0) { throw ("winget no pudo instalar {0} (codigo {1})." -f $Nombre, $LASTEXITCODE) }
+    Escribe 'OK' ("LISTO: {0} instalada desde la Tienda." -f $Nombre)
+}
+
 function Start-Instalacion {
     param([string]$Url, [string]$Arch = 'Auto', [string]$Ring = 'Retail', [bool]$TodosLosUsuarios = $true)
 
@@ -453,11 +485,19 @@ function Start-Instalacion {
 
     # La app se baja PRIMERO: su manifiesto dice cuales dependencias pide, y solo
     # esas se descargan e instalan.
-    $rutaApp = Get-Paquete -Url $sel.App.Url -CarpetaTrabajo $carpeta -Nombre $sel.App.Nombre -EsDep $false
-    $depsApp = Select-DependenciasApp -Deps $sel.Deps -RutaApp $rutaApp -Arch $arqui
-    $rutasDeps = @()
-    foreach ($p in $depsApp) {
-        $rutasDeps += Get-Paquete -Url $p.Url -CarpetaTrabajo $carpeta -Nombre $p.Nombre -EsDep $true
+    try {
+        $rutaApp = Get-Paquete -Url $sel.App.Url -CarpetaTrabajo $carpeta -Nombre $sel.App.Nombre -EsDep $false
+        $depsApp = Select-DependenciasApp -Deps $sel.Deps -RutaApp $rutaApp -Arch $arqui
+        $rutasDeps = @()
+        foreach ($p in $depsApp) {
+            $rutasDeps += Get-Paquete -Url $p.Url -CarpetaTrabajo $carpeta -Nombre $p.Nombre -EsDep $true
+        }
+    } catch {
+        if ($_.Exception.Message -notlike 'ENLACE-BLOQUEADO*') { throw }
+        Escribe 'AVISO' ($_.Exception.Message -replace '^ENLACE-BLOQUEADO\s*', '')
+        Remove-Item $carpeta -Recurse -Force -ErrorAction SilentlyContinue
+        Install-DesdeTienda -ProductId $id -Nombre $sel.App.Paquete
+        return
     }
 
     Escribe 'INFO' "Instalando dependencias..."
