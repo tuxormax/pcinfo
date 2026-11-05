@@ -25,6 +25,7 @@ import '../services/tienda_service.dart';
 import '../theme.dart';
 import '../utils/format.dart';
 import '../utils/report.dart';
+import '../widgets/pie_seis.dart';
 import 'arranques_page.dart';
 import 'bateria_page.dart';
 import 'controladores_page.dart';
@@ -1072,6 +1073,8 @@ class _DashboardPageState extends State<DashboardPage> {
               style: const TextStyle(color: AppColors.textLow, fontSize: kFont),
             ),
           ),
+          const SizedBox(width: 12),
+          const PieSeis(),
         ],
       ),
     );
