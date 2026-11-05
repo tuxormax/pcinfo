@@ -182,7 +182,7 @@ function Select-Paquetes {
 }
 
 function Invoke-Descarga {
-    param([string]$Url, [string]$Destino, [string]$Etiqueta)
+    param([string]$Url, [string]$Destino, [string]$Etiqueta, [bool]$UaAlterno = $false)
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072 -bor 12288 } catch { }
 
@@ -197,7 +197,12 @@ function Invoke-Descarga {
             $ya = 0
             if (Test-Path -LiteralPath $Destino) { $ya = (Get-Item -LiteralPath $Destino).Length }
             $req = [System.Net.HttpWebRequest]::Create($Url)
-            $req.UserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+            # Misma identificacion que la consulta a rg-adguard (Chrome completo); la
+            # alterna es la del cliente de entrega de Microsoft, por si el CDN rechaza la otra.
+            if ($UaAlterno) { $req.UserAgent = 'Microsoft-Delivery-Optimization/10.0' }
+            else { $req.UserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36' }
+            $req.Accept = '*/*'
+            $req.Referer = 'https://store.rg-adguard.net/'
             $req.Timeout = 60000
             $req.ReadWriteTimeout = 120000
             if ($ya -gt 0) { $req.AddRange([long]$ya) }
@@ -205,7 +210,19 @@ function Invoke-Descarga {
                 $resp = $req.GetResponse()
             } catch [System.Net.WebException] {
                 # 416 = ya estaba completo
-                if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 416) { break }
+                $est = 0
+                if ($_.Exception.Response) { $est = [int]$_.Exception.Response.StatusCode }
+                if ($est -eq 416) { break }
+                if ($est -in 403, 404, 410) {
+                    # Enlace rechazado: reintentar la MISMA url no sirve. Se deja en el log lo
+                    # necesario para saber por que y se avisa a Get-Paquete para pedir uno nuevo.
+                    $venc = 'sin dato'
+                    try { if ($Url -match '[?&]P1=(\d+)') { $venc = [DateTimeOffset]::FromUnixTimeSeconds([long]$Matches[1]).LocalDateTime.ToString('HH:mm:ss') } } catch { }
+                    $srv = ''; try { $srv = ([uri]$Url).Host } catch { }
+                    $cab = ''; try { $cab = ($_.Exception.Response.Headers.AllKeys | Select-Object -First 8) -join ',' } catch { }
+                    Escribe 'AVISO' ("Enlace rechazado (HTTP {0}) de {1}. Servidor: {2}. Vence: {3}. Agente: {4}. Cabeceras: {5}" -f $est, $Etiqueta, $srv, $venc, $(if ($UaAlterno) { 'alterno' } else { 'Chrome' }), $cab)
+                    throw "ENLACE-RECHAZADO $est"
+                }
                 throw
             }
             $anexar = ($ya -gt 0 -and [int]$resp.StatusCode -eq 206)
@@ -218,6 +235,7 @@ function Invoke-Descarga {
             }
             break
         } catch {
+            if ($_.Exception.Message -like 'ENLACE-RECHAZADO*') { throw }
             if ($k -ge $intentos) { throw }
             Escribe 'AVISO' ("Descarga interrumpida de {0} ({1}). Reintento {2} de {3}, continuando desde lo ya bajado..." -f $Etiqueta, $_.Exception.Message, ($k + 1), $intentos)
             Start-Sleep -Seconds 3
@@ -325,7 +343,27 @@ function Get-Paquete {
 
     Escribe 'INFO' ("Descargando {0}" -f $Nombre)
     $destino = Join-Path $CarpetaTrabajo $Nombre
-    Invoke-Descarga -Url $Url -Destino $destino -Etiqueta $Nombre
+    try {
+        Invoke-Descarga -Url $Url -Destino $destino -Etiqueta $Nombre
+    } catch {
+        if ($_.Exception.Message -notlike 'ENLACE-RECHAZADO*') { throw }
+        # Enlace rechazado (vencido o bloqueado): se piden enlaces nuevos a rg-adguard y
+        # se reintenta, primero con el agente Chrome y luego con el de Microsoft.
+        $hecho = $false
+        foreach ($alt in @($false, $true)) {
+            Escribe 'INFO' ('Pidiendo un enlace nuevo de {0} a rg-adguard...' -f $Nombre)
+            $nuevos = Get-ArchivosStore -ProductId $script:IdActual -Ring $script:RingActual
+            $nuevo = $nuevos | Where-Object { $_.Nombre -ieq $Nombre } | Select-Object -First 1
+            if (-not $nuevo) { break }
+            try {
+                Invoke-Descarga -Url $nuevo.Url -Destino $destino -Etiqueta $Nombre -UaAlterno $alt
+                $hecho = $true; break
+            } catch {
+                if ($_.Exception.Message -notlike 'ENLACE-RECHAZADO*') { throw }
+            }
+        }
+        if (-not $hecho) { throw "Microsoft rechazo el enlace de descarga de $Nombre (403) incluso con enlaces nuevos. Reintenta en unos minutos; si persiste, copia el registro y avisa a seismexico." }
+    }
 
     if ($EsDep) {
         try {
@@ -401,6 +439,7 @@ function Start-Instalacion {
     param([string]$Url, [string]$Arch = 'Auto', [string]$Ring = 'Retail', [bool]$TodosLosUsuarios = $true)
 
     $id    = Get-ProductId $Url
+    $script:IdActual = $id; $script:RingActual = $Ring
     $arqui = Get-Arquitectura $Arch
     $lista = Get-ArchivosStore -ProductId $id -Ring $Ring
     $sel   = Select-Paquetes -Archivos $lista -Arch $arqui
